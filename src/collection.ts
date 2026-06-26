@@ -95,11 +95,17 @@ export class Collection<T = Doc> {
   async create(args: CreateArgs<T>): Promise<WithId<T>> {
     this.ensureTable();
     const row = this.prepareInsert(args.data);
-    this.db
-      .prepare(
-        `INSERT INTO "${this.name}" (_id, data, created_at, updated_at) VALUES (?, ?, ?, ?)`,
-      )
-      .run(row._id, row.data, row.created_at, row.updated_at);
+    const sync = this.mon.$sync;
+    const write = () => {
+      this.db
+        .prepare(
+          `INSERT INTO "${this.name}" (_id, data, created_at, updated_at) VALUES (?, ?, ?, ?)`,
+        )
+        .run(row._id, row.data, row.created_at, row.updated_at);
+      sync?.recordLocal(this.name, row._id, "upsert", row.created_at);
+    };
+    if (sync) this.db.transaction(write);
+    else write();
     return this.rowToDoc(row);
   }
 
@@ -108,10 +114,12 @@ export class Collection<T = Doc> {
     const stmt = this.db.prepare(
       `INSERT INTO "${this.name}" (_id, data, created_at, updated_at) VALUES (?, ?, ?, ?)`,
     );
+    const sync = this.mon.$sync;
     this.db.transaction(() => {
       for (const item of args.data) {
         const row = this.prepareInsert(item);
         stmt.run(row._id, row.data, row.created_at, row.updated_at);
+        sync?.recordLocal(this.name, row._id, "upsert", row.created_at);
       }
     });
     return { count: args.data.length };
@@ -209,6 +217,7 @@ export class Collection<T = Doc> {
     if (!rows.length) return [];
 
     const now = Date.now();
+    const sync = this.mon.$sync;
     const stmt = this.db.prepare(
       `UPDATE "${this.name}" SET data = ?, updated_at = ? WHERE _id = ?`,
     );
@@ -219,6 +228,7 @@ export class Collection<T = Doc> {
         const current = JSON.parse(row.data) as Record<string, any>;
         const updated = stripSystem(applyUpdate(current, data));
         stmt.run(JSON.stringify(updated), now, row._id);
+        sync?.recordLocal(this.name, row._id, "upsert", now);
         out.push({
           ...updated,
           _id: row._id,
@@ -267,8 +277,13 @@ export class Collection<T = Doc> {
     if (!rows.length) return [];
 
     const stmt = this.db.prepare(`DELETE FROM "${this.name}" WHERE _id = ?`);
+    const sync = this.mon.$sync;
+    const now = Date.now();
     this.db.transaction(() => {
-      for (const row of rows) stmt.run(row._id);
+      for (const row of rows) {
+        stmt.run(row._id);
+        sync?.recordLocal(this.name, row._id, "delete", now);
+      }
     });
 
     return rows.map((r) => this.rowToDoc(r));

@@ -1,9 +1,8 @@
 {
-  "name": "@monlite/core",
-  "version": "0.4.0",
-  "description": "An embedded document database for TypeScript apps. MongoDB-like API, Prisma-like DX, SQLite under the hood. Zero config, zero migrations, zero server.",
+  "name": "@monlite/sync",
+  "version": "0.1.0",
+  "description": "Local-first sync for @monlite/core — replicate a local SQLite document database with MongoDB and other backends.",
   "type": "module",
-  "packageManager": "pnpm@10.30.3",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -25,30 +24,26 @@
   "sideEffects": false,
   "scripts": {
     "build": "tsup",
-    "dev": "tsup --watch",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run build"
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [
-    "sqlite",
-    "mongodb",
-    "document-database",
-    "nosql",
-    "embedded",
+    "monlite",
+    "sync",
+    "replication",
     "local-first",
-    "prisma",
-    "better-sqlite3",
-    "json"
+    "mongodb",
+    "sqlite",
+    "offline"
   ],
   "license": "MIT",
   "author": "Emad Jumaah <emadjumaah@gmail.com>",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/qataruts/monlite.git"
+    "url": "git+https://github.com/qataruts/monlite.git",
+    "directory": "packages/sync"
   },
-  "homepage": "https://github.com/qataruts/monlite#readme",
+  "homepage": "https://github.com/qataruts/monlite/tree/main/packages/sync#readme",
   "bugs": {
     "url": "https://github.com/qataruts/monlite/issues"
   },
@@ -58,26 +53,23 @@
   "engines": {
     "node": ">=18"
   },
+  "dependencies": {
+    "@monlite/core": "workspace:^"
+  },
   "peerDependencies": {
-    "better-sqlite3": ">=9"
+    "mongodb": ">=5"
   },
   "peerDependenciesMeta": {
-    "better-sqlite3": {
+    "mongodb": {
       "optional": true
     }
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.10.0",
     "better-sqlite3": "^11.8.0",
+    "mongodb": "^6.12.0",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "better-sqlite3",
-      "esbuild"
-    ]
   }
 }

@@ -5,6 +5,7 @@ import { MonliteError } from "./errors.js";
 import { bindable } from "./query/sql.js";
 import { createDriver } from "./driver/index.js";
 import type { Driver } from "./driver/types.js";
+import { SyncStore } from "./sync/store.js";
 
 function validateName(name: string): void {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
@@ -40,6 +41,8 @@ export class Monlite {
   readonly driver: Driver;
   /** @internal */
   readonly autoIndexer: AutoIndexer;
+  /** @internal Sync metadata store; present only when `{ sync: true }`. */
+  readonly $sync?: SyncStore;
 
   private readonly collections = new Map<string, Collection<any>>();
   private closed = false;
@@ -57,6 +60,15 @@ export class Monlite {
       options.autoIndex ?? true,
       options.autoIndexAfter ?? 10,
     );
+
+    if (options.sync) {
+      this.$sync = new SyncStore(this.driver, options.nodeId);
+    }
+  }
+
+  /** Stable node id for LWW tie-breaking (only when sync is enabled). */
+  get nodeId(): string | undefined {
+    return this.$sync?.nodeId;
   }
 
   /** The underlying native database handle (escape hatch). */
@@ -128,7 +140,9 @@ export class Monlite {
     const rows = this.driver
       .prepare(
         `SELECT name FROM sqlite_master
-         WHERE type='table' AND name NOT LIKE 'sqlite_%'
+         WHERE type='table'
+           AND name NOT LIKE 'sqlite_%'
+           AND name NOT LIKE '\\_monlite\\_%' ESCAPE '\\'
          ORDER BY name`,
       )
       .all() as Array<{ name: string }>;

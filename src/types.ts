@@ -211,6 +211,17 @@ export interface MonliteOptions {
    * when installed, otherwise the built-in `node:sqlite` (Node >= 22.5).
    */
   driver?: DriverName;
+  /**
+   * Enable sync metadata (change feed, tombstones, version tracking) so the
+   * database can replicate via `@monlite/sync`. Off by default — adds zero
+   * overhead when disabled.
+   */
+  sync?: boolean;
+  /**
+   * Stable node identity used for last-write-wins tie-breaking. Auto-generated
+   * and persisted in the database on first sync-enabled open if omitted.
+   */
+  nodeId?: string;
   /** Auto-create indexes on frequently-queried JSON paths. Default `true`. */
   autoIndex?: boolean;
   /** Number of times a path must be queried before an index is created. Default `10`. */
