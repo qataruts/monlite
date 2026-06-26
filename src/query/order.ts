@@ -1,10 +1,11 @@
 import type { OrderBy } from "../types.js";
-import { fieldExpr, isReserved } from "./sql.js";
+import { fieldExpr, isColumn } from "./sql.js";
 
 /** Build an `ORDER BY` clause from an orderBy spec. Returns "" when empty. */
 export function buildOrderBy(
   orderBy: OrderBy | undefined,
   onPath?: (p: string) => void,
+  columns?: Set<string>,
 ): string {
   if (!orderBy) return "";
 
@@ -15,9 +16,9 @@ export function buildOrderBy(
     for (const field of Object.keys(obj)) {
       const dir = (obj as any)[field];
       if (dir === undefined) continue;
-      if (onPath && !isReserved(field)) onPath(field);
+      if (onPath && !isColumn(field, columns)) onPath(field);
       const d = String(dir).toLowerCase() === "desc" ? "DESC" : "ASC";
-      parts.push(`${fieldExpr(field)} ${d}`);
+      parts.push(`${fieldExpr(field, columns)} ${d}`);
     }
   }
 

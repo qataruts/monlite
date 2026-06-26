@@ -1,4 +1,9 @@
-import type { Doc, MonliteOptions } from "./types.js";
+import type {
+  CollectionOptions,
+  ColumnInfo,
+  Doc,
+  MonliteOptions,
+} from "./types.js";
 import { Collection } from "./collection.js";
 import { AutoIndexer } from "./auto-index.js";
 import { MonliteError } from "./errors.js";
@@ -81,16 +86,37 @@ export class Monlite {
     return this.driver.name;
   }
 
-  /** Get (or lazily create) a typed collection handle. */
-  collection<T = Doc>(name: string): Collection<T> {
+  /**
+   * Get (or lazily create) a typed collection handle. Pass `{ schema }` to make
+   * it a structured collection backed by native SQL columns; omit for the
+   * default schema-free document mode. Options apply only on first access.
+   */
+  collection<T = Doc>(name: string, options?: CollectionOptions): Collection<T> {
     this.assertOpen();
     validateName(name);
     let col = this.collections.get(name);
     if (!col) {
-      col = new Collection<T>(this, name);
+      col = new Collection<T>(this, name, options);
       this.collections.set(name, col);
     }
     return col as Collection<T>;
+  }
+
+  /** Inspect a collection's physical columns (PRAGMA table_info). */
+  $schema(name: string): Promise<ColumnInfo[]> {
+    this.assertOpen();
+    validateName(name);
+    const rows = this.driver
+      .prepare(`PRAGMA table_info("${name}")`)
+      .all() as Array<{ name: string; type: string; notnull: number; pk: number }>;
+    return Promise.resolve(
+      rows.map((r) => ({
+        name: r.name,
+        type: r.type,
+        notNull: !!r.notnull,
+        primaryKey: !!r.pk,
+      })),
+    );
   }
 
   /** Tagged-template SQL query returning rows. Values are safely parameterized. */

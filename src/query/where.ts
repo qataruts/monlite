@@ -1,9 +1,11 @@
 import type { WhereInput, FieldFilter } from "../types.js";
 import { MonliteQueryError } from "../errors.js";
-import { fieldExpr, pathLiteral, bindable, isReserved } from "./sql.js";
+import { fieldExpr, pathLiteral, bindable, isColumn } from "./sql.js";
 
 export interface WhereContext {
   params: any[];
+  /** Declared native columns (structured collections). */
+  columns?: Set<string>;
   /** Called with every document path referenced (for auto-index tracking). */
   onPath?: (path: string) => void;
 }
@@ -62,8 +64,8 @@ function isFilterObject(v: any): v is FieldFilter {
 }
 
 function translateField(field: string, condition: any, ctx: WhereContext): string {
-  if (ctx.onPath && !isReserved(field)) ctx.onPath(field);
-  const expr = fieldExpr(field);
+  if (ctx.onPath && !isColumn(field, ctx.columns)) ctx.onPath(field);
+  const expr = fieldExpr(field, ctx.columns);
 
   // Scalar (or array/Date) value is shorthand for `{ equals: value }`.
   if (!isFilterObject(condition)) {
@@ -117,7 +119,7 @@ function translateField(field: string, condition: any, ctx: WhereContext): strin
         clauses.push(hasExpr(field, expr, v, ctx));
         break;
       case "exists":
-        clauses.push(existsExpr(field, expr, !!v));
+        clauses.push(existsExpr(field, expr, !!v, ctx.columns));
         break;
       default:
         throw new MonliteQueryError(
@@ -182,7 +184,7 @@ function containsExpr(
   v: any,
   ctx: WhereContext,
 ): string {
-  if (isReserved(field)) {
+  if (isColumn(field, ctx.columns)) {
     ctx.params.push(bindable(v));
     return `instr(${expr}, ?) > 0`;
   }
@@ -203,12 +205,17 @@ function hasExpr(
   ctx: WhereContext,
 ): string {
   ctx.params.push(bindable(v));
-  if (isReserved(field)) return `${expr} = ?`;
+  if (isColumn(field, ctx.columns)) return `${expr} = ?`;
   return `EXISTS (SELECT 1 FROM json_each(data, ${pathLiteral(field)}) WHERE value = ?)`;
 }
 
-function existsExpr(field: string, expr: string, want: boolean): string {
-  if (isReserved(field)) {
+function existsExpr(
+  field: string,
+  expr: string,
+  want: boolean,
+  columns?: Set<string>,
+): string {
+  if (isColumn(field, columns)) {
     return want ? `${expr} IS NOT NULL` : `${expr} IS NULL`;
   }
   const path = pathLiteral(field);

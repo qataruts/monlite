@@ -21,6 +21,49 @@ export interface SystemFields {
 export type WithId<T> = T & SystemFields;
 
 /* ------------------------------------------------------------------ *
+ * Collection configuration (document vs structured)
+ * ------------------------------------------------------------------ */
+
+/** SQLite column affinity for a structured-collection field. */
+export type ColumnType = "TEXT" | "INTEGER" | "REAL" | "BLOB" | "JSON";
+
+/** Rich column definition for a structured collection. */
+export interface ColumnDef {
+  type: ColumnType;
+  /** Create a secondary index on this column. */
+  index?: boolean;
+  unique?: boolean;
+  notNull?: boolean;
+  /** Default value (string/number literal, or null). */
+  default?: string | number | null;
+  /** Foreign-key target, e.g. `"users(_id)"` or `"users"`. */
+  references?: string;
+}
+
+/** Map of field name to column type (or full definition). */
+export type CollectionSchema = Record<string, ColumnType | ColumnDef>;
+
+export interface CollectionOptions {
+  /**
+   * Declare native SQL columns ("structured" mode). Listed fields become real
+   * typed columns — fast, indexable, joinable — and any other fields overflow
+   * into a JSON column. Omit for schema-free document mode. The CRUD/query API
+   * is identical either way.
+   */
+  schema?: CollectionSchema;
+}
+
+export type CollectionMode = "document" | "structured";
+
+/** A column as reported by {@link Monlite.$schema}. */
+export interface ColumnInfo {
+  name: string;
+  type: string;
+  notNull: boolean;
+  primaryKey: boolean;
+}
+
+/* ------------------------------------------------------------------ *
  * Where clause
  * ------------------------------------------------------------------ */
 

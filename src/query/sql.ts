@@ -8,6 +8,15 @@ export function isReserved(field: string): boolean {
 }
 
 /**
+ * True when a field maps to a real SQL column: a system field, or — in a
+ * structured collection — one of its declared columns. Such fields are
+ * referenced directly instead of via `json_extract`.
+ */
+export function isColumn(field: string, columns?: Set<string>): boolean {
+  return isReserved(field) || (columns?.has(field) ?? false);
+}
+
+/**
  * Convert a dotted document path (`address.city`, `items.0.name`) into a
  * SQLite JSON path (`$.address.city`, `$.items[0].name`), quoting segments
  * that are not bare identifiers.
@@ -31,9 +40,13 @@ export function pathLiteral(field: string): string {
   return "'" + jsonPath(field).replace(/'/g, "''") + "'";
 }
 
-/** SQL expression yielding the value of `field` for a row. */
-export function fieldExpr(field: string): string {
-  if (isReserved(field)) return `"${field}"`;
+/**
+ * SQL expression yielding the value of `field` for a row. System fields and
+ * declared structured columns resolve to a bare column; everything else is
+ * read from the `data` JSON blob via `json_extract`.
+ */
+export function fieldExpr(field: string, columns?: Set<string>): string {
+  if (isColumn(field, columns)) return `"${field}"`;
   return `json_extract(data, ${pathLiteral(field)})`;
 }
 

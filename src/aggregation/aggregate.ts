@@ -8,12 +8,14 @@ import type {
 } from "../types.js";
 import type { Driver } from "../driver/types.js";
 import { buildWhere } from "../query/where.js";
-import { fieldExpr } from "../query/sql.js";
+import { fieldExpr, isColumn } from "../query/sql.js";
 
 export interface AggContext {
   db: Driver;
   table: string;
   onPath: (path: string) => void;
+  /** Declared native columns (structured collections). */
+  columns?: Set<string>;
 }
 
 const ACCUMULATORS = ["_sum", "_avg", "_min", "_max"] as const;
@@ -36,6 +38,7 @@ interface AccCol {
 function buildAccumulators(
   args: { _sum?: any; _avg?: any; _min?: any; _max?: any },
   onPath: (p: string) => void,
+  columns?: Set<string>,
 ): { selects: string[]; cols: AccCol[] } {
   const selects: string[] = [];
   const cols: AccCol[] = [];
@@ -46,9 +49,9 @@ function buildAccumulators(
     if (!selection) continue;
     for (const field of Object.keys(selection)) {
       if (!selection[field]) continue;
-      onPath(field);
+      if (!isColumn(field, columns)) onPath(field);
       const alias = `agg_${kind.slice(1)}_${i++}`;
-      selects.push(`${SQL_FN[kind]}(${fieldExpr(field)}) AS ${alias}`);
+      selects.push(`${SQL_FN[kind]}(${fieldExpr(field, columns)}) AS ${alias}`);
       cols.push({ alias, kind, field });
     }
   }
@@ -60,8 +63,12 @@ export function aggregate(
   args: AggregateArgs,
 ): AggregateResult {
   const params: any[] = [];
-  const where = buildWhere(args.where, { params, onPath: ctx.onPath });
-  const { selects, cols } = buildAccumulators(args, ctx.onPath);
+  const where = buildWhere(args.where, {
+    params,
+    onPath: ctx.onPath,
+    columns: ctx.columns,
+  });
+  const { selects, cols } = buildAccumulators(args, ctx.onPath, ctx.columns);
 
   // Always compute count internally; expose only when requested.
   const allSelects = [`COUNT(*) AS agg_count`, ...selects];
@@ -108,7 +115,11 @@ function comparisonSql(
 }
 
 /** Build a SQL `HAVING` expression from a having spec. Returns "" when empty. */
-function buildHaving(having: HavingInput, params: any[]): string {
+function buildHaving(
+  having: HavingInput,
+  params: any[],
+  columns?: Set<string>,
+): string {
   const parts: string[] = [];
   if (having._count) {
     parts.push(...comparisonSql("COUNT(*)", having._count, params));
@@ -117,7 +128,9 @@ function buildHaving(having: HavingInput, params: any[]): string {
     const selection = having[kind];
     if (!selection) continue;
     for (const field of Object.keys(selection)) {
-      parts.push(...comparisonSql(`${fn}(${fieldExpr(field)})`, selection[field]!, params));
+      parts.push(
+        ...comparisonSql(`${fn}(${fieldExpr(field, columns)})`, selection[field]!, params),
+      );
     }
   }
   return parts.join(" AND ");
@@ -132,19 +145,23 @@ export function groupBy(
   }
 
   const params: any[] = [];
-  const where = buildWhere(args.where, { params, onPath: ctx.onPath });
+  const where = buildWhere(args.where, {
+    params,
+    onPath: ctx.onPath,
+    columns: ctx.columns,
+  });
 
   const groupExprs: string[] = [];
   const selects: string[] = [];
   for (const field of args.by) {
-    ctx.onPath(field);
-    const expr = fieldExpr(field);
+    if (!isColumn(field, ctx.columns)) ctx.onPath(field);
+    const expr = fieldExpr(field, ctx.columns);
     groupExprs.push(expr);
     selects.push(`${expr} AS "${field}"`);
   }
 
   selects.push(`COUNT(*) AS agg_count`);
-  const { selects: accSelects, cols } = buildAccumulators(args, ctx.onPath);
+  const { selects: accSelects, cols } = buildAccumulators(args, ctx.onPath, ctx.columns);
   selects.push(...accSelects);
 
   let sql =
@@ -153,7 +170,7 @@ export function groupBy(
 
   if (args.having) {
     // HAVING params come after WHERE params and before LIMIT/OFFSET — push now.
-    const havingSql = buildHaving(args.having, params);
+    const havingSql = buildHaving(args.having, params, ctx.columns);
     if (havingSql) sql += ` HAVING ${havingSql}`;
   }
 
@@ -163,7 +180,7 @@ export function groupBy(
       const dir =
         String(args.orderBy[key]).toLowerCase() === "desc" ? "DESC" : "ASC";
       if (key === "_count") parts.push(`agg_count ${dir}`);
-      else parts.push(`${fieldExpr(key)} ${dir}`);
+      else parts.push(`${fieldExpr(key, ctx.columns)} ${dir}`);
     }
     if (parts.length) sql += ` ORDER BY ${parts.join(", ")}`;
   }

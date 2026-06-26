@@ -277,6 +277,70 @@ await users.distinct("tags");                        // ["a", "b", "c"]
 
 ---
 
+## Structured collections (the SQL skin)
+
+By default a collection is **document mode** — schema-free, every field stored
+as JSON. Pass a `schema` to make it a **structured collection**: the declared
+fields become real, typed SQL columns (fast, indexable, joinable, constrainable)
+and any *other* fields overflow into a JSON column. **The CRUD/query API is
+identical** — `find`, `where`, `orderBy`, `groupBy`, `distinct`, updates — only
+the storage underneath changes.
+
+```ts
+const orders = db.collection("orders", {
+  schema: {
+    user_id: { type: "TEXT", index: true, references: "users(_id)" },
+    amount: "REAL",
+    status: { type: "TEXT", notNull: true, default: "pending" },
+    meta: "JSON",            // objects/arrays, transparently (de)serialized
+  },
+});
+
+// Same API as document collections — but `amount`/`status` are real columns:
+await orders.create({ data: { user_id: "u1", amount: 100, status: "paid", note: "rush" } });
+await orders.findMany({ where: { amount: { gte: 50 }, status: "paid" } });
+await orders.groupBy({ by: ["status"], _sum: { amount: true } });
+
+// Undeclared fields (like `note`) still work — they overflow into JSON.
+await orders.findMany({ where: { note: { contains: "rush" } } });
+```
+
+Because the columns are native, they join, constrain, and index like any SQL
+table — including from the raw SQL hatch with no `json_extract`:
+
+```ts
+await db.$queryRaw`
+  SELECT u.name, SUM(o.amount) AS revenue
+  FROM users u JOIN orders o ON o.user_id = u._id
+  GROUP BY u._id
+`;
+```
+
+Column types: `"TEXT" | "INTEGER" | "REAL" | "BLOB" | "JSON"`. A full column
+definition supports `index`, `unique`, `notNull`, `default`, and `references`.
+
+### Do I have to care: JSON vs native columns?
+
+- **For correctness — no.** Both modes return identical results through the same API.
+- **For performance & SQL interop — a little.** Native columns + native indexes are
+  faster and join/constrain cleanly; JSON is for when the shape is unknown or varies.
+
+monlite never hides which is which:
+
+```ts
+orders.mode;             // "structured" | "document"
+await db.$schema("orders"); // physical columns: [{ name, type, notNull, primaryKey }, …]
+createDb("./app.db", { verbose: (sql) => console.log(sql) }); // see json_extract vs bare columns
+```
+
+> **Rule of thumb:** unknown/flexible shape → document (JSON); known/stable shape
+> with heavy joins, reporting, or external SQL tooling → structured (native columns).
+
+> Note: structured collections are not yet covered by `@monlite/sync` (document
+> collections are) — that's planned follow-up work.
+
+---
+
 ## SQL escape hatch
 
 When you need full SQL power — complex joins, analytics, cross-collection
