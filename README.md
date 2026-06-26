@@ -1,12 +1,22 @@
 # 🌙 monlite
 
-> An embedded document database for TypeScript apps.
+> An embedded document **and** relational database for TypeScript apps.
 > MongoDB-like API. Prisma-like DX. SQLite under the hood. Zero config.
 
-monlite is a local-first document database that lives inside your app as a
-single `.db` file. No server to run, no schema to define, no migrations to
-manage. You get the flexibility of MongoDB, the familiarity of a Prisma-style
-API, and the reliability of SQLite — all in one `npm install`.
+monlite is a local-first database that lives inside your app as a single `.db`
+file. No server to run, no schema to define, no migrations to manage. You get
+the flexibility of MongoDB, the familiarity of a Prisma-style API, and the
+reliability of SQLite — all in one `npm install`.
+
+One easy CRUD/query language, two storage modes on the same file:
+
+- **Document mode** (default) — schema-free JSON, like MongoDB.
+- **[Structured mode](#structured-collections-the-sql-skin)** — real native SQL
+  columns (typed, indexed, joinable) when you want them.
+
+…plus full SQL whenever you need it (joins, CTEs, window functions) via the
+escape hatch, and optional **[local-first sync](#sync--local-first)** with
+MongoDB through [`@monlite/sync`](https://www.npmjs.com/package/@monlite/sync).
 
 ```ts
 import { createDb } from "@monlite/core";
@@ -338,6 +348,43 @@ createDb("./app.db", { verbose: (sql) => console.log(sql) }); // see json_extrac
 
 > Note: structured collections are not yet covered by `@monlite/sync` (document
 > collections are) — that's planned follow-up work.
+
+---
+
+## Sync & local-first
+
+The companion package [`@monlite/sync`](https://www.npmjs.com/package/@monlite/sync)
+replicates a local monlite database with a remote source of truth — MongoDB
+first — so apps can work offline and converge when reconnected.
+
+Opt in with `{ sync: true }` (adds a change feed + tombstones + versioning; zero
+overhead when off), then drive an engine:
+
+```ts
+import { createDb } from "@monlite/core";
+import { sync, MongoAdapter } from "@monlite/sync";
+import { MongoClient } from "mongodb";
+
+const db = createDb("./app.db", { sync: true });
+const mongo = new MongoClient(uri);
+await mongo.connect();
+
+const engine = sync(db, {
+  adapter: new MongoAdapter({ client: mongo, db: "app" }),
+  collections: "*",
+  mode: "two-way",   // "pull" | "push" | "two-way"
+  conflict: "lww",   // or a custom resolver
+  interval: 5000,
+});
+
+await engine.start();
+```
+
+Pull / push / two-way replication, last-write-wins (or custom) conflict
+resolution, and pluggable adapters (`MongoAdapter`, `MonliteAdapter` for
+monlite-to-monlite, `MemoryAdapter` for tests). monlite's ObjectId-compatible
+`_id`s map 1:1 to Mongo `_id`s. See the
+[`@monlite/sync` README](https://www.npmjs.com/package/@monlite/sync) for details.
 
 ---
 
