@@ -28,6 +28,8 @@ export type {
   AggregateResult,
   GroupByArgs,
   GroupByResult,
+  HavingComparison,
+  HavingInput,
   MonliteOptions,
   DriverName,
 } from "./types.js";

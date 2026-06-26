@@ -250,6 +250,29 @@ const grouped = await users.groupBy({
   orderBy: { _count: "desc" },
 });
 // [ { role: "admin", _count: 5, _sum: { age: 140 } }, … ]
+
+// groupBy + having (filter groups by an aggregate, like SQL HAVING)
+await users.groupBy({
+  by: ["role"],
+  _count: true,
+  _sum: { age: true },
+  having: {
+    _count: { gte: 2 },          // keep groups with COUNT(*) >= 2
+    _sum: { age: { gt: 50 } },   // and SUM(age) > 50
+  },
+});
+// having comparisons: equals, not, gt, gte, lt, lte — on _count and on
+// _sum/_avg/_min/_max of any field.
+```
+
+### distinct
+
+```ts
+await users.distinct("role");                       // ["admin", "editor"]
+await users.distinct("age", { role: "admin" });     // [28, 31]
+
+// Array fields are unwound — each element is a value (like MongoDB):
+await users.distinct("tags");                        // ["a", "b", "c"]
 ```
 
 ---

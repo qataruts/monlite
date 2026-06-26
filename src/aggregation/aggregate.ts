@@ -3,6 +3,8 @@ import type {
   AggregateResult,
   GroupByArgs,
   GroupByResult,
+  HavingComparison,
+  HavingInput,
 } from "../types.js";
 import type { Driver } from "../driver/types.js";
 import { buildWhere } from "../query/where.js";
@@ -75,6 +77,52 @@ export function aggregate(
   return result;
 }
 
+const HAVING_FNS = [
+  ["_sum", "SUM"],
+  ["_avg", "AVG"],
+  ["_min", "MIN"],
+  ["_max", "MAX"],
+] as const;
+
+function comparisonSql(
+  expr: string,
+  cmp: HavingComparison,
+  params: any[],
+): string[] {
+  const out: string[] = [];
+  const ops: Array<[keyof HavingComparison, string]> = [
+    ["equals", "="],
+    ["not", "<>"],
+    ["gt", ">"],
+    ["gte", ">="],
+    ["lt", "<"],
+    ["lte", "<="],
+  ];
+  for (const [key, op] of ops) {
+    const v = cmp[key];
+    if (v === undefined) continue;
+    params.push(v);
+    out.push(`${expr} ${op} ?`);
+  }
+  return out;
+}
+
+/** Build a SQL `HAVING` expression from a having spec. Returns "" when empty. */
+function buildHaving(having: HavingInput, params: any[]): string {
+  const parts: string[] = [];
+  if (having._count) {
+    parts.push(...comparisonSql("COUNT(*)", having._count, params));
+  }
+  for (const [kind, fn] of HAVING_FNS) {
+    const selection = having[kind];
+    if (!selection) continue;
+    for (const field of Object.keys(selection)) {
+      parts.push(...comparisonSql(`${fn}(${fieldExpr(field)})`, selection[field]!, params));
+    }
+  }
+  return parts.join(" AND ");
+}
+
 export function groupBy(
   ctx: AggContext,
   args: GroupByArgs,
@@ -102,6 +150,12 @@ export function groupBy(
   let sql =
     `SELECT ${selects.join(", ")} FROM "${ctx.table}" WHERE ${where} ` +
     `GROUP BY ${groupExprs.join(", ")}`;
+
+  if (args.having) {
+    // HAVING params come after WHERE params and before LIMIT/OFFSET — push now.
+    const havingSql = buildHaving(args.having, params);
+    if (havingSql) sql += ` HAVING ${havingSql}`;
+  }
 
   if (args.orderBy) {
     const parts: string[] = [];

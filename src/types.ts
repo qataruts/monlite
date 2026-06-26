@@ -164,9 +164,29 @@ export interface AggregateResult {
   _max?: Record<string, any>;
 }
 
+/** Numeric comparison used by `groupBy` having-filters. */
+export interface HavingComparison {
+  equals?: number;
+  not?: number;
+  gt?: number;
+  gte?: number;
+  lt?: number;
+  lte?: number;
+}
+
+/** Post-aggregation filter (SQL `HAVING`) for `groupBy`. */
+export interface HavingInput {
+  _count?: HavingComparison;
+  _sum?: Record<string, HavingComparison>;
+  _avg?: Record<string, HavingComparison>;
+  _min?: Record<string, HavingComparison>;
+  _max?: Record<string, HavingComparison>;
+}
+
 export interface GroupByArgs<T = Doc> {
   by: string[];
   where?: WhereInput<T>;
+  having?: HavingInput;
   _count?: boolean;
   _sum?: FieldSelection;
   _avg?: FieldSelection;

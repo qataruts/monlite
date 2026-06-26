@@ -72,3 +72,46 @@ describe("groupBy", () => {
     expect(res[0]._count).toBe(2);
   });
 });
+
+describe("groupBy having-filters", () => {
+  it("filters groups by an aggregate (_sum)", async () => {
+    // admin sum(age)=60, editor sum(age)=44
+    const res = await db.collection("users").groupBy({
+      by: ["role"],
+      _sum: { age: true },
+      having: { _sum: { age: { gt: 50 } } },
+    });
+    expect(res.map((r) => r.role)).toEqual(["admin"]);
+    expect(res[0]._sum.age).toBe(60);
+  });
+
+  it("filters by _count", async () => {
+    expect(
+      await db.collection("users").groupBy({
+        by: ["role"],
+        _count: true,
+        having: { _count: { gte: 2 } },
+      }),
+    ).toHaveLength(2);
+
+    expect(
+      await db.collection("users").groupBy({
+        by: ["role"],
+        _count: true,
+        having: { _count: { gt: 2 } },
+      }),
+    ).toHaveLength(0);
+  });
+
+  it("combines where, having and orderBy", async () => {
+    const res = await db.collection("users").groupBy({
+      by: ["role"],
+      where: { age: { gte: 21 } }, // drops Lina(20) -> editor sum=24, admin sum=60
+      _sum: { age: true },
+      having: { _sum: { age: { lt: 50 } } },
+      orderBy: { role: "asc" },
+    });
+    expect(res.map((r) => r.role)).toEqual(["editor"]);
+    expect(res[0]._sum.age).toBe(24);
+  });
+});

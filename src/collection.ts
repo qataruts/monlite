@@ -22,6 +22,7 @@ import { buildWhere } from "./query/where.js";
 import { buildOrderBy } from "./query/order.js";
 import { project } from "./query/select.js";
 import { applyUpdate } from "./query/update.js";
+import { fieldExpr, isReserved, pathLiteral } from "./query/sql.js";
 import { aggregate, groupBy } from "./aggregation/aggregate.js";
 
 interface Row {
@@ -163,6 +164,32 @@ export class Collection<T = Doc> {
       .prepare(`SELECT COUNT(*) AS n FROM "${this.name}" WHERE ${where}`)
       .get(...params) as { n: number };
     return row.n;
+  }
+
+  /**
+   * Return the distinct values of a field across the collection. Array fields
+   * are unwound (each element counts as a value), matching MongoDB's `distinct`.
+   */
+  async distinct(field: string, where?: WhereInput<T>): Promise<any[]> {
+    this.ensureTable();
+    const params: any[] = [];
+    const clause = buildWhere(where, { params, onPath: this.trackPath });
+
+    let sql: string;
+    if (isReserved(field)) {
+      sql =
+        `SELECT DISTINCT ${fieldExpr(field)} AS v FROM "${this.name}" ` +
+        `WHERE ${clause} ORDER BY v`;
+    } else {
+      this.trackPath(field);
+      sql =
+        `SELECT DISTINCT je.value AS v FROM "${this.name}" ` +
+        `CROSS JOIN json_each("${this.name}".data, ${pathLiteral(field)}) je ` +
+        `WHERE ${clause} ORDER BY v`;
+    }
+
+    const rows = this.db.prepare(sql).all(...params) as Array<{ v: any }>;
+    return rows.map((r) => r.v);
   }
 
   /* ----------------------------- update ----------------------------- */
