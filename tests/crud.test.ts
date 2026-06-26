@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { createDb, isObjectId, type Monlite } from "../src/index";
+import { isObjectId, type Monlite } from "../src/index";
+import { openDb } from "./helper";
 
 interface User {
   name: string;
@@ -13,7 +14,7 @@ interface User {
 let db: Monlite;
 
 beforeEach(() => {
-  db = createDb(":memory:");
+  db = openDb();
 });
 afterEach(async () => {
   await db.$disconnect();

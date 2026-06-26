@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { createDb, type Monlite } from "../src/index";
+import { type Monlite } from "../src/index";
+import { openDb } from "./helper";
 
 let db: Monlite;
 beforeEach(() => {
-  db = createDb(":memory:");
+  db = openDb();
 });
 afterEach(async () => {
   await db.$disconnect();

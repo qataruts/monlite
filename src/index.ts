@@ -29,7 +29,9 @@ export type {
   GroupByArgs,
   GroupByResult,
   MonliteOptions,
+  DriverName,
 } from "./types.js";
+export type { Driver, PreparedStatement } from "./driver/types.js";
 
 // Convenience aliases.
 export type { Monlite as Db } from "./db.js";

@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { createDb, type Monlite } from "../src/index";
+import { type Monlite } from "../src/index";
+import { openDb } from "./helper";
 
 let db: Monlite;
 
 beforeEach(async () => {
-  db = createDb(":memory:");
+  db = openDb();
   await db.collection("users").createMany({
     data: [
       { name: "Ali", age: 28, role: "admin", tags: ["a", "b"], address: { city: "Riyadh" } },

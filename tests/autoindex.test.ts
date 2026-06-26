@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { createDb, type Monlite } from "../src/index";
+import { type Monlite } from "../src/index";
+import { openDb } from "./helper";
 
 let db: Monlite;
 afterEach(async () => {
@@ -16,7 +17,7 @@ function indexNames(d: Monlite): string[] {
 
 describe("auto-indexing", () => {
   it("creates an index after the threshold is crossed", async () => {
-    db = createDb(":memory:", { autoIndexAfter: 3 });
+    db = openDb({ autoIndexAfter: 3 });
     const users = db.collection("users");
     await users.create({ data: { city: "Riyadh" } });
 
@@ -30,7 +31,7 @@ describe("auto-indexing", () => {
   });
 
   it("can be disabled", async () => {
-    db = createDb(":memory:", { autoIndex: false, autoIndexAfter: 1 });
+    db = openDb({ autoIndex: false, autoIndexAfter: 1 });
     const users = db.collection("users");
     await users.create({ data: { city: "Riyadh" } });
     await users.findMany({ where: { city: "Riyadh" } });

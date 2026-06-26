@@ -1,15 +1,15 @@
-import type { Database } from "better-sqlite3";
 import type {
   AggregateArgs,
   AggregateResult,
   GroupByArgs,
   GroupByResult,
 } from "../types.js";
+import type { Driver } from "../driver/types.js";
 import { buildWhere } from "../query/where.js";
 import { fieldExpr } from "../query/sql.js";
 
 export interface AggContext {
-  db: Database;
+  db: Driver;
   table: string;
   onPath: (path: string) => void;
 }

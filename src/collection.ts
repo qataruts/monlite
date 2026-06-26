@@ -53,7 +53,7 @@ export class Collection<T = Doc> {
   ) {}
 
   private get db() {
-    return this.mon.sqlite;
+    return this.mon.driver;
   }
 
   private ensureTable(): void {
@@ -107,13 +107,12 @@ export class Collection<T = Doc> {
     const stmt = this.db.prepare(
       `INSERT INTO "${this.name}" (_id, data, created_at, updated_at) VALUES (?, ?, ?, ?)`,
     );
-    const insertAll = this.db.transaction((items: Record<string, any>[]) => {
-      for (const item of items) {
+    this.db.transaction(() => {
+      for (const item of args.data) {
         const row = this.prepareInsert(item);
         stmt.run(row._id, row.data, row.created_at, row.updated_at);
       }
     });
-    insertAll(args.data);
     return { count: args.data.length };
   }
 
@@ -187,7 +186,7 @@ export class Collection<T = Doc> {
       `UPDATE "${this.name}" SET data = ?, updated_at = ? WHERE _id = ?`,
     );
 
-    const txn = this.db.transaction(() => {
+    return this.db.transaction(() => {
       const out: WithId<T>[] = [];
       for (const row of rows) {
         const current = JSON.parse(row.data) as Record<string, any>;
@@ -202,8 +201,6 @@ export class Collection<T = Doc> {
       }
       return out;
     });
-
-    return txn();
   }
 
   async update(args: UpdateArgs<T>): Promise<WithId<T> | null> {
@@ -243,10 +240,9 @@ export class Collection<T = Doc> {
     if (!rows.length) return [];
 
     const stmt = this.db.prepare(`DELETE FROM "${this.name}" WHERE _id = ?`);
-    const txn = this.db.transaction(() => {
+    this.db.transaction(() => {
       for (const row of rows) stmt.run(row._id);
     });
-    txn();
 
     return rows.map((r) => this.rowToDoc(r));
   }

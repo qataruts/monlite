@@ -26,11 +26,18 @@ That's it. No setup. No config. Your data is in `app.db`.
 
 ```bash
 npm install @monlite/core
-# or: pnpm add @monlite/core / yarn add @monlite/core
 ```
 
-monlite uses [`better-sqlite3`](https://github.com/WiseLibs/better-sqlite3) under
-the hood (its only runtime dependency). Node 18+ is required.
+**monlite has zero required dependencies.** On **Node 22.5+** it uses the
+built-in [`node:sqlite`](https://nodejs.org/api/sqlite.html) engine out of the
+box. To run on Node 18/20 — or to avoid `node:sqlite`'s experimental warning —
+also install the (optional) native driver:
+
+```bash
+npm install @monlite/core better-sqlite3
+```
+
+See [Drivers & zero dependencies](#drivers--zero-dependencies) below.
 
 ---
 
@@ -65,6 +72,7 @@ const mem = createDb(":memory:");      // in-memory database
 
 ```ts
 const db = createDb("./app.db", {
+  driver: "auto",       // "auto" | "better-sqlite3" | "node:sqlite" (default: "auto")
   autoIndex: true,      // auto-create indexes on hot JSON paths (default: true)
   autoIndexAfter: 10,   // create an index after a path is queried N times (default: 10)
   readonly: false,      // open read-only (default: false)
@@ -276,7 +284,9 @@ await db.$transaction((tx) => {
 });
 ```
 
-Need the raw driver? `db.sqlite` is the underlying `better-sqlite3` instance.
+Need the raw driver? `db.sqlite` is the underlying native handle (a
+`better-sqlite3` `Database` or a `node:sqlite` `DatabaseSync`, depending on the
+active backend), and `db.driverName` tells you which one is in use.
 
 ---
 
@@ -302,8 +312,36 @@ await db.$collections();   // string[] of collection names
 await db.$drop("users");   // drop a collection and its data
 await db.$dropAll();       // drop everything
 await db.$disconnect();    // close the connection
-db.sqlite;                 // the underlying better-sqlite3 instance
+db.sqlite;                 // the underlying native driver handle
+db.driverName;             // "better-sqlite3" | "node:sqlite"
 ```
+
+---
+
+## Drivers & zero dependencies
+
+monlite talks to SQLite through a tiny driver adapter, so it runs on two
+interchangeable backends:
+
+| Backend | When it's used | Notes |
+|---|---|---|
+| **`node:sqlite`** | Built into Node **22.5+** | **Zero dependencies.** Still flagged experimental by Node, so it prints a one-time `ExperimentalWarning`. |
+| **`better-sqlite3`** | When the package is installed | Battle-tested native driver. Works on Node 18/20/22, no warning. Install it yourself: `npm i better-sqlite3`. |
+
+By default (`driver: "auto"`) monlite uses `better-sqlite3` if it's installed,
+otherwise falls back to the built-in `node:sqlite`. Force one explicitly:
+
+```ts
+createDb("./app.db", { driver: "node:sqlite" });    // zero-dep (Node 22.5+)
+createDb("./app.db", { driver: "better-sqlite3" }); // native, no warning
+```
+
+Both backends pass the exact same test suite, so behavior is identical — pick
+based on your Node version and whether you want the extra dependency.
+
+> Want truly zero dependencies on Node 22.5+? Just `npm install @monlite/core`
+> and don't install `better-sqlite3`. To silence the experimental warning,
+> either install `better-sqlite3` or run Node with `--no-warnings`.
 
 ---
 
@@ -325,8 +363,9 @@ and `updated_at` are real columns. SQLite's built-in `json_extract` /
 `json_each` power all document queries. No columns are added per field, so
 there is no schema and no migration — ever.
 
-All operations are synchronous under the hood (better-sqlite3 is sync) but are
-exposed as `async` (they return Promises) for API consistency and future-proofing.
+All operations are synchronous under the hood (both SQLite backends are sync)
+but are exposed as `async` (they return Promises) for API consistency and
+future-proofing.
 
 ### Notes & limitations
 

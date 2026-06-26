@@ -183,7 +183,14 @@ export type GroupByResult = Record<string, any>;
  * Configuration
  * ------------------------------------------------------------------ */
 
+export type DriverName = "auto" | "better-sqlite3" | "node:sqlite";
+
 export interface MonliteOptions {
+  /**
+   * Which SQLite backend to use. `"auto"` (default) prefers `better-sqlite3`
+   * when installed, otherwise the built-in `node:sqlite` (Node >= 22.5).
+   */
+  driver?: DriverName;
   /** Auto-create indexes on frequently-queried JSON paths. Default `true`. */
   autoIndex?: boolean;
   /** Number of times a path must be queried before an index is created. Default `10`. */

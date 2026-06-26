@@ -1,10 +1,10 @@
-import Database from "better-sqlite3";
-import type { Database as SqliteDatabase } from "better-sqlite3";
 import type { Doc, MonliteOptions } from "./types.js";
 import { Collection } from "./collection.js";
 import { AutoIndexer } from "./auto-index.js";
 import { MonliteError } from "./errors.js";
 import { bindable } from "./query/sql.js";
+import { createDriver } from "./driver/index.js";
+import type { Driver } from "./driver/types.js";
 
 function validateName(name: string): void {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
@@ -36,8 +36,8 @@ function buildTagged(
  * Create one with {@link createDb}.
  */
 export class Monlite {
-  /** The underlying better-sqlite3 connection (escape hatch). */
-  readonly sqlite: SqliteDatabase;
+  /** @internal The active SQLite driver. */
+  readonly driver: Driver;
   /** @internal */
   readonly autoIndexer: AutoIndexer;
 
@@ -45,21 +45,28 @@ export class Monlite {
   private closed = false;
 
   constructor(filename: string, options: MonliteOptions = {}) {
-    const verbose = options.verbose;
-    this.sqlite = new Database(filename, {
-      readonly: options.readonly ?? false,
-      ...(verbose ? { verbose: (msg?: unknown) => verbose(String(msg)) } : {}),
+    this.driver = createDriver(filename, {
+      driver: options.driver,
+      readonly: options.readonly,
+      wal: options.wal,
+      verbose: options.verbose,
     });
 
-    if (!options.readonly && (options.wal ?? true)) {
-      this.sqlite.pragma("journal_mode = WAL");
-    }
-
     this.autoIndexer = new AutoIndexer(
-      this.sqlite,
+      this.driver,
       options.autoIndex ?? true,
       options.autoIndexAfter ?? 10,
     );
+  }
+
+  /** The underlying native database handle (escape hatch). */
+  get sqlite(): any {
+    return this.driver.raw;
+  }
+
+  /** Name of the active backend: `"better-sqlite3"` or `"node:sqlite"`. */
+  get driverName(): string {
+    return this.driver.name;
   }
 
   /** Get (or lazily create) a typed collection handle. */
@@ -78,14 +85,14 @@ export class Monlite {
   $queryRaw<R = any>(strings: TemplateStringsArray, ...values: any[]): Promise<R[]> {
     this.assertOpen();
     const { sql, params } = buildTagged(strings, values);
-    return Promise.resolve(this.sqlite.prepare(sql).all(...params) as R[]);
+    return Promise.resolve(this.driver.prepare(sql).all(...params) as R[]);
   }
 
   /** Like {@link $queryRaw} but takes a raw SQL string and positional params. */
   $queryRawUnsafe<R = any>(sql: string, ...params: any[]): Promise<R[]> {
     this.assertOpen();
     return Promise.resolve(
-      this.sqlite.prepare(sql).all(...params.map(bindable)) as R[],
+      this.driver.prepare(sql).all(...params.map(bindable)) as R[],
     );
   }
 
@@ -93,14 +100,14 @@ export class Monlite {
   $executeRaw(strings: TemplateStringsArray, ...values: any[]): Promise<number> {
     this.assertOpen();
     const { sql, params } = buildTagged(strings, values);
-    return Promise.resolve(this.sqlite.prepare(sql).run(...params).changes);
+    return Promise.resolve(this.driver.prepare(sql).run(...params).changes);
   }
 
   /** Like {@link $executeRaw} but takes a raw SQL string and positional params. */
   $executeRawUnsafe(sql: string, ...params: any[]): Promise<number> {
     this.assertOpen();
     return Promise.resolve(
-      this.sqlite.prepare(sql).run(...params.map(bindable)).changes,
+      this.driver.prepare(sql).run(...params.map(bindable)).changes,
     );
   }
 
@@ -110,16 +117,15 @@ export class Monlite {
    */
   async $transaction<R>(fn: (db: this) => R): Promise<R> {
     this.assertOpen();
-    // better-sqlite3 transactions are synchronous; `fn` must not be async.
-    // A throw inside `txn()` rolls back and rejects this promise.
-    const txn = this.sqlite.transaction(() => fn(this));
-    return txn();
+    // Transactions are synchronous; `fn` must not be async. A throw inside
+    // rolls back and (being in an async method) rejects this promise.
+    return this.driver.transaction(() => fn(this));
   }
 
   /** List all collection (table) names. */
   $collections(): Promise<string[]> {
     this.assertOpen();
-    const rows = this.sqlite
+    const rows = this.driver
       .prepare(
         `SELECT name FROM sqlite_master
          WHERE type='table' AND name NOT LIKE 'sqlite_%'
@@ -133,7 +139,7 @@ export class Monlite {
   $drop(name: string): Promise<void> {
     this.assertOpen();
     validateName(name);
-    this.sqlite.exec(`DROP TABLE IF EXISTS "${name}"`);
+    this.driver.exec(`DROP TABLE IF EXISTS "${name}"`);
     this.collections.delete(name);
     this.autoIndexer.reset(name);
     return Promise.resolve();
@@ -148,7 +154,7 @@ export class Monlite {
   $disconnect(): Promise<void> {
     if (!this.closed) {
       this.closed = true;
-      this.sqlite.close();
+      this.driver.close();
     }
     return Promise.resolve();
   }
