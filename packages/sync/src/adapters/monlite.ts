@@ -33,6 +33,7 @@ export class MonliteAdapter implements SyncAdapter {
     const { changes, maxSeq } = this.remote.$sync!.changesSince(
       from,
       opts.collections,
+      opts.limit,
     );
     return { changes, cursor: String(maxSeq) };
   }

@@ -73,10 +73,11 @@ function translateField(field: string, condition: any, ctx: WhereContext): strin
   }
 
   const filter = condition as Record<string, any>;
+  const ci = filter.mode === "insensitive";
   const clauses: string[] = [];
   for (const op of Object.keys(filter)) {
     const v = filter[op];
-    if (v === undefined) continue;
+    if (v === undefined || op === "mode") continue;
 
     switch (op) {
       case "equals":
@@ -104,16 +105,22 @@ function translateField(field: string, condition: any, ctx: WhereContext): strin
         clauses.push(inExpr(expr, v, ctx, true));
         break;
       case "contains":
-        clauses.push(containsExpr(field, expr, v, ctx));
+        clauses.push(containsExpr(field, expr, v, ctx, ci));
         break;
       case "startsWith":
         ctx.params.push(bindable(v));
-        clauses.push(`instr(${expr}, ?) = 1`);
+        clauses.push(
+          ci ? `instr(lower(${expr}), lower(?)) = 1` : `instr(${expr}, ?) = 1`,
+        );
         break;
       case "endsWith":
         ctx.params.push(bindable(v));
         ctx.params.push(bindable(v));
-        clauses.push(`substr(${expr}, -length(?)) = ?`);
+        clauses.push(
+          ci
+            ? `substr(lower(${expr}), -length(?)) = lower(?)`
+            : `substr(${expr}, -length(?)) = ?`,
+        );
         break;
       case "has":
         clauses.push(hasExpr(field, expr, v, ctx));
@@ -183,18 +190,21 @@ function containsExpr(
   expr: string,
   v: any,
   ctx: WhereContext,
+  ci: boolean,
 ): string {
+  const sub = ci ? `instr(lower(${expr}), lower(?)) > 0` : `instr(${expr}, ?) > 0`;
   if (isColumn(field, ctx.columns)) {
     ctx.params.push(bindable(v));
-    return `instr(${expr}, ?) > 0`;
+    return sub;
   }
   const path = pathLiteral(field);
+  const member = ci ? `lower(value) = lower(?)` : `value = ?`;
   ctx.params.push(bindable(v)); // array branch
   ctx.params.push(bindable(v)); // string branch
   return (
     `(CASE WHEN json_type(data, ${path}) = 'array' ` +
-    `THEN EXISTS (SELECT 1 FROM json_each(data, ${path}) WHERE value = ?) ` +
-    `ELSE instr(${expr}, ?) > 0 END)`
+    `THEN EXISTS (SELECT 1 FROM json_each(data, ${path}) WHERE ${member}) ` +
+    `ELSE ${sub} END)`
   );
 }
 

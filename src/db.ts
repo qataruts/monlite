@@ -6,7 +6,7 @@ import type {
 } from "./types.js";
 import { Collection } from "./collection.js";
 import { AutoIndexer } from "./auto-index.js";
-import { MonliteError } from "./errors.js";
+import { MonliteError, normalizeDriverError } from "./errors.js";
 import { bindable } from "./query/sql.js";
 import { createDriver } from "./driver/index.js";
 import type { Driver } from "./driver/types.js";
@@ -57,6 +57,7 @@ export class Monlite {
       driver: options.driver,
       readonly: options.readonly,
       wal: options.wal,
+      busyTimeout: options.busyTimeout,
       verbose: options.verbose,
     });
 
@@ -98,6 +99,21 @@ export class Monlite {
     if (!col) {
       col = new Collection<T>(this, name, options);
       this.collections.set(name, col);
+    } else if (options?.schema) {
+      // A collection's mode/columns are fixed on first access; surface conflicts
+      // instead of silently ignoring a re-declaration.
+      const requested = Object.keys(options.schema);
+      const existing = new Set(col.columnNames);
+      const sameShape =
+        col.mode === "structured" &&
+        requested.length === existing.size &&
+        requested.every((c) => existing.has(c));
+      if (!sameShape) {
+        throw new MonliteError(
+          `Collection "${name}" was already opened with a different schema/mode. ` +
+            `A collection's storage mode is fixed on first access.`,
+        );
+      }
     }
     return col as Collection<T>;
   }
@@ -138,7 +154,11 @@ export class Monlite {
   $executeRaw(strings: TemplateStringsArray, ...values: any[]): Promise<number> {
     this.assertOpen();
     const { sql, params } = buildTagged(strings, values);
-    return Promise.resolve(this.driver.prepare(sql).run(...params).changes);
+    try {
+      return Promise.resolve(this.driver.prepare(sql).run(...params).changes);
+    } catch (err) {
+      throw normalizeDriverError(err);
+    }
   }
 
   /** Like {@link $executeRaw} but takes a raw SQL string and positional params. */

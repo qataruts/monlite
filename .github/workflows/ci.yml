@@ -26,15 +26,16 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - run: pnpm typecheck
+      # -r runs across BOTH packages (core + sync), topologically ordered.
+      - run: pnpm -r typecheck
 
-      - run: pnpm build
+      - run: pnpm -r build
 
       - name: Test (default / better-sqlite3)
-        run: pnpm test
+        run: pnpm -r test
 
       - name: Test (node:sqlite backend)
         if: matrix.node == 22
-        run: pnpm test
+        run: pnpm -r test
         env:
           MONLITE_DRIVER: node:sqlite

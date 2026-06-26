@@ -1,8 +1,23 @@
 /** Deep get/set/unset on plain objects using dot-notation paths. */
 
+import { MonliteQueryError } from "../errors.js";
+
+const FORBIDDEN = new Set(["__proto__", "prototype", "constructor"]);
+
+/** Reject path segments that could pollute the prototype chain. */
+function safeSegments(path: string): string[] {
+  const segs = path.split(".");
+  for (const seg of segs) {
+    if (FORBIDDEN.has(seg)) {
+      throw new MonliteQueryError(`Illegal path segment "${seg}" in "${path}"`);
+    }
+  }
+  return segs;
+}
+
 export function getPath(obj: any, path: string): any {
   let cur = obj;
-  for (const seg of path.split(".")) {
+  for (const seg of safeSegments(path)) {
     if (cur == null) return undefined;
     cur = cur[seg];
   }
@@ -10,7 +25,7 @@ export function getPath(obj: any, path: string): any {
 }
 
 export function setPath(obj: any, path: string, value: any): void {
-  const segs = path.split(".");
+  const segs = safeSegments(path);
   let cur = obj;
   for (let i = 0; i < segs.length - 1; i++) {
     const seg = segs[i]!;
@@ -21,7 +36,7 @@ export function setPath(obj: any, path: string, value: any): void {
 }
 
 export function unsetPath(obj: any, path: string): void {
-  const segs = path.split(".");
+  const segs = safeSegments(path);
   let cur = obj;
   for (let i = 0; i < segs.length - 1; i++) {
     const seg = segs[i]!;

@@ -1,6 +1,14 @@
 export { createDb, Monlite } from "./db.js";
 export { Collection } from "./collection.js";
-export { MonliteError, MonliteQueryError } from "./errors.js";
+export {
+  MonliteError,
+  MonliteQueryError,
+  MonliteConstraintError,
+  MonliteUniqueConstraintError,
+  MonliteNotNullError,
+  MonliteForeignKeyError,
+  normalizeDriverError,
+} from "./errors.js";
 export { objectId, isObjectId } from "./id.js";
 
 export type {

@@ -1,5 +1,7 @@
 import type { Driver, DriverOpenOptions, PreparedStatement } from "./types.js";
 
+const STMT_CACHE_MAX = 256;
+
 /**
  * Adapter over Node's built-in `node:sqlite` (Node >= 22.5). Lets monlite run
  * with zero external dependencies. Note: `node:sqlite` is still flagged
@@ -12,6 +14,7 @@ export class NodeSqliteDriver implements Driver {
   readonly name = "node:sqlite";
   readonly raw: any;
   private readonly verbose?: (sql: string) => void;
+  private readonly cache = new Map<string, PreparedStatement>();
   private depth = 0;
 
   constructor(nodeSqlite: any, filename: string, options: DriverOpenOptions) {
@@ -20,6 +23,7 @@ export class NodeSqliteDriver implements Driver {
     this.raw = new DatabaseSync(filename, {
       readOnly: options.readonly ?? false,
     });
+    this.raw.exec(`PRAGMA busy_timeout = ${options.busyTimeout ?? 5000}`);
     if (!options.readonly && (options.wal ?? true)) {
       this.raw.exec("PRAGMA journal_mode = WAL");
     }
@@ -32,12 +36,21 @@ export class NodeSqliteDriver implements Driver {
 
   prepare(sql: string): PreparedStatement {
     this.verbose?.(sql);
+    const cached = this.cache.get(sql);
+    if (cached) return cached;
+
     const stmt = this.raw.prepare(sql);
-    return {
+    const wrapped: PreparedStatement = {
       run: (...p: any[]) => stmt.run(...p),
       get: (...p: any[]) => stmt.get(...p),
       all: (...p: any[]) => stmt.all(...p),
     };
+    if (this.cache.size >= STMT_CACHE_MAX) {
+      const oldest = this.cache.keys().next().value;
+      if (oldest !== undefined) this.cache.delete(oldest);
+    }
+    this.cache.set(sql, wrapped);
+    return wrapped;
   }
 
   transaction<T>(fn: () => T): T {
@@ -54,13 +67,25 @@ export class NodeSqliteDriver implements Driver {
       return result;
     } catch (err) {
       this.depth--;
-      if (this.depth === 0) this.raw.exec("ROLLBACK");
-      else this.raw.exec(`ROLLBACK TO ${savepoint}; RELEASE ${savepoint}`);
+      // Best-effort rollback. If the rollback itself fails, force the depth
+      // back to a clean state so the connection isn't poisoned for the process.
+      try {
+        if (this.depth === 0) this.raw.exec("ROLLBACK");
+        else this.raw.exec(`ROLLBACK TO ${savepoint}; RELEASE ${savepoint}`);
+      } catch {
+        this.depth = 0;
+        try {
+          this.raw.exec("ROLLBACK");
+        } catch {
+          /* already rolled back / no active txn */
+        }
+      }
       throw err;
     }
   }
 
   close(): void {
+    this.cache.clear();
     this.raw.close();
   }
 }

@@ -22,7 +22,11 @@ import type {
   WithId,
 } from "./types.js";
 import { objectId } from "./id.js";
-import { MonliteError } from "./errors.js";
+import {
+  MonliteError,
+  MonliteQueryError,
+  normalizeDriverError,
+} from "./errors.js";
 import { buildWhere } from "./query/where.js";
 import { buildOrderBy } from "./query/order.js";
 import { project } from "./query/select.js";
@@ -32,6 +36,7 @@ import {
   fieldExpr,
   isColumn,
   pathLiteral,
+  quoteIdent,
   RESERVED_FIELDS,
 } from "./query/sql.js";
 import { aggregate, groupBy } from "./aggregation/aggregate.js";
@@ -94,6 +99,16 @@ export class Collection<T = Doc> {
         }
         const normalized: ColumnDef =
           typeof def === "string" ? { type: def } : def;
+        if (
+          normalized.references &&
+          !/^[A-Za-z_][A-Za-z0-9_]*(\([A-Za-z_][A-Za-z0-9_]*\))?$/.test(
+            normalized.references,
+          )
+        ) {
+          throw new MonliteError(
+            `Invalid references "${normalized.references}" on column "${field}"`,
+          );
+        }
         this.columnDefs[field] = normalized;
         this.columnOrder.push(field);
         this.columns.add(field);
@@ -104,6 +119,15 @@ export class Collection<T = Doc> {
 
   private get db() {
     return this.mon.driver;
+  }
+
+  /** Run a DB operation, normalizing driver errors into typed MonliteErrors. */
+  private guard<R>(fn: () => R): R {
+    try {
+      return fn();
+    } catch (err) {
+      throw normalizeDriverError(err, this.name);
+    }
   }
 
   /** Native column names declared for this collection (structured mode). */
@@ -164,7 +188,11 @@ export class Collection<T = Doc> {
     if (this.mode === "structured") {
       for (const field of this.columnOrder) {
         const value = row[field];
-        if (value === null || value === undefined) continue;
+        if (value === undefined) continue;
+        if (value === null) {
+          doc[field] = null; // explicit null round-trips (SQL columns always exist)
+          continue;
+        }
         doc[field] = this.jsonColumns.has(field) ? JSON.parse(value) : value;
       }
     }
@@ -178,6 +206,17 @@ export class Collection<T = Doc> {
   private encodeColumn(field: string, value: any): any {
     if (this.jsonColumns.has(field)) {
       return value === undefined ? null : JSON.stringify(value);
+    }
+    if (
+      value !== null &&
+      typeof value === "object" &&
+      !(value instanceof Date) &&
+      !Buffer.isBuffer(value)
+    ) {
+      throw new MonliteQueryError(
+        `Column "${field}" cannot store an object/array. Declare it as ` +
+          `{ type: "JSON" } to store structured values.`,
+      );
     }
     return bindable(value);
   }
@@ -281,8 +320,7 @@ export class Collection<T = Doc> {
       this.db.prepare(this.insertSql()).run(...row.values);
       recorder?.recordLocal(this.name, row._id, "upsert", row.created_at);
     };
-    if (recorder) this.db.transaction(write);
-    else write();
+    this.guard(() => (recorder ? this.db.transaction(write) : write()));
     return row.returned;
   }
 
@@ -290,13 +328,15 @@ export class Collection<T = Doc> {
     this.ensureTable();
     const stmt = this.db.prepare(this.insertSql());
     const recorder = this.recorder;
-    this.db.transaction(() => {
-      for (const item of args.data) {
-        const row = this.buildInsert(item);
-        stmt.run(...row.values);
-        recorder?.recordLocal(this.name, row._id, "upsert", row.created_at);
-      }
-    });
+    this.guard(() =>
+      this.db.transaction(() => {
+        for (const item of args.data) {
+          const row = this.buildInsert(item);
+          stmt.run(...row.values);
+          recorder?.recordLocal(this.name, row._id, "upsert", row.created_at);
+        }
+      }),
+    );
     return { count: args.data.length };
   }
 
@@ -331,6 +371,33 @@ export class Collection<T = Doc> {
   async findFirst(args: FindFirstArgs<T> = {}): Promise<WithId<T> | null> {
     const rows = await this.findMany({ ...args, take: 1 });
     return rows[0] ?? null;
+  }
+
+  /** Alias of {@link findFirst} for Prisma familiarity. */
+  async findUnique(args: FindFirstArgs<T> = {}): Promise<WithId<T> | null> {
+    return this.findFirst(args);
+  }
+
+  /** Like {@link findFirst} but throws if no document matches. */
+  async findFirstOrThrow(args: FindFirstArgs<T> = {}): Promise<WithId<T>> {
+    const doc = await this.findFirst(args);
+    if (!doc) throw new MonliteError(`No document found in "${this.name}"`);
+    return doc;
+  }
+
+  /** True if at least one document matches. */
+  async exists(where?: WhereInput<T>): Promise<boolean> {
+    this.ensureTable();
+    const params: any[] = [];
+    const clause = buildWhere(where, {
+      params,
+      onPath: this.trackPath,
+      columns: this.columns,
+    });
+    const row = this.db
+      .prepare(`SELECT 1 FROM "${this.name}" WHERE ${clause} LIMIT 1`)
+      .get(...params);
+    return row != null;
   }
 
   async findById(id: string): Promise<WithId<T> | null> {
@@ -381,8 +448,10 @@ export class Collection<T = Doc> {
         `WHERE ${clause} ORDER BY v`;
     }
 
-    const rows = this.db.prepare(sql).all(...params) as Array<{ v: any }>;
-    return rows.map((r) => r.v);
+    return this.guard(() => {
+      const rows = this.db.prepare(sql).all(...params) as Array<{ v: any }>;
+      return rows.map((r) => r.v);
+    });
   }
 
   /* ----------------------------- update ----------------------------- */
@@ -408,25 +477,27 @@ export class Collection<T = Doc> {
     const now = Date.now();
     const recorder = this.recorder;
 
-    return this.db.transaction(() => {
-      const out: WithId<T>[] = [];
-      for (const row of rows) {
-        const current = stripSystem(this.rowToDoc(row));
-        const updated = stripSystem(applyUpdate(current, data));
-        const { setSql, values } = this.buildUpdateSet(updated, now);
-        this.db
-          .prepare(`UPDATE "${this.name}" SET ${setSql} WHERE _id = ?`)
-          .run(...values, row._id);
-        recorder?.recordLocal(this.name, row._id, "upsert", now);
-        out.push({
-          ...updated,
-          _id: row._id,
-          created_at: row.created_at,
-          updated_at: now,
-        } as WithId<T>);
-      }
-      return out;
-    });
+    return this.guard(() =>
+      this.db.transaction(() => {
+        const out: WithId<T>[] = [];
+        for (const row of rows) {
+          const current = stripSystem(this.rowToDoc(row));
+          const updated = stripSystem(applyUpdate(current, data));
+          const { setSql, values } = this.buildUpdateSet(updated, now);
+          this.db
+            .prepare(`UPDATE "${this.name}" SET ${setSql} WHERE _id = ?`)
+            .run(...values, row._id);
+          recorder?.recordLocal(this.name, row._id, "upsert", now);
+          out.push({
+            ...updated,
+            _id: row._id,
+            created_at: row.created_at,
+            updated_at: now,
+          } as WithId<T>);
+        }
+        return out;
+      }),
+    );
   }
 
   async update(args: UpdateArgs<T>): Promise<WithId<T> | null> {
@@ -439,15 +510,45 @@ export class Collection<T = Doc> {
 
   async upsert(args: UpsertArgs<T>): Promise<WithId<T>> {
     this.ensureTable();
-    const existing = await this.findFirst({ where: args.where });
-    if (existing) {
-      const updated = await this.update({
-        where: { _id: existing._id } as WhereInput<T>,
-        data: args.update,
-      });
-      return updated as WithId<T>;
-    }
-    return this.create({ data: args.create });
+    // Find + create/update run inside ONE transaction so concurrent/interleaved
+    // upserts can't both miss and double-insert.
+    return this.guard(() =>
+      this.db.transaction(() => {
+        const params: any[] = [];
+        const clause = buildWhere(args.where, {
+          params,
+          onPath: this.trackPath,
+          columns: this.columns,
+        });
+        const row = this.db
+          .prepare(`SELECT * FROM "${this.name}" WHERE ${clause} LIMIT 1`)
+          .get(...params) as Row | undefined;
+
+        const now = Date.now();
+        const recorder = this.recorder;
+
+        if (row) {
+          const current = stripSystem(this.rowToDoc(row));
+          const updated = stripSystem(applyUpdate(current, args.update));
+          const { setSql, values } = this.buildUpdateSet(updated, now);
+          this.db
+            .prepare(`UPDATE "${this.name}" SET ${setSql} WHERE _id = ?`)
+            .run(...values, row._id);
+          recorder?.recordLocal(this.name, row._id, "upsert", now);
+          return {
+            ...updated,
+            _id: row._id,
+            created_at: row.created_at,
+            updated_at: now,
+          } as WithId<T>;
+        }
+
+        const ins = this.buildInsert(args.create);
+        this.db.prepare(this.insertSql()).run(...ins.values);
+        recorder?.recordLocal(this.name, ins._id, "upsert", ins.created_at);
+        return ins.returned;
+      }),
+    );
   }
 
   /* ----------------------------- delete ----------------------------- */
@@ -472,12 +573,14 @@ export class Collection<T = Doc> {
     const stmt = this.db.prepare(`DELETE FROM "${this.name}" WHERE _id = ?`);
     const recorder = this.recorder;
     const now = Date.now();
-    this.db.transaction(() => {
-      for (const row of rows) {
-        stmt.run(row._id);
-        recorder?.recordLocal(this.name, row._id, "delete", now);
-      }
-    });
+    this.guard(() =>
+      this.db.transaction(() => {
+        for (const row of rows) {
+          stmt.run(row._id);
+          recorder?.recordLocal(this.name, row._id, "delete", now);
+        }
+      }),
+    );
 
     return rows.map((r) => this.rowToDoc(r));
   }
@@ -496,17 +599,21 @@ export class Collection<T = Doc> {
 
   async aggregate(args: AggregateArgs<T> = {}): Promise<AggregateResult> {
     this.ensureTable();
-    return aggregate(
-      { db: this.db, table: this.name, onPath: this.trackPath, columns: this.columns },
-      args,
+    return this.guard(() =>
+      aggregate(
+        { db: this.db, table: this.name, onPath: this.trackPath, columns: this.columns },
+        args,
+      ),
     );
   }
 
   async groupBy(args: GroupByArgs<T>): Promise<GroupByResult[]> {
     this.ensureTable();
-    return groupBy(
-      { db: this.db, table: this.name, onPath: this.trackPath, columns: this.columns },
-      args,
+    return this.guard(() =>
+      groupBy(
+        { db: this.db, table: this.name, onPath: this.trackPath, columns: this.columns },
+        args,
+      ),
     );
   }
 }

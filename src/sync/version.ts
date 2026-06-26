@@ -10,9 +10,18 @@
 export type Version = string;
 
 const TS_WIDTH = 15; // fits ms timestamps well past the year 5000
+const SEQ_WIDTH = 12; // per-node monotonic tiebreaker
 
-export function makeVersion(ts: number, nodeId: string): Version {
-  return String(ts).padStart(TS_WIDTH, "0") + ":" + nodeId;
+/**
+ * Build a version token. The optional `seq` is a per-node monotonic counter
+ * that makes versions unique even within the same millisecond — important so
+ * that cursor-based pulls (`> version`) never skip a same-timestamp change.
+ */
+export function makeVersion(ts: number, nodeId: string, seq?: number): Version {
+  const base = String(ts).padStart(TS_WIDTH, "0") + ":" + nodeId;
+  return seq === undefined
+    ? base
+    : base + ":" + String(seq).padStart(SEQ_WIDTH, "0");
 }
 
 export function compareVersions(a: Version, b: Version): number {

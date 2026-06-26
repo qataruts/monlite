@@ -90,6 +90,7 @@ interface Row {
  */
 export class SyncStore {
   readonly nodeId: string;
+  private versionSeq = 0;
 
   constructor(
     private readonly db: Driver,
@@ -157,7 +158,7 @@ export class SyncStore {
 
   /** Append a locally-originated change to the feed. Call inside a write txn. */
   recordLocal(collection: string, id: string, op: SyncOp, ts: number): Version {
-    const version = makeVersion(ts, this.nodeId);
+    const version = makeVersion(ts, this.nodeId, this.versionSeq++);
     this.db
       .prepare(
         `INSERT INTO _monlite_changes (coll, doc_id, op, version, ts, source, pushed)
@@ -181,12 +182,17 @@ export class SyncStore {
   /* ----------------------------- push side ----------------------------- */
 
   /** Latest unpushed local change per document (the push queue). */
-  pending(collections?: string[]): LocalChange[] {
+  pending(collections?: string[], limit?: number): LocalChange[] {
     const params: any[] = [];
     let collFilter = "";
     if (collections && collections.length) {
       collFilter = ` AND coll IN (${collections.map(() => "?").join(", ")})`;
       params.push(...collections);
+    }
+    let limitClause = "";
+    if (limit != null && limit > 0) {
+      limitClause = " LIMIT ?";
+      params.push(limit);
     }
     const rows = this.db
       .prepare(
@@ -198,7 +204,7 @@ export class SyncStore {
            WHERE source = 'local' AND pushed = 0${collFilter}
            GROUP BY coll, doc_id
          ) m ON c.coll = m.coll AND c.doc_id = m.doc_id AND c.seq = m.mseq
-         ORDER BY c.seq`,
+         ORDER BY c.seq${limitClause}`,
       )
       .all(...params) as Row[];
 
@@ -241,38 +247,40 @@ export class SyncStore {
    */
   applyRemote(change: RemoteChange, resolver?: ConflictResolver): ApplyResult {
     assertName(change.collection);
-    const localVersion = this.currentVersion(change.collection, change._id);
+    // Read the local version, decide the winner, and write — all in ONE
+    // transaction so the decision can't race an interleaved write.
+    return this.db.transaction((): ApplyResult => {
+      const localVersion = this.currentVersion(change.collection, change._id);
 
-    let winner: "local" | "remote";
-    if (localVersion === null) {
-      winner = "remote";
-    } else if (change.version === localVersion) {
-      return { applied: false, conflict: false, winner: "none" }; // echo
-    } else {
-      winner = resolver
-        ? resolver({
-            collection: change.collection,
-            _id: change._id,
-            local: { version: localVersion },
-            remote: { version: change.version, doc: change.doc },
-          })
-        : compareVersions(change.version, localVersion) > 0
-          ? "remote"
-          : "local";
-      this.recordConflict(
-        change.collection,
-        change._id,
-        localVersion,
-        change.version,
-        winner,
-      );
-    }
+      let winner: "local" | "remote";
+      if (localVersion === null) {
+        winner = "remote";
+      } else if (change.version === localVersion) {
+        return { applied: false, conflict: false, winner: "none" }; // echo
+      } else {
+        winner = resolver
+          ? resolver({
+              collection: change.collection,
+              _id: change._id,
+              local: { version: localVersion },
+              remote: { version: change.version, doc: change.doc },
+            })
+          : compareVersions(change.version, localVersion) > 0
+            ? "remote"
+            : "local";
+        this.recordConflict(
+          change.collection,
+          change._id,
+          localVersion,
+          change.version,
+          winner,
+        );
+      }
 
-    if (winner !== "remote") {
-      return { applied: false, conflict: localVersion !== null, winner };
-    }
+      if (winner !== "remote") {
+        return { applied: false, conflict: localVersion !== null, winner };
+      }
 
-    this.db.transaction(() => {
       this.applyData(change);
       this.db
         .prepare(
@@ -286,9 +294,9 @@ export class SyncStore {
           change.version,
           versionTs(change.version),
         );
-    });
 
-    return { applied: true, conflict: localVersion !== null, winner: "remote" };
+      return { applied: true, conflict: localVersion !== null, winner: "remote" };
+    });
   }
 
   private applyData(change: RemoteChange): void {
@@ -319,12 +327,18 @@ export class SyncStore {
   changesSince(
     seq: number,
     collections?: string[],
+    limit?: number,
   ): { changes: RemoteChange[]; maxSeq: number } {
     const params: any[] = [seq];
     let collFilter = "";
     if (collections && collections.length) {
       collFilter = ` AND coll IN (${collections.map(() => "?").join(", ")})`;
       params.push(...collections);
+    }
+    let limitClause = "";
+    if (limit != null && limit > 0) {
+      limitClause = " LIMIT ?";
+      params.push(limit);
     }
     const rows = this.db
       .prepare(
@@ -336,7 +350,7 @@ export class SyncStore {
            WHERE seq > ?${collFilter}
            GROUP BY coll, doc_id
          ) m ON c.coll = m.coll AND c.doc_id = m.doc_id AND c.seq = m.mseq
-         ORDER BY c.seq`,
+         ORDER BY c.seq${limitClause}`,
       )
       .all(...params) as Row[];
 
@@ -355,10 +369,9 @@ export class SyncStore {
       return change;
     });
 
-    const maxRow = this.db
-      .prepare(`SELECT MAX(seq) AS m FROM _monlite_changes`)
-      .get() as { m: number | null };
-    return { changes, maxSeq: maxRow?.m ?? seq };
+    // Advance only to the last row we actually returned (correct under LIMIT).
+    const maxSeq = rows.length ? rows[rows.length - 1]!.seq : seq;
+    return { changes, maxSeq };
   }
 
   /* ------------------------------ bootstrap ----------------------------- */

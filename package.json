@@ -1,6 +1,6 @@
 {
   "name": "@monlite/core",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "An embedded document database for TypeScript apps. MongoDB-like API, Prisma-like DX, SQLite under the hood. Zero config, zero migrations, zero server.",
   "type": "module",
   "packageManager": "pnpm@10.30.3",

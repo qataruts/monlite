@@ -7,6 +7,7 @@ import type {
   HavingInput,
 } from "../types.js";
 import type { Driver } from "../driver/types.js";
+import { MonliteQueryError } from "../errors.js";
 import { buildWhere } from "../query/where.js";
 import { fieldExpr, isColumn } from "../query/sql.js";
 
@@ -141,7 +142,7 @@ export function groupBy(
   args: GroupByArgs,
 ): GroupByResult[] {
   if (!Array.isArray(args.by) || args.by.length === 0) {
-    throw new Error("groupBy requires a non-empty `by` array");
+    throw new MonliteQueryError("groupBy requires a non-empty `by` array");
   }
 
   const params: any[] = [];
@@ -151,14 +152,19 @@ export function groupBy(
     columns: ctx.columns,
   });
 
+  // Use generated aliases (never the raw field name) so a user-supplied `by`
+  // field can never break out of the SQL — then map back to the field in JS.
   const groupExprs: string[] = [];
+  const groupCols: Array<{ alias: string; field: string }> = [];
   const selects: string[] = [];
-  for (const field of args.by) {
+  args.by.forEach((field, gi) => {
     if (!isColumn(field, ctx.columns)) ctx.onPath(field);
     const expr = fieldExpr(field, ctx.columns);
+    const alias = `grp_${gi}`;
     groupExprs.push(expr);
-    selects.push(`${expr} AS "${field}"`);
-  }
+    selects.push(`${expr} AS ${alias}`);
+    groupCols.push({ alias, field });
+  });
 
   selects.push(`COUNT(*) AS agg_count`);
   const { selects: accSelects, cols } = buildAccumulators(args, ctx.onPath, ctx.columns);
@@ -198,7 +204,7 @@ export function groupBy(
 
   return rows.map((row) => {
     const out: GroupByResult = {};
-    for (const field of args.by) out[field] = row[field];
+    for (const { alias, field } of groupCols) out[field] = row[alias];
     if (args._count) out._count = row.agg_count;
     for (const col of cols) {
       (out[col.kind] ??= {})[col.field] = row[col.alias] ?? null;

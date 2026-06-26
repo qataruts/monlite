@@ -58,6 +58,17 @@ describe("string operators", () => {
     expect(await names({ name: { startsWith: "S" } })).toEqual(["Sara"]);
     expect(await names({ name: { endsWith: "a" } })).toEqual(["Lina", "Sara"]);
   });
+  it("mode: insensitive matches case-insensitively", async () => {
+    // case-sensitive "li" misses "Lina" (capital L); insensitive catches it
+    expect(await names({ name: { contains: "li" } })).toEqual(["Ali"]);
+    expect(await names({ name: { contains: "li", mode: "insensitive" } })).toEqual([
+      "Ali",
+      "Lina",
+    ]);
+    expect(
+      await names({ name: { startsWith: "s", mode: "insensitive" } }),
+    ).toEqual(["Sara"]);
+  });
 });
 
 describe("array operators", () => {

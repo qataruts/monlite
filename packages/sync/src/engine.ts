@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import type { Monlite, ConflictResolver } from "@monlite/core";
+import { MonliteError, type Monlite, type ConflictResolver } from "@monlite/core";
 import type {
   SyncAdapter,
   SyncMode,
@@ -8,6 +8,9 @@ import type {
   SyncStatus,
   Unsubscribe,
 } from "./types.js";
+
+const DEFAULT_BATCH_SIZE = 500;
+const MAX_BACKOFF_MS = 60_000;
 
 /**
  * Orchestrates replication between a local sync-enabled monlite database and a
@@ -22,11 +25,13 @@ export class SyncEngine extends EventEmitter {
   private readonly explicitCollections?: string[];
   private readonly interval?: number;
   private readonly live: boolean;
+  private readonly batchSize: number;
 
-  private timer?: ReturnType<typeof setInterval>;
+  private timer?: ReturnType<typeof setTimeout>;
   private unwatch?: Unsubscribe;
   private started = false;
   private inFlight: Promise<SyncRoundStats> | null = null;
+  private failures = 0;
 
   constructor(
     private readonly db: Monlite,
@@ -34,8 +39,13 @@ export class SyncEngine extends EventEmitter {
   ) {
     super();
     if (!db.$sync) {
-      throw new Error(
+      throw new MonliteError(
         "SyncEngine requires a database opened with { sync: true }",
+      );
+    }
+    if (typeof opts.conflict === "string" && opts.conflict !== "lww") {
+      throw new MonliteError(
+        `Unknown conflict strategy "${opts.conflict}". Use "lww" or a function.`,
       );
     }
     this.adapter = opts.adapter;
@@ -49,6 +59,9 @@ export class SyncEngine extends EventEmitter {
         : undefined;
     this.interval = opts.interval;
     this.live = opts.live ?? false;
+    this.batchSize = opts.batchSize ?? DEFAULT_BATCH_SIZE;
+    // An 'error' emit with no listener crashes the host process; guarantee one.
+    this.on("error", () => {});
   }
 
   private get store() {
@@ -75,12 +88,7 @@ export class SyncEngine extends EventEmitter {
 
     await this.sync();
 
-    if (this.interval && this.interval > 0) {
-      this.timer = setInterval(() => {
-        this.sync().catch((err) => this.emit("error", err));
-      }, this.interval);
-      this.timer.unref?.();
-    }
+    if (this.interval && this.interval > 0) this.scheduleNext();
 
     if (this.live && this.adapter.watch) {
       this.unwatch = this.adapter.watch(
@@ -99,6 +107,30 @@ export class SyncEngine extends EventEmitter {
     }
 
     this.emit("start");
+  }
+
+  /** Self-scheduling poll loop with exponential backoff + jitter on failure. */
+  private scheduleNext(): void {
+    const base = this.interval!;
+    const backoff =
+      this.failures > 0
+        ? Math.min(base * 2 ** this.failures, MAX_BACKOFF_MS)
+        : base;
+    const delay = backoff + Math.floor(Math.random() * backoff * 0.2);
+    this.timer = setTimeout(() => {
+      this.sync()
+        .then(() => {
+          this.failures = 0;
+        })
+        .catch((err) => {
+          this.failures++;
+          this.emit("error", err);
+        })
+        .finally(() => {
+          if (this.started && this.interval) this.scheduleNext();
+        });
+    }, delay);
+    this.timer.unref?.();
   }
 
   /** Run a single sync round. Concurrent calls share the in-flight round. */
@@ -139,6 +171,7 @@ export class SyncEngine extends EventEmitter {
     const state = this.store.getState(this.remote);
     const res = await this.adapter.pull(state.cursor, {
       collections: this.explicitCollections,
+      limit: this.batchSize,
     });
 
     let applied = 0;
@@ -163,7 +196,7 @@ export class SyncEngine extends EventEmitter {
   }
 
   private async pushOnce() {
-    const pending = this.store.pending(this.explicitCollections);
+    const pending = this.store.pending(this.explicitCollections, this.batchSize);
     if (!pending.length) return { pushed: 0, rejected: 0 };
 
     const res = await this.adapter.push(pending);
@@ -182,7 +215,7 @@ export class SyncEngine extends EventEmitter {
   async stop(): Promise<void> {
     this.started = false;
     if (this.timer) {
-      clearInterval(this.timer);
+      clearTimeout(this.timer);
       this.timer = undefined;
     }
     if (this.unwatch) {
@@ -203,6 +236,7 @@ export class SyncEngine extends EventEmitter {
       cursor: state.cursor,
       lastPullAt: state.lastPullAt,
       lastPushAt: state.lastPushAt,
+      failures: this.failures,
     };
   }
 }

@@ -1,22 +1,7 @@
 # 🌙 monlite
 
-> An embedded document **and** relational database for TypeScript apps.
-> MongoDB-like API. Prisma-like DX. SQLite under the hood. Zero config.
-
-monlite is a local-first database that lives inside your app as a single `.db`
-file. No server to run, no schema to define, no migrations to manage. You get
-the flexibility of MongoDB, the familiarity of a Prisma-style API, and the
-reliability of SQLite — all in one `npm install`.
-
-One easy CRUD/query language, two storage modes on the same file:
-
-- **Document mode** (default) — schema-free JSON, like MongoDB.
-- **[Structured mode](#structured-collections-the-sql-skin)** — real native SQL
-  columns (typed, indexed, joinable) when you want them.
-
-…plus full SQL whenever you need it (joins, CTEs, window functions) via the
-escape hatch, and optional **[local-first sync](#sync--local-first)** with
-MongoDB through [`@monlite/sync`](https://www.npmjs.com/package/@monlite/sync).
+> Your app's local database. A MongoDB-like API and Prisma-style DX in a single
+> file. Zero config, zero migrations, zero server.
 
 ```ts
 import { createDb } from "@monlite/core";
@@ -28,7 +13,36 @@ await users.create({ data: { name: "Ali", age: 28 } });
 await users.findMany({ where: { age: { gte: 18 } } });
 ```
 
-That's it. No setup. No config. Your data is in `app.db`.
+That's the whole setup. Your data is in `app.db`.
+
+---
+
+## Mental model (read this first)
+
+monlite is **one database with one query API.** You never have to choose "SQL or
+NoSQL." You only choose, per collection, **where each field is stored:**
+
+- **Document mode** (default) — the whole document is stored as JSON. Flexible
+  and schema-free, like MongoDB.
+- **Structured mode** (`db.collection(name, { schema })`) — the fields you
+  declare become real SQL columns (typed, indexed, joinable). Anything else
+  overflows into JSON automatically.
+
+> **A schema changes the _storage_, never the _syntax_.**
+> `create`, `find`, `where`, `orderBy`, `groupBy` are identical in both modes and
+> return identical results — structured mode is just faster and SQL-native underneath.
+
+Raw SQL is the one optional place SQL becomes visible: the `$queryRaw` escape
+hatch, for joins/CTEs/window functions the document API doesn't cover.
+
+| You decide… | Document (default) | Structured (`{ schema }`) |
+| --- | --- | --- |
+| **How you query** | `find` / `where` / `orderBy` / `groupBy` | **identical** |
+| **Where a field lives** | JSON `data` blob | a native column (declared) — the rest overflow to JSON |
+| **Pick it when** | the shape is unknown or varies per record | the shape is stable and you want joins, FKs, reporting, or fast native indexes |
+
+You can mix both in the same `.db`, and move a collection from document to
+structured later without changing a single query.
 
 ---
 
@@ -66,6 +80,20 @@ See [Drivers & zero dependencies](#drivers--zero-dependencies) below.
 If your data is structured and you already know your schema, plain SQLite adds
 nothing on top of monlite — use it directly. monlite earns its keep when your
 documents are dynamic, schema-free, or mirror a cloud NoSQL store.
+
+### How monlite compares
+
+| | monlite | MongoDB | better-sqlite3 | Prisma + SQLite |
+|---|---|---|---|---|
+| Schema-free documents | ✅ | ✅ | ⚠️ manual JSON | ❌ |
+| Native typed columns | ✅ (opt-in) | ❌ | ✅ | ✅ |
+| Same API for both | ✅ | — | — | — |
+| Raw SQL escape hatch | ✅ | ❌ | ✅ | ✅ (`$queryRaw`) |
+| No server / single file | ✅ | ❌ | ✅ | ✅ |
+| No migrations / codegen | ✅ | ✅ | ✅ | ❌ |
+| Aggregation API | ✅ | ✅ | ⚠️ manual | ⚠️ limited |
+| Local-first sync | ✅ (`@monlite/sync`) | ⚠️ Atlas/Realm | ❌ | ❌ |
+| Runtime dependencies | **0** (Node 22.5+) | server | 1 (native) | several |
 
 ---
 
@@ -134,6 +162,9 @@ await users.createMany({ data: [{ name: "Sara" }, { name: "Omar" }] });
 // read
 await users.findById("…");                                  // doc | null
 await users.findFirst({ where: { name: "Ali" } });          // doc | null
+await users.findUnique({ where: { email: "a@x.com" } });    // alias of findFirst
+await users.findFirstOrThrow({ where: { name: "Ali" } });   // throws if missing
+await users.exists({ role: "admin" });                      // boolean
 await users.findMany({
   where: { age: { gte: 18 } },
   orderBy: { age: "desc" },
@@ -177,10 +208,11 @@ where: { age: { gt: 18 } }               // gt, gte, lt, lte
 where: { role: { in: ["admin", "editor"] } }
 where: { role: { notIn: ["guest"] } }
 
-// String (case-sensitive; wildcards are matched literally)
+// String (case-sensitive by default; wildcards are matched literally)
 where: { name: { contains: "li" } }
 where: { name: { startsWith: "A" } }
 where: { name: { endsWith: "i" } }
+where: { name: { contains: "ALI", mode: "insensitive" } }  // case-insensitive (ASCII)
 
 // Arrays
 where: { tags: { contains: "admin" } }   // element membership
@@ -287,14 +319,15 @@ await users.distinct("tags");                        // ["a", "b", "c"]
 
 ---
 
-## Structured collections (the SQL skin)
+## Structured collections (native SQL columns)
 
 By default a collection is **document mode** — schema-free, every field stored
 as JSON. Pass a `schema` to make it a **structured collection**: the declared
 fields become real, typed SQL columns (fast, indexable, joinable, constrainable)
 and any *other* fields overflow into a JSON column. **The CRUD/query API is
-identical** — `find`, `where`, `orderBy`, `groupBy`, `distinct`, updates — only
-the storage underneath changes.
+identical** — `find`, `where`, `orderBy`, `groupBy`, `distinct`, updates. As the
+[mental model](#mental-model-read-this-first) says: a schema changes the storage,
+not the syntax.
 
 ```ts
 const orders = db.collection("orders", {

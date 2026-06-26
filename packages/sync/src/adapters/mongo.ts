@@ -78,6 +78,7 @@ export class MongoAdapter implements SyncAdapter {
     }
 
     const acked: LocalChange[] = [];
+    const rejected: Array<{ change: LocalChange; reason: string }> = [];
     for (const [collName, list] of byColl) {
       const ops = list.map((c) => {
         const _id = this.toId(c._id, ObjectId);
@@ -105,10 +106,28 @@ export class MongoAdapter implements SyncAdapter {
           },
         };
       });
-      if (ops.length) await this.coll(collName).bulkWrite(ops, { ordered: false });
-      acked.push(...list);
+      if (!ops.length) continue;
+      try {
+        await this.coll(collName).bulkWrite(ops, { ordered: false });
+        acked.push(...list);
+      } catch (err: any) {
+        // Partial failure: with { ordered: false } all non-failed ops applied.
+        // Ack the survivors; route only the failed indices to `rejected`.
+        const failed = new Set<number>(
+          (err?.writeErrors ?? []).map((w: any) => w?.index ?? w?.err?.index),
+        );
+        if (failed.size === 0) {
+          // Unknown failure shape — reject the whole batch to be safe.
+          for (const c of list) rejected.push({ change: c, reason: String(err?.message ?? err) });
+        } else {
+          list.forEach((c, idx) => {
+            if (failed.has(idx)) rejected.push({ change: c, reason: String(err?.message ?? err) });
+            else acked.push(c);
+          });
+        }
+      }
     }
-    return { acked };
+    return rejected.length ? { acked, rejected } : { acked };
   }
 
   async pull(cursor: Cursor, opts: PullOptions): Promise<PullResult> {
@@ -118,10 +137,9 @@ export class MongoAdapter implements SyncAdapter {
     let maxVersion = cursor ?? "";
 
     for (const collName of collections) {
-      const docs: any[] = await this.coll(collName)
-        .find(filter)
-        .sort({ [VERSION_FIELD]: 1 })
-        .toArray();
+      let query = this.coll(collName).find(filter).sort({ [VERSION_FIELD]: 1 });
+      if (opts.limit != null && opts.limit > 0) query = query.limit(opts.limit);
+      const docs: any[] = await query.toArray();
       for (const d of docs) {
         const version: string = d[VERSION_FIELD] ?? "";
         const idHex = d._id?.toString?.() ?? String(d._id);

@@ -85,6 +85,11 @@ export interface FieldFilter<V = any> {
   has?: any;
   /** Field presence. `true` requires the field to exist, `false` requires absence. */
   exists?: boolean;
+  /**
+   * Case sensitivity for `contains`/`startsWith`/`endsWith`. Default is
+   * case-sensitive; `"insensitive"` matches case-insensitively (ASCII).
+   */
+  mode?: "default" | "insensitive";
 }
 
 /** A value used directly as a filter is shorthand for `{ equals: value }`. */
@@ -273,6 +278,8 @@ export interface MonliteOptions {
   readonly?: boolean;
   /** Use SQLite WAL journal mode for better concurrency. Default `true`. */
   wal?: boolean;
+  /** Milliseconds to wait on a locked database before erroring. Default `5000`. */
+  busyTimeout?: number;
   /** Verbose logger for executed SQL (debugging). */
   verbose?: (sql: string) => void;
 }

@@ -8,6 +8,8 @@ export type Cursor = string | null;
 export interface PullOptions {
   /** Restrict to these collections (undefined = all the adapter knows about). */
   collections?: string[];
+  /** Max changes to return in one pull (the engine drains the rest next round). */
+  limit?: number;
 }
 
 export interface PullResult {
@@ -51,8 +53,11 @@ export interface SyncOptions {
   mode?: SyncMode;
   /** Conflict strategy. `"lww"` (default) or a custom resolver. */
   conflict?: "lww" | ConflictResolver;
-  /** Poll cadence in ms. Omit for manual `.sync()` only. */
+  /** Poll cadence in ms. Omit for manual `.sync()` only. On failure the loop
+   * backs off exponentially (with jitter) up to ~60s. */
   interval?: number;
+  /** Max changes moved per pull/push round. Large backlogs drain over rounds. Default 500. */
+  batchSize?: number;
   /** Subscribe to live changes via `adapter.watch` if available. */
   live?: boolean;
   /** State key for cursors/pointers. Defaults to the adapter name. */
@@ -78,4 +83,6 @@ export interface SyncStatus {
   cursor: Cursor;
   lastPullAt: number | null;
   lastPushAt: number | null;
+  /** Consecutive failed rounds (drives backoff); 0 when healthy. */
+  failures: number;
 }

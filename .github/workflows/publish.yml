@@ -5,6 +5,10 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: read
+  id-token: write # npm provenance
+
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -21,10 +25,13 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - run: pnpm build
+      - run: pnpm -r build
 
-      - run: pnpm test
+      - run: pnpm -r test
 
-      - run: pnpm publish --no-git-checks --access public
+      # Publishes every workspace package whose version isn't on npm yet, in
+      # dependency order, rewriting `workspace:^` to a real range. core before sync.
+      - run: pnpm -r publish --no-git-checks --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"

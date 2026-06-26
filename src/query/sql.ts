@@ -46,8 +46,13 @@ export function pathLiteral(field: string): string {
  * read from the `data` JSON blob via `json_extract`.
  */
 export function fieldExpr(field: string, columns?: Set<string>): string {
-  if (isColumn(field, columns)) return `"${field}"`;
+  if (isColumn(field, columns)) return quoteIdent(field);
   return `json_extract(data, ${pathLiteral(field)})`;
+}
+
+/** Quote a SQL identifier, doubling embedded quotes (defense-in-depth). */
+export function quoteIdent(name: string): string {
+  return `"${name.replace(/"/g, '""')}"`;
 }
 
 /**

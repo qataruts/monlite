@@ -30,6 +30,8 @@ export interface Driver {
 export interface DriverOpenOptions {
   readonly?: boolean;
   wal?: boolean;
+  /** Milliseconds to wait on a locked database before erroring. Default 5000. */
+  busyTimeout?: number;
   verbose?: (sql: string) => void;
 }
 

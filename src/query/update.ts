@@ -52,8 +52,13 @@ export function applyUpdate(
   }
   if (ops.$inc) {
     for (const [path, by] of Object.entries(ops.$inc)) {
+      if (typeof by !== "number" || !Number.isFinite(by)) {
+        throw new MonliteQueryError(
+          `$inc on "${path}" requires a finite number, got ${JSON.stringify(by)}`,
+        );
+      }
       const cur = getPath(next, path);
-      setPath(next, path, (typeof cur === "number" ? cur : 0) + Number(by));
+      setPath(next, path, (typeof cur === "number" ? cur : 0) + by);
     }
   }
   if (ops.$push) {
