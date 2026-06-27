@@ -48,7 +48,7 @@ jobs:
 
   mongo:
     runs-on: ubuntu-latest
-    name: Mongo integration
+    name: Integration (Mongo + Postgres)
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -67,9 +67,18 @@ jobs:
           docker exec mongo mongosh --quiet --eval "rs.initiate({_id:'rs0',members:[{_id:0,host:'127.0.0.1:27017'}]})"
           sleep 3
 
+      - name: Start PostgreSQL
+        run: |
+          docker run -d --name pg -e POSTGRES_PASSWORD=postgres -e POSTGRES_HOST_AUTH_METHOD=trust -p 5432:5432 postgres:16-alpine
+          for i in $(seq 1 30); do
+            docker exec pg pg_isready -U postgres >/dev/null 2>&1 && break
+            sleep 1
+          done
+
       - run: pnpm install --frozen-lockfile
 
-      - name: Integration tests (live MongoDB)
+      - name: Integration tests (live MongoDB + PostgreSQL)
         run: pnpm --filter @monlite/sync test
         env:
           MONGO_URL: mongodb://localhost:27017/?directConnection=true
+          PG_URL: postgres://postgres:postgres@localhost:5432/postgres

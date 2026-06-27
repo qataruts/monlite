@@ -34,8 +34,9 @@ sync to them.
   zero-dep built-in `node:sqlite`), typed errors, prepared-statement cache.
 - **`@monlite/sync`** — local-first replication (pull / push / two-way / live),
   LWW + custom conflict resolution, change feed + tombstones, and adapters for
-  **MongoDB** (verified against a live replica set, incl. change streams),
-  monlite-to-monlite, and in-memory. Document **and** structured collections sync.
+  **MongoDB** (live replica set, incl. change streams), **PostgreSQL** (jsonb
+  tables, live-tested), monlite-to-monlite, and in-memory. Document **and**
+  structured collections sync.
 - **Wave 1** — `collection.watch()` reactivity (row-level), auto-additive
   migrations, `collection.explain()`, and `db.backup()`.
 - **Plugin system** — `createDb({ plugins })` with `init`/`afterWrite`/
@@ -64,11 +65,9 @@ sync to them.
 - **`@monlite/devtools`** — inspector / query explorer ("Studio").
 
 ### Server-DB sync adapters
-- **Postgres / MySQL sync adapters** for `@monlite/sync` (same shape as the
-  MongoDB adapter) — keep local monlite as the fast embedded runtime and use a
-  server DB as the cloud of record. This is the right way monlite touches a
-  server DB: as a **sync target, not the engine** (Postgres is the natural fit —
-  JSONB, `SKIP LOCKED`, `pgvector`).
+- **MySQL sync adapter** for `@monlite/sync` (same shape as Mongo/Postgres) —
+  keep local monlite as the fast embedded runtime and use a server DB as the
+  cloud of record: a **sync target, not the engine**. (`PostgresAdapter` shipped.)
 
 ### Wave 4 — DX depth
 - **Stronger TypeScript inference** — typed `where`/`orderBy`/`select` and

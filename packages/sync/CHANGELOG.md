@@ -1,5 +1,13 @@
 # @monlite/sync
 
+## 1.1.0 — Postgres adapter
+
+- **`PostgresAdapter`** — replicate against PostgreSQL. Each collection maps to a
+  `jsonb` table; push upserts via `INSERT … ON CONFLICT (_id) DO UPDATE` with
+  soft-deletes, pull reads rows past a `_monlite_v` cursor. Local monlite stays
+  the embedded runtime; Postgres is the cloud of record. `pg` is an optional peer
+  dependency. Covered by live integration tests (gated on `PG_URL`).
+
 ## 1.0.0 — stable
 
 First stable release; tracks @monlite/core ^1.0.0. No code changes from 0.3.x.

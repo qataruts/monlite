@@ -58,8 +58,23 @@ echo back into an infinite loop.
 | Adapter | Use |
 |---|---|
 | `MongoAdapter` | Sync against MongoDB. `bulkWrite` upserts + soft-deletes, `_monlite_v` cursor for polling, change streams for live (`watch`). |
+| `PostgresAdapter` | Sync against PostgreSQL. Each collection maps to a `jsonb` table; `INSERT … ON CONFLICT` upserts + soft-deletes, `_monlite_v` cursor for polling. Keep local monlite as the embedded runtime and Postgres as the cloud of record. |
 | `MonliteAdapter` | Use another sync-enabled monlite database as the remote — monlite-to-monlite replication (e.g. multi-device via a shared hub). |
 | `MemoryAdapter` | In-memory remote for tests and as a reference implementation. |
+
+```ts
+import { sync, PostgresAdapter } from "@monlite/sync";
+import { Pool } from "pg";
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+sync(db, {
+  adapter: new PostgresAdapter({ pool }), // optional: schema, collectionMap
+  collections: ["todos"],
+});
+```
+
+`mongodb` and `pg` are optional peer dependencies — install only the one your
+adapter needs.
 
 Write your own by implementing `SyncAdapter` (`pull` / `push` / optional `watch`).
 
