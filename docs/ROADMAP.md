@@ -25,6 +25,8 @@ heavier capabilities as opt-in packages.
   `collection.findSimilar()`, plus **`hybridSearch()`** (FTS + vector fused with
   Reciprocal Rank Fusion) for RAG and AI-agent memory.
 - **Stable 1.0** — `@monlite/core` and `@monlite/sync` are at `1.0.0` (semver-stable).
+- **Examples + benchmarks** — runnable demos in [`examples/`](../examples/) and a
+  benchmark suite ([`docs/BENCHMARKS.md`](./BENCHMARKS.md)).
 
 ## Planned
 
@@ -34,12 +36,11 @@ heavier capabilities as opt-in packages.
 - **Electron/multi-window** helper (main-process DB + IPC bridge).
 - **`@monlite/devtools`** — inspector / query explorer ("Studio").
 
-### Wave 4 — DX depth & adoption
+### Wave 4 — DX depth
 - **Stronger TypeScript inference** — typed `where`/`orderBy`/`select` and
   `select`-narrowed return types.
 - **`$lookup` / `$unwind`** aggregation.
-- Real-world **examples** (Electron notes, POS/inventory, agent memory),
-  **benchmarks**, a **docs site**, and migration/custom-adapter **guides**.
+- A **docs site** and migration/custom-adapter **guides**.
 
 ### Wave 5 — breadth (demand-driven)
 - A **monlite file-format spec** so other languages can read/write the same `.db`.

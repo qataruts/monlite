@@ -610,6 +610,22 @@ future-proofing.
 
 ---
 
+## Examples
+
+Runnable demos live in [`examples/`](examples/): a notes app (CRUD + full-text
+search + live queries), AI-agent memory (vector + hybrid search), and local-first
+sync. `cd examples && npm install && node notes.mjs`.
+
+## Benchmarks
+
+[`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) compares monlite to the raw SQLite
+driver, NeDB, and lowdb (`pnpm bench` to reproduce). In short: ~150k–250k
+ops/sec, roughly 2× the raw-driver overhead for the full document API, and it
+**stays flat on indexed reads where JSON-file stores degrade** (lowdb point reads
+are ~15× slower at 10k docs).
+
+---
+
 ## License
 
 MIT 🌙
