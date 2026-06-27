@@ -269,6 +269,9 @@ await c.update({ where: { _id }, data: { $inc: { score: 1 } } });
 await c.update({ where: { _id }, data: { $push: { tags: "moderator" } } });
 await c.update({ where: { _id }, data: { $push: { tags: { $each: ["a", "b"] } } } });
 
+// $addToSet — append to an array only if not already present ($each supported)
+await c.update({ where: { _id }, data: { $addToSet: { tags: "moderator" } } });
+
 // $pull — remove matching elements from an array
 await c.update({ where: { _id }, data: { $pull: { tags: "guest" } } });
 
@@ -277,6 +280,24 @@ await c.update({ where: { _id }, data: { $unset: { temporaryField: true } } });
 ```
 
 `_id` is immutable — attempts to set it via update data are ignored.
+
+### Atomic & batch writes
+
+```ts
+// findOneAndUpdate — atomic read-modify-return ("after" by default, or "before")
+const updated = await accounts.findOneAndUpdate({
+  where: { _id },
+  data: { $inc: { balance: -50 } },
+});
+
+// bulkWrite — mixed insert/update/delete in ONE transaction (all-or-nothing)
+await orders.bulkWrite([
+  { insertOne: { _id: "o4", total: 40 } },
+  { updateOne: { where: { _id: "o1" }, data: { $set: { status: "paid" } } } },
+  { updateMany: { where: { stale: true }, data: { $set: { stale: false } } } },
+  { deleteOne: { where: { _id: "o2" } } },
+]); // → { inserted, updated, deleted }
+```
 
 ---
 

@@ -1,18 +1,23 @@
 # @monlite/core
 
-## 2.2.0 — async transactions (unit-of-work)
+## 2.2.0 — async transactions & Mongo-API completeness
 
-Closes the #1 production gap from `plan/PRODUCTION-READINESS.md` (P0-1).
+Closes P0-1 and a chunk of P1-1 from `plan/PRODUCTION-READINESS.md`.
 
 - **`db.transactionAsync(async (tx) => …)`** — an atomic unit of work whose
   callback **may `await`** (read → compute → write), all inside one
   `BEGIN IMMEDIATE … COMMIT`; a throw rolls the whole thing back. Unlike
   `$transaction` (sync-callback only), it supports interleaved async reads/compute.
-- **Serialized** so two concurrent async transactions can't interleave on the
-  shared connection — prevents lost updates (e.g. a double-entry posting is atomic
-  under concurrent callers). Read-your-writes holds within a unit.
-- Implemented on `better-sqlite3`, `node:sqlite`, and `@monlite/wasm`. Custom
-  drivers may add an optional `transactionAsync` to the `Driver` interface.
+  **Serialized** so concurrent units can't interleave on the shared connection —
+  prevents lost updates (a double-entry posting is atomic under concurrent
+  callers); read-your-writes holds within a unit. Implemented on `better-sqlite3`,
+  `node:sqlite`, and `@monlite/wasm`.
+- **`collection.findOneAndUpdate({ where, data, returnDocument? })`** — atomic
+  read-modify-return; returns the `"after"` (default) or `"before"` document.
+- **`collection.bulkWrite([...])`** — mixed `insertOne`/`updateOne`/`updateMany`/
+  `deleteOne`/`deleteMany` in **one transaction** (all-or-nothing).
+- **`$addToSet`** update operator — append to an array only if absent (supports
+  `$each`).
 
 ## 2.1.0 — durability & maintenance
 

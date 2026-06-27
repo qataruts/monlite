@@ -173,6 +173,8 @@ export interface UpdateOperators {
   $unset?: Record<string, true | 1>;
   $inc?: Record<string, number>;
   $push?: Record<string, any>;
+  /** Append to an array only if the value isn't already present. Supports `$each`. */
+  $addToSet?: Record<string, any>;
   $pull?: Record<string, any>;
 }
 
@@ -283,6 +285,28 @@ export interface UpsertArgs<T = Doc> {
 
 export interface DeleteArgs<T = Doc> {
   where: WhereInput<T>;
+}
+
+/** Atomically update the first matching document and return it. */
+export interface FindOneAndUpdateArgs<T = Doc> {
+  where: WhereInput<T>;
+  data: UpdateData<T>;
+  /** Return the document `"before"` or `"after"` the update. Default `"after"`. */
+  returnDocument?: "before" | "after";
+}
+
+/** A single operation in a {@link Collection.bulkWrite} batch. */
+export type BulkWriteOp<T = Doc> =
+  | { insertOne: Partial<T> & Record<string, any> }
+  | { updateOne: { where: WhereInput<T>; data: UpdateData<T> } }
+  | { updateMany: { where: WhereInput<T>; data: UpdateData<T> } }
+  | { deleteOne: { where: WhereInput<T> } }
+  | { deleteMany: { where: WhereInput<T> } };
+
+export interface BulkWriteResult {
+  inserted: number;
+  updated: number;
+  deleted: number;
 }
 
 export interface CountArgs<T = Doc> {

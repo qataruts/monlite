@@ -24,7 +24,7 @@ describe("transactionAsync (async unit-of-work)", () => {
     });
 
     await db.transactionAsync(async (tx) => {
-      const a = await tx.collection("acct").findById("A");
+      const a = (await tx.collection("acct").findById("A"))!;
       await Promise.resolve(); // an await inside the transaction
       await tx
         .collection("acct")
@@ -33,11 +33,11 @@ describe("transactionAsync (async unit-of-work)", () => {
         .collection("acct")
         .update({ where: { _id: "B" }, data: { bal: 50 } });
       // read-your-writes: the staged write is visible inside the same tx
-      expect((await tx.collection("acct").findById("A")).bal).toBe(50);
+      expect((await tx.collection("acct").findById("A"))!.bal).toBe(50);
     });
 
-    expect((await db.collection("acct").findById("A")).bal).toBe(50);
-    expect((await db.collection("acct").findById("B")).bal).toBe(50);
+    expect((await db.collection("acct").findById("A"))!.bal).toBe(50);
+    expect((await db.collection("acct").findById("B"))!.bal).toBe(50);
   });
 
   it("rolls the whole unit back on a mid-posting throw", async () => {
@@ -55,7 +55,7 @@ describe("transactionAsync (async unit-of-work)", () => {
       }),
     ).rejects.toThrow("boom");
 
-    expect((await db.collection("acct").findById("A")).bal).toBe(100); // debit undone
+    expect((await db.collection("acct").findById("A"))!.bal).toBe(100); // debit undone
     expect(await db.collection("ledger").count()).toBe(1); // only the seed; the +100 entry undone
   });
 
@@ -65,7 +65,7 @@ describe("transactionAsync (async unit-of-work)", () => {
 
     const increment = () =>
       db.transactionAsync(async (tx) => {
-        const a = await tx.collection("acct").findById("a");
+        const a = (await tx.collection("acct").findById("a"))!;
         await new Promise((r) => setTimeout(r, 5)); // widen the interleave window
         await tx
           .collection("acct")
@@ -74,6 +74,6 @@ describe("transactionAsync (async unit-of-work)", () => {
 
     await Promise.all([increment(), increment(), increment()]);
     // Without serialization, all three would read 0 and write 1 → balance 1.
-    expect((await db.collection("acct").findById("a")).balance).toBe(3);
+    expect((await db.collection("acct").findById("a"))!.balance).toBe(3);
   });
 });

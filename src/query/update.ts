@@ -2,7 +2,14 @@ import type { UpdateData } from "../types.js";
 import { MonliteQueryError } from "../errors.js";
 import { getPath, setPath, unsetPath } from "./path.js";
 
-const UPDATE_OPS = new Set(["$set", "$unset", "$inc", "$push", "$pull"]);
+const UPDATE_OPS = new Set([
+  "$set",
+  "$unset",
+  "$inc",
+  "$push",
+  "$addToSet",
+  "$pull",
+]);
 
 /** True when the payload uses update operators rather than plain fields. */
 export function isUpdateOperators(data: any): boolean {
@@ -75,6 +82,22 @@ export function applyUpdate(
         arr.push(...(value as any).$each);
       } else {
         arr.push(value);
+      }
+      setPath(next, path, arr);
+    }
+  }
+  if (ops.$addToSet) {
+    for (const [path, value] of Object.entries(ops.$addToSet)) {
+      const cur = getPath(next, path);
+      const arr = Array.isArray(cur) ? cur.slice() : [];
+      const toAdd =
+        value &&
+        typeof value === "object" &&
+        Array.isArray((value as any).$each)
+          ? (value as any).$each
+          : [value];
+      for (const v of toAdd) {
+        if (!arr.some((x) => sameValue(x, v))) arr.push(v);
       }
       setPath(next, path, arr);
     }

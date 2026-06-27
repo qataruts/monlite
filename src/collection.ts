@@ -2,6 +2,8 @@ import type { Monlite } from "./db.js";
 import type {
   AggregateArgs,
   AggregateResult,
+  BulkWriteOp,
+  BulkWriteResult,
   CollectionMode,
   CollectionOptions,
   ColumnDef,
@@ -11,6 +13,7 @@ import type {
   CreateManyArgs,
   DeleteArgs,
   Doc,
+  FindOneAndUpdateArgs,
   ExplainResult,
   FindFirstArgs,
   FindManyArgs,
@@ -957,6 +960,143 @@ export class Collection<T = Doc> {
       }),
     );
     this.afterWrite([result._id]);
+    return result;
+  }
+
+  /**
+   * Atomically find the first matching document, update it, and return it
+   * (`returnDocument: "before" | "after"`, default `"after"`). The read and
+   * write happen in one transaction.
+   */
+  async findOneAndUpdate(
+    args: FindOneAndUpdateArgs<T>,
+  ): Promise<WithId<T> | null> {
+    this.ensureTable();
+    const params: any[] = [];
+    const clause = buildWhere(args.where, {
+      params,
+      onPath: this.trackPath,
+      columns: this.columns,
+    });
+    const result = this.guard(() =>
+      this.db.transaction(() => {
+        const row = this.db
+          .prepare(`SELECT * FROM "${this.name}" WHERE ${clause} LIMIT 1`)
+          .get(...params) as Row | undefined;
+        if (!row) return null;
+        const before = this.rowToDoc(row) as WithId<T>;
+        const now = Date.now();
+        const updated = stripSystem(
+          applyUpdate(stripSystem(this.rowToDoc(row)), args.data),
+        );
+        const { setSql, values } = this.buildUpdateSet(updated, now);
+        this.db
+          .prepare(`UPDATE "${this.name}" SET ${setSql} WHERE _id = ?`)
+          .run(...values, row._id);
+        this.recorder?.recordLocal(this.name, row._id, "upsert", now);
+        const after = {
+          ...updated,
+          _id: row._id,
+          created_at: row.created_at,
+          updated_at: now,
+        } as WithId<T>;
+        return {
+          id: row._id,
+          doc: args.returnDocument === "before" ? before : after,
+        };
+      }),
+    );
+    if (!result) return null;
+    this.afterWrite([result.id]);
+    return result.doc;
+  }
+
+  /**
+   * Run a mixed batch of `insertOne` / `updateOne` / `updateMany` / `deleteOne` /
+   * `deleteMany` operations in **one transaction** (all-or-nothing).
+   */
+  async bulkWrite(operations: BulkWriteOp<T>[]): Promise<BulkWriteResult> {
+    this.ensureTable();
+    const ids: string[] = [];
+    const result: BulkWriteResult = { inserted: 0, updated: 0, deleted: 0 };
+
+    this.guard(() =>
+      this.db.transaction(() => {
+        const recorder = this.recorder;
+        for (const op of operations) {
+          if ("insertOne" in op) {
+            const ins = this.buildInsert(op.insertOne);
+            this.db.prepare(this.insertSql()).run(...ins.values);
+            recorder?.recordLocal(this.name, ins._id, "upsert", ins.created_at);
+            ids.push(ins._id);
+            result.inserted++;
+          } else if ("updateOne" in op || "updateMany" in op) {
+            const single = "updateOne" in op;
+            const spec = single
+              ? (
+                  op as {
+                    updateOne: { where: WhereInput<T>; data: UpdateData<T> };
+                  }
+                ).updateOne
+              : (
+                  op as {
+                    updateMany: { where: WhereInput<T>; data: UpdateData<T> };
+                  }
+                ).updateMany;
+            const p: any[] = [];
+            const clause = buildWhere(spec.where, {
+              params: p,
+              onPath: this.trackPath,
+              columns: this.columns,
+            });
+            let sel = `SELECT * FROM "${this.name}" WHERE ${clause}`;
+            if (single) sel += " LIMIT 1";
+            const rows = this.db.prepare(sel).all(...p) as Row[];
+            const now = Date.now();
+            for (const row of rows) {
+              const updated = stripSystem(
+                applyUpdate(stripSystem(this.rowToDoc(row)), spec.data),
+              );
+              const { setSql, values } = this.buildUpdateSet(updated, now);
+              this.db
+                .prepare(`UPDATE "${this.name}" SET ${setSql} WHERE _id = ?`)
+                .run(...values, row._id);
+              recorder?.recordLocal(this.name, row._id, "upsert", now);
+              ids.push(row._id);
+              result.updated++;
+            }
+          } else if ("deleteOne" in op || "deleteMany" in op) {
+            const single = "deleteOne" in op;
+            const spec = single
+              ? (op as { deleteOne: { where: WhereInput<T> } }).deleteOne
+              : (op as { deleteMany: { where: WhereInput<T> } }).deleteMany;
+            const p: any[] = [];
+            const clause = buildWhere(spec.where, {
+              params: p,
+              onPath: this.trackPath,
+              columns: this.columns,
+            });
+            let sel = `SELECT _id FROM "${this.name}" WHERE ${clause}`;
+            if (single) sel += " LIMIT 1";
+            const rows = this.db.prepare(sel).all(...p) as Array<{
+              _id: string;
+            }>;
+            const now = Date.now();
+            const del = this.db.prepare(
+              `DELETE FROM "${this.name}" WHERE _id = ?`,
+            );
+            for (const row of rows) {
+              del.run(row._id);
+              recorder?.recordLocal(this.name, row._id, "delete", now);
+              ids.push(row._id);
+              result.deleted++;
+            }
+          }
+        }
+      }),
+    );
+
+    this.afterWrite(ids);
     return result;
   }
 
