@@ -140,6 +140,11 @@ export interface FieldFilter<V = any> {
   endsWith?: string;
   /** Explicit array element membership. */
   has?: any;
+  /**
+   * Match if **any** array element satisfies a sub-filter (Mongo `$elemMatch`).
+   * Scalars: `{ elemMatch: { gte: 3 } }`; objects: `{ elemMatch: { name: "x" } }`.
+   */
+  elemMatch?: any;
   /** Field presence. `true` requires the field to exist, `false` requires absence. */
   exists?: boolean;
   /**

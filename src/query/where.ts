@@ -129,6 +129,9 @@ function translateField(
       case "has":
         clauses.push(hasExpr(field, expr, v, ctx));
         break;
+      case "elemMatch":
+        clauses.push(elemMatchExpr(expr, v, ctx));
+        break;
       case "exists":
         clauses.push(existsExpr(field, expr, !!v, ctx.columns));
         break;
@@ -141,6 +144,79 @@ function translateField(
 
   if (!clauses.length) return "";
   return clauses.length === 1 ? clauses[0]! : "(" + clauses.join(" AND ") + ")";
+}
+
+/**
+ * `elemMatch` — true if **any** element of the array field satisfies a sub-filter.
+ * For arrays of scalars the sub-filter applies to the element (`{ gte: 3 }`); for
+ * arrays of objects it applies per nested field (`{ name: "x", level: { gte: 3 } }`).
+ */
+function elemMatchExpr(arrayExpr: string, sub: any, ctx: WhereContext): string {
+  const scalarOps = new Set([
+    "equals",
+    "not",
+    "gt",
+    "gte",
+    "lt",
+    "lte",
+    "in",
+    "notIn",
+  ]);
+  const cond = (base: string, c: any): string => {
+    if (!isFilterObject(c)) return eqExpr(base, c, ctx);
+    const rc = c as Record<string, any>;
+    const parts: string[] = [];
+    for (const op of Object.keys(rc)) {
+      const v = rc[op];
+      if (v === undefined) continue;
+      switch (op) {
+        case "equals":
+          parts.push(eqExpr(base, v, ctx));
+          break;
+        case "not":
+          parts.push(notExpr(base, v, ctx));
+          break;
+        case "gt":
+          parts.push(cmp(base, ">", v, ctx));
+          break;
+        case "gte":
+          parts.push(cmp(base, ">=", v, ctx));
+          break;
+        case "lt":
+          parts.push(cmp(base, "<", v, ctx));
+          break;
+        case "lte":
+          parts.push(cmp(base, "<=", v, ctx));
+          break;
+        case "in":
+          parts.push(inExpr(base, v, ctx, false));
+          break;
+        case "notIn":
+          parts.push(inExpr(base, v, ctx, true));
+          break;
+        default:
+          throw new MonliteQueryError(
+            `Unsupported operator "${op}" inside elemMatch`,
+          );
+      }
+    }
+    return parts.length === 1 ? parts[0]! : "(" + parts.join(" AND ") + ")";
+  };
+
+  let where: string;
+  if (isFilterObject(sub)) {
+    const rec = sub as Record<string, any>;
+    const keys = Object.keys(rec);
+    const isScalar = keys.length > 0 && keys.every((k) => scalarOps.has(k));
+    where = isScalar
+      ? cond("value", rec) // array of scalars
+      : keys
+          .map((f) => cond(`json_extract(value, ${pathLiteral(f)})`, rec[f]))
+          .join(" AND ") || "1";
+  } else {
+    where = eqExpr("value", sub, ctx);
+  }
+  return `EXISTS (SELECT 1 FROM json_each(${arrayExpr}) WHERE ${where})`;
 }
 
 function eqExpr(expr: string, v: any, ctx: WhereContext): string {

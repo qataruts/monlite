@@ -228,6 +228,8 @@ where: { name: { contains: "ALI", mode: "insensitive" } }  // case-insensitive (
 // Arrays
 where: { tags: { contains: "admin" } }   // element membership
 where: { tags: { has: "admin" } }        // explicit element membership
+where: { scores: { elemMatch: { gte: 90 } } }                  // any scalar element matches
+where: { items: { elemMatch: { sku: "A", qty: { gte: 2 } } } } // any object element matches ($elemMatch)
 
 // Existence
 where: { phone: { exists: true } }       // field present (even if null)

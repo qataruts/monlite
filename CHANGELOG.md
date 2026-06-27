@@ -1,5 +1,13 @@
 # @monlite/core
 
+## 2.5.0 — elemMatch
+
+- **`elemMatch` where operator** (Mongo `$elemMatch`) — match if **any** array
+  element satisfies a sub-filter, with same-element semantics. Works on arrays of
+  scalars (`{ scores: { elemMatch: { gte: 90 } } }`) and of objects
+  (`{ items: { elemMatch: { sku: "A", qty: { gte: 2 } } } }`). Pure SQL via
+  `json_each`; both drivers.
+
 ## 2.4.0 — AI-agent harness primitives
 
 Unblocks the local-agent-backend track (`plan/PLATFORM-AI-ADOPTION.md`). All
