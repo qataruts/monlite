@@ -46,8 +46,10 @@ sync to them.
   `collection.findSimilar()`, plus **`hybridSearch()`** (FTS + vector fused with
   Reciprocal Rank Fusion) for RAG and AI-agent memory.
 - **Stable 1.0** — `@monlite/core` and `@monlite/sync` are at `1.0.0` (semver-stable).
-- **Examples + benchmarks** — runnable demos in [`examples/`](../examples/) and a
-  benchmark suite ([`docs/BENCHMARKS.md`](./BENCHMARKS.md)).
+- **Examples, benchmarks & guides** — runnable demos in [`examples/`](../examples/)
+  (CRUD/FTS, vector/hybrid, sync, the kv/queue/cron harness, `$lookup` joins, the
+  WASM backend), a benchmark suite ([`docs/BENCHMARKS.md`](./BENCHMARKS.md)), and
+  [guides](./guides/) for migrations and custom adapters/drivers.
 - **The local AI-agent harness** — Redis's local roles as companion packages:
   **`@monlite/kv`** (cache/KV with TTL), **`@monlite/queue`** (durable job queue —
   retries, backoff, delays, priorities, concurrency, dead-letter, multi-process
@@ -78,7 +80,8 @@ sync to them.
 ### Wave 4 — DX depth
 - **Stronger TypeScript inference** — typed `where`/`orderBy`/`select` and
   `select`-narrowed return types.
-- A **docs site** and migration/custom-adapter **guides**.
+- A **docs site** (the content exists across the READMEs + `docs/`; this is
+  packaging + hosting).
 
 ### Wave 5 — breadth (demand-driven)
 - A **Python** binding (AI/DS workflows), then evaluate Dart/Flutter — thin

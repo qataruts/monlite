@@ -712,8 +712,16 @@ future-proofing.
 ## Examples
 
 Runnable demos live in [`examples/`](examples/): a notes app (CRUD + full-text
-search + live queries), AI-agent memory (vector + hybrid search), and local-first
-sync. `cd examples && npm install && node notes.mjs`.
+search + live queries), AI-agent memory (vector + hybrid search), local-first
+sync, the cache/queue/cron harness, `$lookup`/`$unwind` joins, and the WASM
+browser backend. `cd examples && npm install && node notes.mjs`.
+
+## Guides
+
+- [Schema & migrations](docs/guides/migrations.md) — auto-additive changes and
+  `$migrate()` for drop/rename/type-change.
+- [Custom adapters & drivers](docs/guides/custom-adapter.md) — add a sync backend
+  or a new SQLite binding/environment.
 
 ## Benchmarks
 

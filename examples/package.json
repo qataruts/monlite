@@ -4,9 +4,14 @@
   "type": "module",
   "description": "Runnable examples for monlite. `npm install` then `node notes.mjs`.",
   "dependencies": {
-    "@monlite/core": "^1.0.0",
+    "@monlite/core": "^1.4.0",
+    "@monlite/cron": "^0.1.0",
     "@monlite/fts": "^0.1.2",
+    "@monlite/kv": "^0.1.0",
+    "@monlite/queue": "^0.1.0",
     "@monlite/sync": "^1.0.0",
-    "@monlite/vector": "^0.2.0"
+    "@monlite/vector": "^0.2.0",
+    "@monlite/wasm": "^0.1.0",
+    "sql.js": "^1.14.1"
   }
 }
