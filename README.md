@@ -1,7 +1,8 @@
 # 🌙 monlite
 
-> Your app's local database. A MongoDB-like API and Prisma-style DX in a single
-> file. Zero config, zero migrations, zero server.
+> **The local-first data platform for TypeScript.** Documents, vectors, full-text
+> search, cache, queue, cron — and reactive live queries — in **one SQLite file**,
+> with a **zero-dependency core**. The complete local backend for AI agents.
 
 ```ts
 import { createDb } from "@monlite/core";
@@ -13,36 +14,91 @@ await users.create({ data: { name: "Ali", age: 28 } });
 await users.findMany({ where: { age: { gte: 18 } } });
 ```
 
-That's the whole setup. Your data is in `app.db`.
+That's the whole setup — no server, no migrations, no config. Your data is in `app.db`.
+
+📖 **Full documentation:** [monlite.dev](https://monlite.dev) · 🤖 [The local AI-agent backend](#the-complete-local-backend-for-an-ai-agent)
 
 ---
 
-## Mental model (read this first)
+## One file replaces your local stack
 
-monlite is **one database with one query API.** You never have to choose "SQL or
-NoSQL." You only choose, per collection, **where each field is stored:**
+monlite is a **platform**, not just a document store. The zero-dependency core does
+documents; opt-in packages cover the rest — each a separate `npm install`, so you
+only pull what you use.
 
-- **Document mode** (default) — the whole document is stored as JSON. Flexible
-  and schema-free, like MongoDB.
-- **Structured mode** (`db.collection(name, { schema })`) — the fields you
-  declare become real SQL columns (typed, indexed, joinable). Anything else
-  overflows into JSON automatically.
-
-> **A schema changes the _storage_, never the _syntax_.**
-> `create`, `find`, `where`, `orderBy`, `groupBy` are identical in both modes and
-> return identical results — structured mode is just faster and SQL-native underneath.
-
-Raw SQL is the one optional place SQL becomes visible: the `$queryRaw` escape
-hatch, for joins/CTEs/window functions the document API doesn't cover.
-
-| You decide… | Document (default) | Structured (`{ schema }`) |
+| Package | Replaces | Adds |
 | --- | --- | --- |
-| **How you query** | `find` / `where` / `orderBy` / `groupBy` | **identical** |
-| **Where a field lives** | JSON `data` blob | a native column (declared) — the rest overflow to JSON |
-| **Pick it when** | the shape is unknown or varies per record | the shape is stable and you want joins, FKs, reporting, or fast native indexes |
+| **[`@monlite/core`](https://www.npmjs.com/package/@monlite/core)** | MongoDB | documents + native-column tables, one query API, transactions, **reactive `watch()`** |
+| **[`@monlite/vector`](https://www.npmjs.com/package/@monlite/vector)** | Qdrant / Pinecone | vector / semantic search (sqlite-vec) — `findSimilar()` + dynamic `createVectorStore()` |
+| **[`@monlite/fts`](https://www.npmjs.com/package/@monlite/fts)** | search engines | full-text search (SQLite FTS5) — `search()` + dynamic `createSearchIndex()` |
+| **[`@monlite/kv`](https://www.npmjs.com/package/@monlite/kv)** | Redis (cache) | synchronous cache + locks with TTL |
+| **[`@monlite/queue`](https://www.npmjs.com/package/@monlite/queue)** | BullMQ / Redis | durable job queue — retries, backoff, delays, dedupe |
+| **[`@monlite/cron`](https://www.npmjs.com/package/@monlite/cron)** | cron | persisted scheduled jobs |
+| **[`@monlite/sync`](https://www.npmjs.com/package/@monlite/sync)** | cloud sync | local-first replication to MongoDB / PostgreSQL / MySQL |
+| **[`@monlite/wasm`](https://www.npmjs.com/package/@monlite/wasm)** | — | run it all in the **browser** (SQLite-WASM) |
 
-You can mix both in the same `.db`, and move a collection from document to
-structured later without changing a single query.
+> Same file from **Python**, too — [`pip install monlite`](https://pypi.org/project/monlite/)
+> reads and writes the same `.db`.
+
+With reactive `watch()` + cloud `sync`, monlite is effectively a **local-first
+Firebase**: live data, no Docker, no servers.
+
+---
+
+## The complete local backend for an AI agent
+
+A coding agent, RAG app, or autonomous worker needs the same local services — and
+monlite is **all of them, in one `.db`, with no Docker, no Redis, no Qdrant**.
+
+| Agent needs | monlite |
+| --- | --- |
+| Memory / state | `@monlite/core` documents |
+| Semantic recall (RAG) | `@monlite/vector` — `createVectorStore()` |
+| Keyword recall | `@monlite/fts` — `createSearchIndex()` |
+| Cache & locks | `@monlite/kv` — `setNX` |
+| Durable task queue | `@monlite/queue` — retries, dedupe |
+| Scheduling | `@monlite/cron` |
+| Exactly-once job claim | `findOneAndUpdate` — cross-process CAS |
+| Live UI updates | `collection.watch()` |
+
+```ts
+// RAG memory — scoped + exact — in the same file as everything else
+const mem = createVectorStore(db);
+mem.ensureCollection("memory", { dimensions: 384, indexedFields: ["agentId"] });
+mem.upsert("memory", [{ id, vector, metadata: { agentId, text } }]);
+const recall = mem.search("memory", { vector: q, topK: 5, where: { agentId } });
+
+// a durable job a separate worker claims exactly ONCE (cross-process CAS)
+const claimed = await jobs.findOneAndUpdate({
+  where: { _id: jobId, status: "pending" },
+  data: { $set: { status: "active" }, $inc: { version: 1 } },
+  returnDocument: "after",
+});
+```
+
+This is exactly how a real durable job/mission/approval engine + RAG can run on a
+**single file** — proven in production integration. See the
+[AI-agent backend guide](https://monlite.dev/guides/ai-agent-backend).
+
+---
+
+## Why monlite
+
+- **One file.** Documents, vectors, cache, queue, cron — all in one SQLite file.
+  Backup = copy the file.
+- **Zero-dependency core.** Runs on Node's built-in `node:sqlite` (Node ≥ 22.5) with
+  no native build, or on `better-sqlite3` when you install it.
+- **One query API.** Mongo/Prisma-style `find`/`where`/`orderBy`/`groupBy`, the same
+  whether a field is JSON or a native SQL column.
+- **Production-hardened.** Atomic async transactions, cross-process compare-and-swap,
+  crash-tested durability, observability, encryption at rest, cross-platform CI
+  (Linux/macOS/Windows).
+- **Local-first.** Sync to MongoDB / PostgreSQL / MySQL when you want the cloud.
+
+**Boundary:** monlite targets **local / edge / desktop / single-machine**. For
+multi-site shared state, very high write volume, or strict HA, keep the managed
+services and [sync](https://monlite.dev/packages/sync) to them — same code, flip the
+backend.
 
 ---
 
@@ -52,810 +108,97 @@ structured later without changing a single query.
 npm install @monlite/core
 ```
 
-**monlite has zero required dependencies.** On **Node 22.5+** it uses the
-built-in [`node:sqlite`](https://nodejs.org/api/sqlite.html) engine out of the
-box. To run on Node 18/20 — or to avoid `node:sqlite`'s experimental warning —
-also install the (optional) native driver:
+Zero required dependencies — on **Node 22.5+** it uses built-in
+[`node:sqlite`](https://nodejs.org/api/sqlite.html). For Node 18/20 (or to avoid the
+experimental warning), also install the native driver:
 
 ```bash
 npm install @monlite/core better-sqlite3
 ```
 
-See [Drivers & zero dependencies](#drivers--zero-dependencies) below.
-
 ---
 
-## When to use monlite
-
-| Situation | Use |
-|---|---|
-| Desktop / Electron / Tauri app needing local data | ✅ monlite |
-| CLI tool with persistent state | ✅ monlite |
-| Local-first app syncing with a cloud MongoDB | ✅ monlite |
-| Prototype / MVP needing fast iteration, flexible schema | ✅ monlite |
-| Server app with Postgres/MySQL | ❌ use your DB directly |
-| Strictly relational, known, stable schema | ❌ use SQLite directly |
-| Production cloud database | ❌ use MongoDB / a managed DB |
-
-If your data is structured and you already know your schema, plain SQLite adds
-nothing on top of monlite — use it directly. monlite earns its keep when your
-documents are dynamic, schema-free, or mirror a cloud NoSQL store.
-
-### How monlite compares
-
-| | monlite | MongoDB | better-sqlite3 | Prisma + SQLite |
-|---|---|---|---|---|
-| Schema-free documents | ✅ | ✅ | ⚠️ manual JSON | ❌ |
-| Native typed columns | ✅ (opt-in) | ❌ | ✅ | ✅ |
-| Same API for both | ✅ | — | — | — |
-| Raw SQL escape hatch | ✅ | ❌ | ✅ | ✅ (`$queryRaw`) |
-| No server / single file | ✅ | ❌ | ✅ | ✅ |
-| No migrations / codegen | ✅ | ✅ | ✅ | ❌ |
-| Aggregation API | ✅ | ✅ | ⚠️ manual | ⚠️ limited |
-| Local-first sync | ✅ (`@monlite/sync`) | ⚠️ Atlas/Realm | ❌ | ❌ |
-| Runtime dependencies | **0** (Node 22.5+) | server | 1 (native) | several |
-
----
-
-## Setup
+## A 60-second tour
 
 ```ts
-import { createDb } from "@monlite/core";
-
-const db = createDb("./app.db");      // creates the file if missing
-const mem = createDb(":memory:");      // in-memory database
-```
-
-### Options
-
-```ts
-const db = createDb("./app.db", {
-  driver: "auto",       // "auto" | "better-sqlite3" | "node:sqlite" (default: "auto")
-  autoIndex: true,      // auto-create indexes on hot JSON paths (default: true)
-  autoIndexAfter: 10,   // create an index after a path is queried N times (default: 10)
-  readonly: false,      // open read-only (default: false)
-  wal: true,            // use WAL journal mode (default: true)
-  verbose: (sql) => console.log(sql), // log every executed SQL statement
-});
-```
-
----
-
-## Collections
-
-Collections are created automatically on first access — no schema, no migration,
-no definition needed. Pass a type for full inference.
-
-```ts
-interface User {
-  name: string;
-  age?: number;
-  address?: { city: string };
-  tags?: string[];
-}
-
+// Typed collections: where/orderBy are checked, select narrows the result
+interface User { name: string; age: number; roles?: string[] }
 const users = db.collection<User>("users");
+
+await users.createMany({ data: [{ name: "Ali", age: 30 }, { name: "Sara", age: 25 }] });
+await users.findMany({ where: { age: { gte: 18 }, roles: { has: "admin" } }, orderBy: { age: "desc" } });
+
+// Rich operators — elemMatch, regex, dot-paths
+await orders.findMany({ where: { items: { elemMatch: { sku: "A", qty: { gte: 2 } } } } });
+await users.findMany({ where: { email: { regex: "@acme\\.com$" } } });
+
+// Atomic transactions + compare-and-swap
+await db.transactionAsync(async (tx) => { /* read → compute → write, all-or-nothing */ });
+
+// Reactive live queries — re-runs only when a relevant change lands
+const handle = users.watch({ where: { roles: { has: "admin" } } }, (u) => render(u.results));
 ```
 
-When you type a collection, queries are **type-checked** (since 2.0): `where`/
-`orderBy` reject unknown fields, and `select` **narrows the return type** to the
-fields you ask for. Prefer schema-free? Use `db.collection("users")` (untyped) —
-it accepts any field, exactly as before.
-
-```ts
-const u = await users.findMany({ select: { name: true } });
-u[0].name; // string  ✅      u[0].age // ✗ not selected
-await users.findMany({ where: { naem: "x" } }); // ✗ 'naem' is not a field
-```
-
-Every stored document gains three system fields:
-
-| Field | Type | Notes |
-|---|---|---|
-| `_id` | `string` | Auto-generated, ObjectId-compatible (24 hex chars), time-sortable. Provide your own to override. |
-| `created_at` | `number` | Unix epoch milliseconds, set on insert. |
-| `updated_at` | `number` | Unix epoch milliseconds, bumped on every update. |
+→ Full reference: **[Documents](https://monlite.dev/core/documents)** ·
+[Queries](https://monlite.dev/core/queries) ·
+[Transactions & CAS](https://monlite.dev/core/transactions) ·
+[Structured collections](https://monlite.dev/core/structured) ·
+[Aggregation](https://monlite.dev/core/aggregation).
 
 ---
 
-## CRUD
+## Reactive — a local-first Firebase
+
+`collection.watch()` delivers an initial snapshot, then re-emits only when a change
+actually affects the result set (row-level matching) — including changes applied by
+`@monlite/sync`. Wrap it in a hook for auto-updating UI:
 
 ```ts
-// create
-const user = await users.create({
-  data: { name: "Ali", age: 28, address: { city: "Riyadh" } },
-});
-// user._id, user.created_at, user.updated_at are populated
-
-// createMany (single transaction)
-await users.createMany({ data: [{ name: "Sara" }, { name: "Omar" }] });
-
-// read
-await users.findById("…");                                  // doc | null
-await users.findFirst({ where: { name: "Ali" } });          // doc | null
-await users.findUnique({ where: { email: "a@x.com" } });    // alias of findFirst
-await users.findFirstOrThrow({ where: { name: "Ali" } });   // throws if missing
-await users.exists({ role: "admin" });                      // boolean
-await users.findMany({
-  where: { age: { gte: 18 } },
-  orderBy: { age: "desc" },
-  select: { name: true, age: true },
-  skip: 0,
-  take: 10,
-});
-
-// update (first match) — returns the updated doc or null
-await users.update({ where: { _id: "…" }, data: { age: 29 } });
-await users.updateMany({ where: { role: "admin" }, data: { active: true } }); // { count }
-
-// upsert
-await users.upsert({
-  where: { name: "Ali" },
-  create: { name: "Ali", age: 1 },
-  update: { age: 2 },
-});
-
-// delete — returns the deleted doc or null
-await users.delete({ where: { _id: "…" } });
-await users.deleteMany({ where: { active: false } });       // { count }
-await users.deleteMany();                                    // delete all → { count }
-
-// count
-await users.count({ where: { role: "admin" } });
-```
-
----
-
-## Where operators
-
-Prisma-style, no `$` prefix. A bare value is shorthand for `equals`.
-
-```ts
-// Comparison
-where: { age: 28 }                       // shorthand equals
-where: { age: { equals: 28 } }
-where: { age: { not: 28 } }              // also matches docs missing the field
-where: { age: { gt: 18 } }               // gt, gte, lt, lte
-where: { role: { in: ["admin", "editor"] } }
-where: { role: { notIn: ["guest"] } }
-
-// String (case-sensitive by default; wildcards are matched literally)
-where: { name: { contains: "li" } }
-where: { name: { startsWith: "A" } }
-where: { name: { endsWith: "i" } }
-where: { name: { contains: "ALI", mode: "insensitive" } }  // case-insensitive (ASCII)
-
-// Regex (JavaScript RegExp semantics; works on every driver incl. browser/WASM)
-where: { email: { regex: "@acme\\.com$" } }
-where: { name: { regex: "^al", mode: "insensitive" } }     // or a literal: { regex: /^al/i }
-
-// Arrays
-where: { tags: { contains: "admin" } }   // element membership
-where: { tags: { has: "admin" } }        // explicit element membership
-where: { scores: { elemMatch: { gte: 90 } } }                  // any scalar element matches
-where: { items: { elemMatch: { sku: "A", qty: { gte: 2 } } } } // any object element matches ($elemMatch)
-
-// Existence
-where: { phone: { exists: true } }       // field present (even if null)
-where: { phone: { exists: false } }
-
-// Nested paths (dot notation)
-where: { "address.city": { equals: "Riyadh" } }
-where: { "meta.score": { gte: 9 } }
-
-// Logical
-where: { AND: [{ age: { gte: 18 } }, { active: true }] }
-where: { OR:  [{ role: "admin" }, { role: "editor" }] }
-where: { NOT: { role: "guest" } }
-where: { role: "admin", age: { gt: 30 } } // multiple fields => implicit AND
-```
-
-> `contains`/`startsWith`/`endsWith` are **case-sensitive** (implemented with
-> SQLite's `instr`/`substr`, so `%` and `_` are literal). On an array field,
-> `contains` checks element membership. `regex` uses real JavaScript `RegExp`
-> (via a `monlite_regexp` function registered on every driver), so the same
-> pattern matches identically in Node and the browser.
-
----
-
-## Update operators
-
-The `data` payload is either a plain object (shallow-merged) or update operators.
-The two forms cannot be mixed.
-
-```ts
-// Default — shallow merge
-await c.update({ where: { _id }, data: { age: 29, name: "Ali Updated" } });
-
-// $set — set fields, including nested dot paths
-await c.update({ where: { _id }, data: { $set: { "address.city": "Jeddah" } } });
-
-// $inc — increment (missing field starts at 0)
-await c.update({ where: { _id }, data: { $inc: { score: 1 } } });
-
-// $push — append to an array ($each pushes many)
-await c.update({ where: { _id }, data: { $push: { tags: "moderator" } } });
-await c.update({ where: { _id }, data: { $push: { tags: { $each: ["a", "b"] } } } });
-
-// $addToSet — append to an array only if not already present ($each supported)
-await c.update({ where: { _id }, data: { $addToSet: { tags: "moderator" } } });
-
-// $pull — remove matching elements from an array
-await c.update({ where: { _id }, data: { $pull: { tags: "guest" } } });
-
-// $unset — remove a field
-await c.update({ where: { _id }, data: { $unset: { temporaryField: true } } });
-```
-
-`_id` is immutable — attempts to set it via update data are ignored.
-
-### Atomic & batch writes
-
-```ts
-// findOneAndUpdate — atomic read-modify-return ("after" by default, or "before")
-const updated = await accounts.findOneAndUpdate({
-  where: { _id },
-  data: { $inc: { balance: -50 } },
-});
-
-// bulkWrite — mixed insert/update/delete in ONE transaction (all-or-nothing)
-await orders.bulkWrite([
-  { insertOne: { _id: "o4", total: 40 } },
-  { updateOne: { where: { _id: "o1" }, data: { $set: { status: "paid" } } } },
-  { updateMany: { where: { stale: true }, data: { $set: { stale: false } } } },
-  { deleteOne: { where: { _id: "o2" } } },
-]); // → { inserted, updated, deleted }
-```
-
-`findOneAndUpdate` doubles as **compare-and-swap** — put the expected
-`version`/`status` in `where`, `$inc` the version in `data`; it returns the new
-row, or `null` if another writer won the race (the lock-free primitive for job
-queues):
-
-```ts
-const claimed = await jobs.findOneAndUpdate({
-  where: { _id, version: expected, status: { in: ["pending"] } },
-  data: { $set: { status: "running" }, $inc: { version: 1 } },
-}); // null ⇒ lost the CAS, back off
-```
-
-### Uniqueness & TTL
-
-```ts
-// Compound unique index — duplicates throw MonliteUniqueConstraintError
-db.collection("steps", { uniqueIndexes: [["tenantId", "jobId", "key"]] });
-
-// TTL — cap unbounded-growth tables (job logs, sessions); call from a cron tick
-const logs = db.collection("job_ops", { ttl: { field: "created_at", seconds: 90 * 86400 } });
-await logs.purgeExpired(); // → { count }
-```
-
----
-
-## Aggregation
-
-```ts
-// aggregate
-const stats = await users.aggregate({
-  where: { active: true },
-  _count: true,
-  _sum: { age: true },
-  _avg: { age: true },
-  _min: { age: true },
-  _max: { age: true },
-});
-// { _count: 42, _sum: { age: 1200 }, _avg: { age: 28.5 }, _min: { age: 18 }, _max: { age: 64 } }
-
-// groupBy
-const grouped = await users.groupBy({
-  by: ["role"],
-  where: { active: true },
-  _count: true,
-  _sum: { age: true },
-  orderBy: { _count: "desc" },
-});
-// [ { role: "admin", _count: 5, _sum: { age: 140 } }, … ]
-
-// groupBy + having (filter groups by an aggregate, like SQL HAVING)
-await users.groupBy({
-  by: ["role"],
-  _count: true,
-  _sum: { age: true },
-  having: {
-    _count: { gte: 2 },          // keep groups with COUNT(*) >= 2
-    _sum: { age: { gt: 50 } },   // and SUM(age) > 50
-  },
-});
-// having comparisons: equals, not, gt, gte, lt, lte — on _count and on
-// _sum/_avg/_min/_max of any field.
-```
-
-### distinct
-
-```ts
-await users.distinct("role");                       // ["admin", "editor"]
-await users.distinct("age", { role: "admin" });     // [28, 31]
-
-// Array fields are unwound — each element is a value (like MongoDB):
-await users.distinct("tags");                        // ["a", "b", "c"]
-```
-
-### Joins (`$lookup` / `$unwind`)
-
-Pull in related documents from another collection with a `lookup` on `findMany`
-— a left join, run as **two queries (no N+1)**, in either storage mode:
-
-```ts
-// Attach each user's orders as an array ($lookup):
-await db.collection("users").findMany({
-  lookup: { from: "orders", localField: "_id", foreignField: "user_id", as: "orders" },
-});
-// → [{ _id: "u1", name: "Ali", orders: [ {…}, {…} ] }, …]
-
-// Flatten to one row per match with `unwind` ($unwind); use "preserve" to keep
-// rows that have no match (left-outer):
-await db.collection("orders").findMany({
-  lookup: { from: "users", localField: "user_id", foreignField: "_id", as: "user", unwind: true },
-});
-// → [{ _id: "o1", user_id: "u1", user: { _id: "u1", name: "Ali" } }, …]
-```
-
-Pass an array of specs to join several collections at once.
-
----
-
-## Live queries (reactivity)
-
-`collection.watch()` keeps a query result live. The callback fires once
-immediately (`type: "init"`) and again whenever a change **affects this query** —
-matching is **row-level**, so unrelated writes don't trigger a recompute. It also
-fires for changes applied by `@monlite/sync`, so the UI updates when cloud data
-arrives.
-
-```ts
-const handle = users.watch({ where: { role: "admin" } }, (event) => {
-  event.results; // full current result set
-  event.added;   // docs that just entered the set
-  event.removed; // docs that just left
-  event.changed; // docs still in the set whose contents changed
-});
-
-handle.results; // current results, kept up to date
-handle.stop();  // unsubscribe
-```
-
-Perfect for Electron/Tauri UIs: bind `handle.results` to your view and it stays
-in sync with every write (local or synced).
-
----
-
-## Structured collections (native SQL columns)
-
-By default a collection is **document mode** — schema-free, every field stored
-as JSON. Pass a `schema` to make it a **structured collection**: the declared
-fields become real, typed SQL columns (fast, indexable, joinable, constrainable)
-and any *other* fields overflow into a JSON column. **The CRUD/query API is
-identical** — `find`, `where`, `orderBy`, `groupBy`, `distinct`, updates. As the
-[mental model](#mental-model-read-this-first) says: a schema changes the storage,
-not the syntax.
-
-```ts
-const orders = db.collection("orders", {
-  schema: {
-    user_id: { type: "TEXT", index: true, references: "users(_id)" },
-    amount: "REAL",
-    status: { type: "TEXT", notNull: true, default: "pending" },
-    meta: "JSON",            // objects/arrays, transparently (de)serialized
-  },
-});
-
-// Same API as document collections — but `amount`/`status` are real columns:
-await orders.create({ data: { user_id: "u1", amount: 100, status: "paid", note: "rush" } });
-await orders.findMany({ where: { amount: { gte: 50 }, status: "paid" } });
-await orders.groupBy({ by: ["status"], _sum: { amount: true } });
-
-// Undeclared fields (like `note`) still work — they overflow into JSON.
-await orders.findMany({ where: { note: { contains: "rush" } } });
-```
-
-Because the columns are native, they join, constrain, and index like any SQL
-table — including from the raw SQL hatch with no `json_extract`:
-
-```ts
-await db.$queryRaw`
-  SELECT u.name, SUM(o.amount) AS revenue
-  FROM users u JOIN orders o ON o.user_id = u._id
-  GROUP BY u._id
-`;
-```
-
-Column types: `"TEXT" | "INTEGER" | "REAL" | "BLOB" | "JSON"`. A full column
-definition supports `index`, `unique`, `notNull`, `default`, and `references`.
-
-**Migrations are automatic for additive changes.** Re-opening a collection with a
-new declared column adds it (`ALTER TABLE ADD COLUMN`) on declaration — give
-`NOT NULL` columns a `default` so existing rows can be backfilled.
-
-For **destructive changes** — dropping, renaming, or changing a column's
-type/constraints — call `$migrate()`. It safely rebuilds the table (in a
-transaction, preserving data and indexes) to match the new declared schema:
-
-```ts
-// v2 schema: `fullname` → `name`, `age` is now INTEGER, `legacy` removed.
-const users = db.collection("users", { schema: { name: "TEXT", age: "INTEGER" } });
-await users.$migrate({ rename: { fullname: "name" }, drop: ["legacy"] });
-```
-
-A column that exists on disk but isn't in the new schema (and isn't listed in
-`drop`) throws — so you never lose data by accident. Run migrations at startup,
-before using the collection.
-
-### Do I have to care: JSON vs native columns?
-
-- **For correctness — no.** Both modes return identical results through the same API.
-- **For performance & SQL interop — a little.** Native columns + native indexes are
-  faster and join/constrain cleanly; JSON is for when the shape is unknown or varies.
-
-monlite never hides which is which:
-
-```ts
-orders.mode;             // "structured" | "document"
-await db.$schema("orders"); // physical columns: [{ name, type, notNull, primaryKey }, …]
-createDb("./app.db", { verbose: (sql) => console.log(sql) }); // see json_extract vs bare columns
-```
-
-> **Rule of thumb:** unknown/flexible shape → document (JSON); known/stable shape
-> with heavy joins, reporting, or external SQL tooling → structured (native columns).
-
-> Both document and structured collections are syncable via
-> [`@monlite/sync`](#sync--local-first). To sync a structured collection, open it
-> with its `schema` on every node before syncing (so each side knows the native
-> columns).
-
----
-
-## Sync & local-first
-
-The companion package [`@monlite/sync`](https://www.npmjs.com/package/@monlite/sync)
-replicates a local monlite database with a remote source of truth — MongoDB
-first — so apps can work offline and converge when reconnected.
-
-Opt in with `{ sync: true }` (adds a change feed + tombstones + versioning; zero
-overhead when off), then drive an engine:
-
-```ts
-import { createDb } from "@monlite/core";
-import { sync, MongoAdapter } from "@monlite/sync";
-import { MongoClient } from "mongodb";
-
-const db = createDb("./app.db", { sync: true });
-const mongo = new MongoClient(uri);
-await mongo.connect();
-
-const engine = sync(db, {
-  adapter: new MongoAdapter({ client: mongo, db: "app" }),
-  collections: "*",
-  mode: "two-way",   // "pull" | "push" | "two-way"
-  conflict: "lww",   // or a custom resolver
-  interval: 5000,
-});
-
-await engine.start();
-```
-
-Pull / push / two-way replication, last-write-wins (or custom) conflict
-resolution, and pluggable adapters (`MongoAdapter`, `PostgresAdapter`,
-`MySqlAdapter`, `MonliteAdapter` for monlite-to-monlite, `MemoryAdapter` for
-tests) — keep local monlite as the embedded runtime and a server DB as the cloud
-of record. See the
-[`@monlite/sync` README](https://www.npmjs.com/package/@monlite/sync) for details.
-
----
-
-## SQL escape hatch
-
-When you need full SQL power — complex joins, analytics, cross-collection
-queries — drop to raw SQL. Documents live in a `data` JSON column, queryable
-with SQLite's `json_extract`.
-
-```ts
-// Tagged template — values are safely parameterized
-const report = await db.$queryRaw`
-  SELECT json_extract(u.data, '$.name')        AS customer,
-         SUM(json_extract(o.data, '$.amount')) AS revenue
-  FROM users u
-  JOIN orders o ON json_extract(o.data, '$.userId') = u._id
-  WHERE json_extract(u.data, '$.role') = 'admin'
-  GROUP BY u._id
-`;
-
-// Execute (returns affected row count)
-await db.$executeRaw`UPDATE users SET updated_at = ${Date.now()} WHERE _id = ${id}`;
-
-// String form with positional params
-await db.$queryRawUnsafe(`SELECT * FROM users WHERE _id = ?`, id);
-await db.$executeRawUnsafe(`DELETE FROM users WHERE _id = ?`, id);
-
-// Synchronous transaction (the callback must not be async)
-await db.$transaction((tx) => {
-  // ...use tx.collection(...) or tx.sqlite...
-});
-
-// Async unit-of-work — the callback MAY await (read → compute → write), all
-// atomic inside one BEGIN IMMEDIATE … COMMIT. Calls are serialized, so concurrent
-// units can't interleave (no lost updates). Ideal for e.g. double-entry posting:
-await db.transactionAsync(async (tx) => {
-  const acct = await tx.collection("accounts").findById(id);
-  const next = acct.balance - amount;            // async compute is fine here
-  await tx.collection("accounts").update({ where: { _id: id }, data: { balance: next } });
-  await tx.collection("ledger").create({ data: { acct: id, amount } });
-  // throwing anywhere rolls the whole unit back
-});
-```
-
-Need the raw driver? `db.sqlite` is the underlying native handle (a
-`better-sqlite3` `Database` or a `node:sqlite` `DatabaseSync`, depending on the
-active backend), and `db.driverName` tells you which one is in use.
-
----
-
-## Auto-indexing
-
-monlite tracks which JSON paths your `where`/`orderBy`/aggregation clauses touch.
-Once a path crosses the threshold (default 10 queries), an expression index is
-created silently:
-
-```sql
-CREATE INDEX IF NOT EXISTS idx_users_address_city
-ON users(json_extract(data, '$.address.city'));
-```
-
-You never think about indexes. Disable with `createDb("./app.db", { autoIndex: false })`.
-
-Want to see whether a query uses an index? Ask:
-
-```ts
-await users.explain({ where: { "address.city": "Riyadh" } });
-// { sql, usesIndex: true, plan: [{ id, parent, detail }, …] }
-```
-
----
-
-## Database management
-
-```ts
-await db.$collections();   // string[] of collection names
-await db.$drop("users");   // drop a collection and its data
-await db.$dropAll();       // drop everything
-await db.backup("./snapshot.db"); // consistent on-disk snapshot
-await db.$disconnect();    // close the connection
-db.sqlite;                 // the underlying native driver handle
-db.driverName;             // "better-sqlite3" | "node:sqlite"
-```
-
-### Durability & maintenance
-
-```ts
-db.checkIntegrity();        // true, or a list of problems (PRAGMA integrity_check)
-db.checkIntegrity(true);    // faster quick_check
-db.vacuum();                // reclaim space / defragment
-db.analyze();               // refresh the query-planner statistics
-db.checkpoint("TRUNCATE");  // flush the WAL into the main file
-
-// Tune durability vs. speed at open time:
-createDb("app.db", { synchronous: "FULL" }); // max power-loss safety
-```
-
-WAL defaults to `synchronous = NORMAL` (safe across app crashes). Auto-index
-learning persists across restarts, so cold-start query plans stay predictable.
-
-### Observability
-
-```ts
-db.stats();   // { sizeBytes, pageSize, pageCount, collections, indexes }
-
-// Per-query timing — wire a slow-query log or metrics (opt-in, low overhead):
-createDb("app.db", {
-  onQuery: ({ sql, durationMs }) => {
-    if (durationMs > 50) console.warn("slow query", durationMs, sql);
-  },
+const stop = todos.watch({ where: { done: false } }, ({ results, added, removed }) => {
+  setTodos(results);
 });
 ```
 
 ---
 
-## Plugins
+## Cross-language — Python & interop
 
-`@monlite/core` stays lean; heavier or optional capabilities are opt-in plugins
-passed to `createDb`:
+A monlite database is **plain SQLite + documented conventions**, so other languages
+read and write the same file. The Python port mirrors the API:
 
-```ts
-import { createDb } from "@monlite/core";
-import { fts } from "@monlite/fts";
-
-const db = createDb("./app.db", {
-  plugins: [fts({ posts: ["title", "body"] })],
-});
-
-await db.collection("posts").search("hello world"); // full-text search
+```python
+from monlite import create_db, kv
+db = create_db("app.db")                      # the SAME file Node uses
+db.collection("users").find_many(where={"age": {"gte": 18}})
+kv(db).set("session:42", {"user": "ali"}, ttl=60_000)
 ```
 
-| Plugin | Adds |
-|---|---|
-| [`@monlite/fts`](https://www.npmjs.com/package/@monlite/fts) | Full-text search (SQLite FTS5) via `collection.search()` |
-| [`@monlite/vector`](https://www.npmjs.com/package/@monlite/vector) | Vector / semantic search (sqlite-vec) via `collection.findSimilar()` — RAG, agent memory |
-
-Write your own against the `MonlitePlugin` interface (`init` / `afterWrite` /
-`collectionMethods` hooks).
+The classic split is first-class: **Python ingests/embeds, Node serves**, over one
+file. See [Python / interop](https://monlite.dev/reference/python) and the
+[file format](https://monlite.dev/reference/file-format).
 
 ---
 
-## The local backend for AI agents
+## Documentation
 
-monlite aims to be your **entire local data layer** — one embedded `.db`, one
-install — collapsing the services you'd otherwise run (Mongo, Qdrant, Redis) for
-a local/edge/desktop agent. Documents and vectors are core + a plugin; the
-Redis-style primitives are small companion packages:
+The full guide lives at **[monlite.dev](https://monlite.dev)**:
 
-| Package | Replaces (locally) | Provides |
-|---|---|---|
-| [`@monlite/kv`](https://www.npmjs.com/package/@monlite/kv) | Redis cache | Synchronous `get/set/incr` KV with TTLs |
-| [`@monlite/queue`](https://www.npmjs.com/package/@monlite/queue) | Redis / BullMQ | Durable job queue — retries, backoff, delays, priorities, concurrency |
-| [`@monlite/cron`](https://www.npmjs.com/package/@monlite/cron) | cron / scheduler | Persisted cron schedules; composes with the queue |
+- [Getting started](https://monlite.dev/getting-started) · [Core API](https://monlite.dev/core/documents)
+- Packages: [sync](https://monlite.dev/packages/sync) · [vector](https://monlite.dev/packages/vector) · [fts](https://monlite.dev/packages/fts) · [kv](https://monlite.dev/packages/kv) · [queue](https://monlite.dev/packages/queue) · [cron](https://monlite.dev/packages/cron) · [wasm](https://monlite.dev/packages/wasm)
+- Guides: [production](https://monlite.dev/guides/production) · [migrations](https://monlite.dev/guides/migrations) · [the AI-agent backend](https://monlite.dev/guides/ai-agent-backend) · [custom adapters](https://monlite.dev/guides/custom-adapter)
+- Reference: [file format](https://monlite.dev/reference/file-format) · [Python](https://monlite.dev/reference/python) · [benchmarks](https://monlite.dev/reference/benchmarks)
 
-```ts
-import { kv } from "@monlite/kv";
-import { createQueue } from "@monlite/queue";
-import { createCron } from "@monlite/cron";
-
-const cache = kv(db);
-cache.set("session:42", { user: "ali" }, { ttl: 60_000 });
-
-const queue = createQueue(db, { maxAttempts: 3 });
-queue.process("email", async (job) => send(job.payload), { concurrency: 5 });
-queue.add("email", { to: "ali@example.com" });
-
-createCron(db).schedule("nightly", "0 0 * * *", () => queue.add("report", {}));
-```
-
-These target **local / edge / desktop** runtimes — not a distributed cloud-scale
-Redis/Mongo/Qdrant replacement. For scale, keep the real services and
-[`@monlite/sync`](https://www.npmjs.com/package/@monlite/sync) to them.
-
-**Building an Electron app?** [`@monlite/electron`](https://www.npmjs.com/package/@monlite/electron)
-keeps the database in the main process and shares it with renderer windows over
-IPC, with cross-window reactivity.
+Runnable demos are in [`examples/`](examples/); the docs site source is in [`docs/`](docs/).
 
 ---
 
-## Drivers & zero dependencies
+## Status
 
-monlite talks to SQLite through a tiny driver adapter, so it runs on
-interchangeable backends:
-
-| Backend | When it's used | Notes |
-|---|---|---|
-| **`node:sqlite`** | Built into Node **22.5+** | **Zero dependencies.** Still flagged experimental by Node, so it prints a one-time `ExperimentalWarning`. |
-| **`better-sqlite3`** | When the package is installed | Battle-tested native driver. Works on Node 18/20/22, no warning. Install it yourself: `npm i better-sqlite3`. |
-| **WASM (browser)** | Via [`@monlite/wasm`](https://www.npmjs.com/package/@monlite/wasm) | Runs monlite **in the browser** on SQLite-WASM (sql.js); pass `driver: wasmDriver(SQL)`. Snapshot persistence to IndexedDB/OPFS. |
-
-By default (`driver: "auto"`) monlite uses `better-sqlite3` if it's installed,
-otherwise falls back to the built-in `node:sqlite`. Force one explicitly:
-
-```ts
-createDb("./app.db", { driver: "node:sqlite" });    // zero-dep (Node 22.5+)
-createDb("./app.db", { driver: "better-sqlite3" }); // native, no warning
-```
-
-Both backends pass the exact same test suite, so behavior is identical — pick
-based on your Node version and whether you want the extra dependency.
-
-> Want truly zero dependencies on Node 22.5+? Just `npm install @monlite/core`
-> and don't install `better-sqlite3`. To silence the experimental warning,
-> either install `better-sqlite3` or run Node with `--no-warnings`.
-
----
-
-## Encryption at rest
-
-Encrypt the whole database file with a key. Install the drop-in cipher driver
-and pass an `encryption` option:
-
-```bash
-npm install better-sqlite3-multiple-ciphers
-```
-
-```ts
-const db = createDb("./secure.db", { encryption: { key: process.env.DB_KEY } });
-// ...use db exactly as normal — everything on disk is encrypted.
-
-db.rekey(newKey); // rotate the key
-```
-
-- A **wrong or missing key throws `MonliteEncryptionError`** when opening.
-- Optional `cipher` selects the scheme (`"sqlcipher"`, `"chacha20"`,
-  `"aes256cbc"`, …); the default is ChaCha20-Poly1305.
-- Encryption requires `better-sqlite3-multiple-ciphers` (a drop-in for
-  `better-sqlite3`) and is **not** available on the `node:sqlite` backend.
-
----
-
-## How it works
-
-Every collection is a single SQLite table:
-
-```sql
-CREATE TABLE IF NOT EXISTS "users" (
-  _id        TEXT    PRIMARY KEY,
-  data       TEXT    NOT NULL,   -- your document as JSON
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-```
-
-Your entire document lives in the `data` column as JSON; `_id`, `created_at`
-and `updated_at` are real columns. SQLite's built-in `json_extract` /
-`json_each` power all document queries. No columns are added per field, so
-there is no schema and no migration — ever.
-
-All operations are synchronous under the hood (both SQLite backends are sync)
-but are exposed as `async` (they return Promises) for API consistency and
-future-proofing.
-
-### Notes & limitations
-
-- `_id`, `created_at`, `updated_at` are reserved; document fields with those
-  names are managed by monlite and won't round-trip as ordinary data.
-- `contains`/`startsWith`/`endsWith` are case-sensitive (see above).
-- `$transaction` callbacks run synchronously and must not be `async` — use
-  `db.transactionAsync` when you need to `await` inside an atomic unit of work.
-- Collection names must be identifier-like (`[A-Za-z_][A-Za-z0-9_]*`).
-
----
-
-## Examples
-
-Runnable demos live in [`examples/`](examples/): a notes app (CRUD + full-text
-search + live queries), AI-agent memory (vector + hybrid search), local-first
-sync, the cache/queue/cron harness, `$lookup`/`$unwind` joins, and the WASM
-browser backend. `cd examples && npm install && node notes.mjs`.
-
-## Guides
-
-- [Schema & migrations](docs/docs/guides/migrations.md) — auto-additive changes and
-  `$migrate()` for drop/rename/type-change.
-- [Custom adapters & drivers](docs/docs/guides/custom-adapter.md) — add a sync backend
-  or a new SQLite binding/environment.
-- [Migrating to 2.0](docs/docs/guides/v2-migration.md) — the typed-query / select
-  changes (types only; runtime unchanged).
-- [Running in production](docs/docs/guides/production.md) — durability, transactions,
-  backups/recovery, concurrency, and the error reference.
-
-## Studio (inspector)
-
-Browse a database in your browser — collections, documents, filter queries:
-
-```bash
-npx @monlite/studio app.db
-```
-
-See [`@monlite/studio`](https://www.npmjs.com/package/@monlite/studio).
-
-## Benchmarks
-
-[`docs/docs/reference/benchmarks.md`](docs/docs/reference/benchmarks.md) compares monlite to the raw SQLite
-driver, NeDB, and lowdb (`pnpm bench` to reproduce). In short: ~150k–250k
-ops/sec, roughly 2× the raw-driver overhead for the full document API, and it
-**stays flat on indexed reads where JSON-file stores degrade** (lowdb point reads
-are ~15× slower at 10k docs).
-
-## On-disk format (cross-language)
-
-A monlite database is **just a SQLite file** with documented conventions, so any
-language with a SQLite library can read/write it — no port required. The contract
-is in [`docs/docs/reference/file-format.md`](docs/docs/reference/file-format.md).
-
----
+Production-ready and published. Current versions: `@monlite/core` **2.6.1**,
+`@monlite/sync` 1.3.0, `@monlite/vector` & `@monlite/fts` 0.4.0,
+`@monlite/kv` & `@monlite/queue` 0.2.0, `@monlite/cron` 0.1.1, `@monlite/wasm` 0.2.0.
+The 2.x API is frozen. The Python port (`pip install monlite`) currently covers
+documents + kv, with the rest of the family on the way.
 
 ## License
 
