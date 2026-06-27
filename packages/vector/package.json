@@ -1,7 +1,7 @@
 {
-  "name": "@monlite/fts",
-  "version": "0.1.1",
-  "description": "Full-text search for @monlite/core, powered by SQLite FTS5. Adds collection.search().",
+  "name": "@monlite/vector",
+  "version": "0.1.0",
+  "description": "Local vector / semantic search for @monlite/core, powered by sqlite-vec. Adds collection.findSimilar().",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -29,20 +29,21 @@
   },
   "keywords": [
     "monlite",
-    "fts",
-    "fts5",
-    "full-text-search",
-    "sqlite",
-    "search"
+    "vector",
+    "semantic-search",
+    "embeddings",
+    "sqlite-vec",
+    "rag",
+    "ai"
   ],
   "license": "MIT",
   "author": "Emad Jumaah <emadjumaah@gmail.com>",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/qataruts/monlite.git",
-    "directory": "packages/fts"
+    "directory": "packages/vector"
   },
-  "homepage": "https://github.com/qataruts/monlite/tree/main/packages/fts#readme",
+  "homepage": "https://github.com/qataruts/monlite/tree/main/packages/vector#readme",
   "bugs": {
     "url": "https://github.com/qataruts/monlite/issues"
   },
@@ -53,7 +54,8 @@
     "node": ">=18"
   },
   "dependencies": {
-    "@monlite/core": "workspace:^"
+    "@monlite/core": "workspace:^",
+    "sqlite-vec": "^0.1.6"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

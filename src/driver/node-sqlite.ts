@@ -22,7 +22,9 @@ export class NodeSqliteDriver implements Driver {
     const { DatabaseSync } = nodeSqlite;
     this.raw = new DatabaseSync(filename, {
       readOnly: options.readonly ?? false,
+      ...(options.allowExtensions ? { allowExtension: true } : {}),
     });
+    if (options.allowExtensions) this.raw.enableLoadExtension(true);
     this.raw.exec(`PRAGMA busy_timeout = ${options.busyTimeout ?? 5000}`);
     if (!options.readonly && (options.wal ?? true)) {
       this.raw.exec("PRAGMA journal_mode = WAL");

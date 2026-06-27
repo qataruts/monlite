@@ -544,6 +544,7 @@ await db.collection("posts").search("hello world"); // full-text search
 | Plugin | Adds |
 |---|---|
 | [`@monlite/fts`](https://www.npmjs.com/package/@monlite/fts) | Full-text search (SQLite FTS5) via `collection.search()` |
+| [`@monlite/vector`](https://www.npmjs.com/package/@monlite/vector) | Vector / semantic search (sqlite-vec) via `collection.findSimilar()` — RAG, agent memory |
 
 Write your own against the `MonlitePlugin` interface (`init` / `afterWrite` /
 `collectionMethods` hooks).

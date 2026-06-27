@@ -1,5 +1,12 @@
 # @monlite/core
 
+## 0.10.0 — extension loading
+
+- **`allowExtensions` option** — open the database with SQLite extension loading
+  enabled (`createDb(path, { allowExtensions: true })`), required by
+  [`@monlite/vector`](https://www.npmjs.com/package/@monlite/vector) (sqlite-vec).
+  Wired through both drivers.
+
 ## 0.9.0 — plugin system
 
 - **Plugin system** — `createDb({ plugins: [...] })` with a `MonlitePlugin`

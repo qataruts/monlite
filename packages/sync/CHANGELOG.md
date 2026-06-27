@@ -1,5 +1,10 @@
 # @monlite/sync
 
+## 0.3.3
+
+- Track @monlite/core ^0.10.0 (no code change).
+
+
 ## 0.3.2
 
 - Track `@monlite/core` ^0.9.0 (plugin system; no sync changes).

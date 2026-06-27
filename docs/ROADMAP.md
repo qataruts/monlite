@@ -21,12 +21,13 @@ heavier capabilities as opt-in packages.
 - **Plugin system** — `createDb({ plugins })` with `init`/`afterWrite`/
   `collectionMethods` hooks.
 - **`@monlite/fts`** — full-text search (SQLite FTS5) via `collection.search()`.
+- **`@monlite/vector`** — local vector / semantic search (sqlite-vec) via
+  `collection.findSimilar()`, for RAG and AI-agent memory.
 
 ## Planned
 
-### Wave 2 (cont.) — the AI wedge
-- **`@monlite/vector`** — local vector / semantic search (sqlite-vec) + **hybrid
-  search** (keyword + vector) for RAG and AI-agent memory.
+### Next — search polish
+- **Hybrid search** helper (combine `@monlite/fts` + `@monlite/vector`, re-ranked).
 
 ### Wave 3 — desktop production
 - **`@monlite/cipher`** — encryption at rest (SQLCipher).

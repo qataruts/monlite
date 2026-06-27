@@ -1,5 +1,10 @@
 # @monlite/fts
 
+## 0.1.1
+
+- Track @monlite/core ^0.10.0 (no code change).
+
+
 ## 0.1.0
 
 - Initial release: SQLite FTS5 full-text search plugin. `collection.search()`,

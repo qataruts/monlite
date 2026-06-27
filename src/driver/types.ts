@@ -32,6 +32,8 @@ export interface DriverOpenOptions {
   wal?: boolean;
   /** Milliseconds to wait on a locked database before erroring. Default 5000. */
   busyTimeout?: number;
+  /** Allow loading SQLite extensions (needed by `@monlite/vector`). Default false. */
+  allowExtensions?: boolean;
   verbose?: (sql: string) => void;
 }
 

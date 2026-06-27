@@ -63,6 +63,7 @@ export class Monlite {
       readonly: options.readonly,
       wal: options.wal,
       busyTimeout: options.busyTimeout,
+      allowExtensions: options.allowExtensions,
       verbose: options.verbose,
     });
 

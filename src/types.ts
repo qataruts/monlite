@@ -321,6 +321,8 @@ export interface MonliteOptions {
   wal?: boolean;
   /** Milliseconds to wait on a locked database before erroring. Default `5000`. */
   busyTimeout?: number;
+  /** Allow loading SQLite extensions (required by `@monlite/vector`). Default `false`. */
+  allowExtensions?: boolean;
   /** Verbose logger for executed SQL (debugging). */
   verbose?: (sql: string) => void;
 }
