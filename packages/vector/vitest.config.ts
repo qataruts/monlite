@@ -8,9 +8,12 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      // Run tests against core source (no prebuild needed).
+      // Run tests against source (no prebuild needed).
       "@monlite/core": fileURLToPath(
         new URL("../../src/index.ts", import.meta.url),
+      ),
+      "@monlite/fts": fileURLToPath(
+        new URL("../fts/src/index.ts", import.meta.url),
       ),
     },
   },
