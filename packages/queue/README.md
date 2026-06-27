@@ -49,7 +49,8 @@ const queue = createQueue(db, {
   removeOnComplete, // delete finished jobs instead of keeping them (default false)
 });
 
-queue.add(name, payload, { delay, runAt, priority, maxAttempts }); // → Job
+queue.add(name, payload, { delay, runAt, priority, maxAttempts, jobId }); // → Job
+// jobId dedupes: a second add with the same jobId (while pending/active) returns the existing job
 queue.process(name, handler, { concurrency, pollInterval });       // → Worker
 queue.on("completed" | "failed", (job, resultOrError) => {});
 queue.getJob(id);                  // Job | undefined

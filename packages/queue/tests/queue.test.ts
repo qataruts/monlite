@@ -141,4 +141,17 @@ describe("@monlite/queue", () => {
     const job = q.add("rm", 1);
     await waitFor(() => q.getJob(job.id) === undefined);
   });
+
+  it("dedupes by jobId (idempotent enqueue)", () => {
+    const q = makeQueue(open());
+    const a = q.add("sync", { n: 1 }, { jobId: "task-7" });
+    const b = q.add("sync", { n: 2 }, { jobId: "task-7" }); // deduped → same job
+    expect(b.id).toBe(a.id);
+    expect(b.jobId).toBe("task-7");
+    expect(q.counts("sync").pending).toBe(1);
+    // a different jobId enqueues a new job
+    const c = q.add("sync", { n: 3 }, { jobId: "task-8" });
+    expect(c.id).not.toBe(a.id);
+    expect(q.counts("sync").pending).toBe(2);
+  });
 });

@@ -6,6 +6,8 @@ export type JobStatus = "pending" | "active" | "done" | "failed";
 export interface Job<T = any> {
   id: number;
   queue: string;
+  /** Dedupe key, if the job was added with one. */
+  jobId?: string;
   status: JobStatus;
   priority: number;
   payload: T;
@@ -20,6 +22,8 @@ export interface Job<T = any> {
 }
 
 export interface AddOptions {
+  /** Dedupe key — skip if a job with this id is already pending/active. */
+  jobId?: string;
   /** Delay before the job becomes runnable (ms). */
   delay?: number;
   /** Explicit epoch-ms run time (overrides `delay`). */
@@ -66,6 +70,7 @@ interface Row {
   payload: string;
   result: string | null;
   error: string | null;
+  job_id: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -79,6 +84,7 @@ function deserialize(row: Row): Job {
   return {
     id: row.id,
     queue: row.queue,
+    jobId: row.job_id ?? undefined,
     status: row.status,
     priority: row.priority,
     payload: JSON.parse(row.payload),
@@ -190,25 +196,46 @@ export class Queue extends EventEmitter {
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           queue TEXT NOT NULL, status TEXT NOT NULL, priority INTEGER NOT NULL,
           run_at INTEGER NOT NULL, attempts INTEGER NOT NULL, max_attempts INTEGER NOT NULL,
-          payload TEXT NOT NULL, result TEXT, error TEXT, locked_by TEXT,
+          payload TEXT NOT NULL, result TEXT, error TEXT, locked_by TEXT, job_id TEXT,
           created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
         )`,
       );
+      // Add job_id to pre-existing tables (idempotent).
+      try {
+        this.driver.exec(`ALTER TABLE _jobs ADD COLUMN job_id TEXT`);
+      } catch {
+        /* column already exists */
+      }
       this.driver.exec(
         `CREATE INDEX IF NOT EXISTS _jobs_claim ON _jobs (queue, status, priority, run_at)`,
+      );
+      this.driver.exec(
+        `CREATE INDEX IF NOT EXISTS _jobs_jobid ON _jobs (job_id)`,
       );
       ensured.add(db);
     }
   }
 
-  /** Enqueue a job. */
+  /**
+   * Enqueue a job. Pass `opts.jobId` to **dedupe**: if a job with that id is
+   * already pending or active, the existing job is returned instead of adding a
+   * duplicate (idempotent enqueue — e.g. for resume/replay).
+   */
   add<T = any>(name: string, payload: T, opts: AddOptions = {}): Job<T> {
     const t = now();
+    if (opts.jobId) {
+      const existing = this.driver
+        .prepare(
+          `SELECT * FROM _jobs WHERE job_id = ? AND status IN ('pending','active') LIMIT 1`,
+        )
+        .get(opts.jobId) as Row | undefined;
+      if (existing) return deserialize(existing) as Job<T>;
+    }
     const runAt = opts.runAt ?? (opts.delay ? t + opts.delay : t);
     const info = this.driver
       .prepare(
-        `INSERT INTO _jobs (queue, status, priority, run_at, attempts, max_attempts, payload, created_at, updated_at)
-         VALUES (?, 'pending', ?, ?, 0, ?, ?, ?, ?)`,
+        `INSERT INTO _jobs (queue, status, priority, run_at, attempts, max_attempts, payload, job_id, created_at, updated_at)
+         VALUES (?, 'pending', ?, ?, 0, ?, ?, ?, ?, ?)`,
       )
       .run(
         name,
@@ -216,6 +243,7 @@ export class Queue extends EventEmitter {
         runAt,
         opts.maxAttempts ?? this.maxAttempts,
         JSON.stringify(payload ?? null),
+        opts.jobId ?? null,
         t,
         t,
       );

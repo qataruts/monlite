@@ -84,4 +84,15 @@ describe("@monlite/kv", () => {
     expect(c.size()).toBe(0); // swept
     c.stop();
   });
+
+  it("setNX acquires only when absent or expired (lock primitive)", () => {
+    const c = kv(open());
+    expect(c.setNX("lock", "a")).toBe(true); // acquired
+    expect(c.setNX("lock", "b")).toBe(false); // already held
+    expect(c.get("lock")).toBe("a");
+
+    c.expire("lock", -10); // lease expired
+    expect(c.setNX("lock", "c")).toBe(true); // re-acquirable
+    expect(c.get("lock")).toBe("c");
+  });
 });

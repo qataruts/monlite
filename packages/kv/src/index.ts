@@ -14,6 +14,12 @@ export interface KVOptions {
 export interface KV {
   get<T = any>(key: string): T | undefined;
   set(key: string, value: any, opts?: { ttl?: number }): void;
+  /**
+   * Atomically set the key only if it isn't already present (Redis `SET NX`).
+   * Returns `true` if set, `false` if a live key already existed. The lock
+   * primitive for single-instance schedulers, nonces, and once-only work.
+   */
+  setNX(key: string, value: any, opts?: { ttl?: number }): boolean;
   has(key: string): boolean;
   delete(key: string): boolean;
   /** Atomically add `by` (default 1) to a numeric key; returns the new value. */
@@ -94,6 +100,15 @@ export function kv(db: Monlite, options: KVOptions = {}): KV {
     set(key, value, opts) {
       const expires = opts?.ttl != null ? now() + opts.ttl : null;
       setRaw(key, JSON.stringify(value), expires);
+    },
+    setNX(key, value, opts) {
+      return driver.transaction(() => {
+        const row = getRow(key);
+        if (fresh(row)) return false; // a live key already exists
+        const expires = opts?.ttl != null ? now() + opts.ttl : null;
+        setRaw(key, JSON.stringify(value), expires);
+        return true;
+      });
     },
     has(key) {
       return api.get(key) !== undefined;

@@ -1,5 +1,19 @@
 # @monlite/core
 
+## 2.4.0 — AI-agent harness primitives
+
+Unblocks the local-agent-backend track (`plan/PLATFORM-AI-ADOPTION.md`). All
+SQLite-native; pairs with `@monlite/kv` `setNX` and `@monlite/queue` dedupe.
+
+- **Compound unique indexes** — `collection(name, { uniqueIndexes: [["tenantId",
+  "jobId", "key"]] })`. A duplicate throws `MonliteUniqueConstraintError` (the
+  idempotency/dedupe primitive). Fields may be columns or JSON paths.
+- **Collection TTL** — `collection(name, { ttl: { field, seconds } })` +
+  `collection.purgeExpired()` to cap unbounded-growth tables (job logs, sessions).
+- **Atomic CAS** — note: `findOneAndUpdate` (2.2.0) already does compare-and-swap:
+  match on `version`+`status` in `where`, `$set`+`$inc` in `data`, returns the new
+  row or `null` (lost CAS). Now covered by a dedicated test.
+
 ## 2.3.0 — observability
 
 Closes P1-3 from `plan/PRODUCTION-READINESS.md`.

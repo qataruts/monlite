@@ -54,6 +54,17 @@ export interface CollectionOptions {
    * is identical either way.
    */
   schema?: CollectionSchema;
+  /**
+   * Compound unique indexes — each inner array is a set of fields that must be
+   * unique together (e.g. `[["tenantId", "jobId", "key"]]`). A duplicate throws
+   * `MonliteUniqueConstraintError`. Fields may be declared columns or JSON paths.
+   */
+  uniqueIndexes?: string[][];
+  /**
+   * Time-to-live for documents. `field` is a timestamp (epoch ms) — typically
+   * `"created_at"`; rows older than `seconds` are removed by `purgeExpired()`.
+   */
+  ttl?: { field: string; seconds: number };
 }
 
 export type CollectionMode = "document" | "structured";

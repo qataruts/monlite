@@ -1,5 +1,9 @@
 # @monlite/kv
 
+## 0.2.0
+
+- `setNX(key, value, { ttl? })` — atomic set-if-absent (Redis `SET NX`), the lock/nonce primitive. Treats an expired key as absent.
+
 ## 0.1.1
 
 - Allow `@monlite/core` 2.0 (dependency range `^2.0.0`). No API changes.

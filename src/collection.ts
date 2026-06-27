@@ -86,6 +86,8 @@ export class Collection<T = Doc> {
   /** Declared native columns (empty in document mode). */
   private readonly columns = new Set<string>();
   private readonly jsonColumns = new Set<string>();
+  private readonly uniqueIndexes: string[][];
+  private readonly ttl?: { field: string; seconds: number };
   private insertSqlCache?: string;
 
   private readonly trackPath = (path: string) =>
@@ -97,6 +99,23 @@ export class Collection<T = Doc> {
     options: CollectionOptions = {},
   ) {
     this.mode = options.schema ? "structured" : "document";
+
+    const FIELD_RE = /^[A-Za-z_][A-Za-z0-9_.]*$/;
+    this.uniqueIndexes = options.uniqueIndexes ?? [];
+    for (const fields of this.uniqueIndexes) {
+      for (const f of fields) {
+        if (!FIELD_RE.test(f)) {
+          throw new MonliteError(`Invalid field "${f}" in a unique index`);
+        }
+      }
+    }
+    if (options.ttl) {
+      if (!FIELD_RE.test(options.ttl.field)) {
+        throw new MonliteError(`Invalid ttl field "${options.ttl.field}"`);
+      }
+      this.ttl = options.ttl;
+    }
+
     if (options.schema) {
       for (const [field, def] of Object.entries(options.schema)) {
         if (!NAME_RE.test(field)) {
@@ -180,7 +199,25 @@ export class Collection<T = Doc> {
         }
       }
     }
+    this.createUniqueIndexes();
     this.initialized = true;
+  }
+
+  /** SQL expression for a field — a column (incl. system fields) or a JSON path. */
+  private fieldSqlExpr(field: string): string {
+    return fieldExpr(
+      field,
+      new Set([...this.columns, "_id", "created_at", "updated_at"]),
+    );
+  }
+
+  private createUniqueIndexes(): void {
+    this.uniqueIndexes.forEach((fields, i) => {
+      const exprs = fields.map((f) => this.fieldSqlExpr(f)).join(", ");
+      this.db.exec(
+        `CREATE UNIQUE INDEX IF NOT EXISTS "uqx_${this.name}_${i}" ON "${this.name}"(${exprs})`,
+      );
+    });
   }
 
   private columnDdl(field: string, forAlter: boolean): string {
@@ -1098,6 +1135,39 @@ export class Collection<T = Doc> {
 
     this.afterWrite(ids);
     return result;
+  }
+
+  /**
+   * Delete documents past their TTL (requires the `ttl` collection option).
+   * Call periodically (e.g. from a cron tick). Returns the number removed.
+   */
+  async purgeExpired(): Promise<{ count: number }> {
+    if (!this.ttl) {
+      throw new MonliteError(
+        "purgeExpired() requires the `ttl` collection option.",
+      );
+    }
+    this.ensureTable();
+    const cutoff = Date.now() - this.ttl.seconds * 1000;
+    const expr = this.fieldSqlExpr(this.ttl.field);
+    const rows = this.db
+      .prepare(`SELECT _id FROM "${this.name}" WHERE ${expr} < ?`)
+      .all(cutoff) as Array<{ _id: string }>;
+    if (!rows.length) return { count: 0 };
+
+    const recorder = this.recorder;
+    const now = Date.now();
+    this.guard(() =>
+      this.db.transaction(() => {
+        const del = this.db.prepare(`DELETE FROM "${this.name}" WHERE _id = ?`);
+        for (const { _id } of rows) {
+          del.run(_id);
+          recorder?.recordLocal(this.name, _id, "delete", now);
+        }
+      }),
+    );
+    this.afterWrite(rows.map((r) => r._id));
+    return { count: rows.length };
   }
 
   /* ----------------------------- delete ----------------------------- */

@@ -299,6 +299,29 @@ await orders.bulkWrite([
 ]); // → { inserted, updated, deleted }
 ```
 
+`findOneAndUpdate` doubles as **compare-and-swap** — put the expected
+`version`/`status` in `where`, `$inc` the version in `data`; it returns the new
+row, or `null` if another writer won the race (the lock-free primitive for job
+queues):
+
+```ts
+const claimed = await jobs.findOneAndUpdate({
+  where: { _id, version: expected, status: { in: ["pending"] } },
+  data: { $set: { status: "running" }, $inc: { version: 1 } },
+}); // null ⇒ lost the CAS, back off
+```
+
+### Uniqueness & TTL
+
+```ts
+// Compound unique index — duplicates throw MonliteUniqueConstraintError
+db.collection("steps", { uniqueIndexes: [["tenantId", "jobId", "key"]] });
+
+// TTL — cap unbounded-growth tables (job logs, sessions); call from a cron tick
+const logs = db.collection("job_ops", { ttl: { field: "created_at", seconds: 90 * 86400 } });
+await logs.purgeExpired(); // → { count }
+```
+
 ---
 
 ## Aggregation

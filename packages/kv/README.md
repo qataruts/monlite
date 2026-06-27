@@ -32,6 +32,7 @@ you want a purely ephemeral cache.
 | --- | --- |
 | `get(key)` | Value, or `undefined` (also if expired). |
 | `set(key, value, { ttl })` | Store any JSON value; `ttl` in ms (optional). |
+| `setNX(key, value, { ttl })` | Atomic set-if-absent (Redis `SET NX`); `true` if acquired. The lock/nonce primitive. |
 | `has(key)` / `delete(key)` | Existence / removal. |
 | `incr(key, by?)` / `decr(key, by?)` | Atomic numeric update; returns the new value. |
 | `mget(keys)` | Array of values (`undefined` per missing key). |
