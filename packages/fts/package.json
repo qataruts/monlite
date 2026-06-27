@@ -1,6 +1,6 @@
 {
   "name": "@monlite/fts",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Full-text search for @monlite/core, powered by SQLite FTS5. Adds collection.search().",
   "type": "module",
   "main": "./dist/index.cjs",

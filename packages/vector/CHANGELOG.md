@@ -1,5 +1,9 @@
 # @monlite/vector
 
+## 0.2.1
+
+- Allow `@monlite/core` 2.0 (dependency range `^2.0.0`). No API changes.
+
 ## 0.2.0
 
 - **hybridSearch()** — fuse FTS (keyword) + vector (semantic) results with

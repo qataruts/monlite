@@ -1,6 +1,6 @@
 {
   "name": "@monlite/kv",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Redis-like local key-value cache for @monlite/core: get/set/incr with TTL, on SQLite.",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -8,22 +8,54 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
-      "require": { "types": "./dist/index.d.cts", "default": "./dist/index.cjs" }
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "sideEffects": false,
-  "scripts": { "build": "tsup", "test": "vitest run", "typecheck": "tsc --noEmit" },
-  "keywords": ["monlite", "kv", "cache", "redis", "key-value", "ttl", "sqlite"],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "monlite",
+    "kv",
+    "cache",
+    "redis",
+    "key-value",
+    "ttl",
+    "sqlite"
+  ],
   "license": "MIT",
   "author": "Emad Jumaah <emadjumaah@gmail.com>",
-  "repository": { "type": "git", "url": "git+https://github.com/qataruts/monlite.git", "directory": "packages/kv" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/qataruts/monlite.git",
+    "directory": "packages/kv"
+  },
   "homepage": "https://github.com/qataruts/monlite/tree/main/packages/kv#readme",
-  "bugs": { "url": "https://github.com/qataruts/monlite/issues" },
-  "publishConfig": { "access": "public" },
-  "engines": { "node": ">=18" },
-  "dependencies": { "@monlite/core": "workspace:^" },
+  "bugs": {
+    "url": "https://github.com/qataruts/monlite/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@monlite/core": "workspace:^"
+  },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "better-sqlite3": "^11.8.0",

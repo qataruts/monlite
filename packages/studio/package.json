@@ -1,23 +1,57 @@
 {
   "name": "@monlite/studio",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A local web inspector for monlite databases — browse collections, view docs, run queries. `npx @monlite/studio app.db`.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "bin": { "monlite-studio": "./dist/cli.js" },
-  "exports": { ".": { "import": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } } },
-  "files": ["dist"],
-  "scripts": { "build": "tsup", "test": "vitest run", "typecheck": "tsc --noEmit" },
-  "keywords": ["monlite", "studio", "devtools", "inspector", "gui", "sqlite"],
+  "bin": {
+    "monlite-studio": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "monlite",
+    "studio",
+    "devtools",
+    "inspector",
+    "gui",
+    "sqlite"
+  ],
   "license": "MIT",
   "author": "Emad Jumaah <emadjumaah@gmail.com>",
-  "repository": { "type": "git", "url": "git+https://github.com/qataruts/monlite.git", "directory": "packages/studio" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/qataruts/monlite.git",
+    "directory": "packages/studio"
+  },
   "homepage": "https://github.com/qataruts/monlite/tree/main/packages/studio#readme",
-  "bugs": { "url": "https://github.com/qataruts/monlite/issues" },
-  "publishConfig": { "access": "public" },
-  "engines": { "node": ">=18" },
-  "dependencies": { "@monlite/core": "workspace:^" },
+  "bugs": {
+    "url": "https://github.com/qataruts/monlite/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@monlite/core": "workspace:^"
+  },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "tsup": "^8.3.5",

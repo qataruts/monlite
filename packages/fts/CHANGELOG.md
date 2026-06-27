@@ -1,5 +1,9 @@
 # @monlite/fts
 
+## 0.1.3
+
+- Allow `@monlite/core` 2.0 (dependency range `^2.0.0`). No API changes.
+
 ## 0.1.2
 
 - Track @monlite/core ^1.0.0.

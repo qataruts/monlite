@@ -1,5 +1,9 @@
 # @monlite/sync
 
+## 1.2.1
+
+- Allow `@monlite/core` 2.0 (dependency range `^2.0.0`). No API changes.
+
 ## 1.2.0 — MySQL adapter
 
 - **`MySqlAdapter`** — replicate against MySQL (and MariaDB). Each collection
