@@ -45,7 +45,8 @@ sync to them.
 - **`@monlite/vector`** — local vector / semantic search (sqlite-vec) via
   `collection.findSimilar()`, plus **`hybridSearch()`** (FTS + vector fused with
   Reciprocal Rank Fusion) for RAG and AI-agent memory.
-- **Stable 1.0** — `@monlite/core` and `@monlite/sync` are at `1.0.0` (semver-stable).
+- **Semver-stable** — `@monlite/core` (now `2.0`) and `@monlite/sync` follow
+  semantic versioning; companion packages depend on `@monlite/core ^2.0.0`.
 - **Examples, benchmarks & guides** — runnable demos in [`examples/`](../examples/)
   (CRUD/FTS, vector/hybrid, sync, the kv/queue/cron harness, `$lookup` joins, the
   WASM backend), a benchmark suite ([`docs/BENCHMARKS.md`](./BENCHMARKS.md)), and

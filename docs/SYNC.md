@@ -1,8 +1,10 @@
-# `@monlite/sync` — Design
+# `@monlite/sync` — Design (archived)
 
-> Status: **design / not yet implemented**. This document freezes the contract
-> and architecture before any code is written. It is the plan for the feature
-> that turns monlite from "NeDB on SQLite" into a local-first platform.
+> Status: **shipped** — this was the original design doc, kept for historical
+> rationale. `@monlite/sync` is now released with adapters for MongoDB,
+> PostgreSQL, MySQL, monlite-to-monlite, and in-memory. For current usage see the
+> [package README](../packages/sync/README.md) and the
+> [custom-adapter guide](./guides/custom-adapter.md).
 
 ---
 
