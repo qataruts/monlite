@@ -46,6 +46,37 @@ jobs:
         env:
           MONLITE_DRIVER: node:sqlite
 
+  # Catch OS-specific issues: native better-sqlite3 prebuilds, Windows file
+  # locking, path handling, and the SIGKILL crash test on each platform.
+  cross-platform:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    name: ${{ matrix.os }} (Node 22)
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm -r build
+
+      - name: Test (default / better-sqlite3)
+        run: pnpm -r test
+
+      - name: Test (node:sqlite backend)
+        run: pnpm -r test
+        env:
+          MONLITE_DRIVER: node:sqlite
+
   mongo:
     runs-on: ubuntu-latest
     name: Integration (Mongo + Postgres + MySQL)
