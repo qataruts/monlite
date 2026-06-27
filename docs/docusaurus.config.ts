@@ -24,7 +24,7 @@ const config: Config = {
         docs: {
           routeBasePath: "/", // docs are the site
           sidebarPath: "./sidebars.ts",
-          editUrl: "https://github.com/qataruts/monlite/edit/main/apps/docs/",
+          editUrl: "https://github.com/qataruts/monlite/edit/main/docs/",
         },
         blog: false,
         theme: { customCss: "./src/css/custom.css" },

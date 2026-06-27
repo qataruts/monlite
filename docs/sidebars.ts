@@ -40,6 +40,7 @@ const sidebars: SidebarsConfig = {
       items: [
         "guides/production",
         "guides/migrations",
+        "guides/v2-migration",
         "guides/custom-adapter",
         "guides/ai-agent-backend",
       ],
@@ -47,7 +48,7 @@ const sidebars: SidebarsConfig = {
     {
       type: "category",
       label: "Reference",
-      items: ["reference/file-format", "reference/python"],
+      items: ["reference/file-format", "reference/benchmarks", "reference/python"],
     },
   ],
 };

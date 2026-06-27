@@ -822,13 +822,13 @@ browser backend. `cd examples && npm install && node notes.mjs`.
 
 ## Guides
 
-- [Schema & migrations](docs/guides/migrations.md) — auto-additive changes and
+- [Schema & migrations](docs/docs/guides/migrations.md) — auto-additive changes and
   `$migrate()` for drop/rename/type-change.
-- [Custom adapters & drivers](docs/guides/custom-adapter.md) — add a sync backend
+- [Custom adapters & drivers](docs/docs/guides/custom-adapter.md) — add a sync backend
   or a new SQLite binding/environment.
-- [Migrating to 2.0](docs/guides/v2-migration.md) — the typed-query / select
+- [Migrating to 2.0](docs/docs/guides/v2-migration.md) — the typed-query / select
   changes (types only; runtime unchanged).
-- [Running in production](docs/guides/production.md) — durability, transactions,
+- [Running in production](docs/docs/guides/production.md) — durability, transactions,
   backups/recovery, concurrency, and the error reference.
 
 ## Studio (inspector)
@@ -843,7 +843,7 @@ See [`@monlite/studio`](https://www.npmjs.com/package/@monlite/studio).
 
 ## Benchmarks
 
-[`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) compares monlite to the raw SQLite
+[`docs/docs/reference/benchmarks.md`](docs/docs/reference/benchmarks.md) compares monlite to the raw SQLite
 driver, NeDB, and lowdb (`pnpm bench` to reproduce). In short: ~150k–250k
 ops/sec, roughly 2× the raw-driver overhead for the full document API, and it
 **stays flat on indexed reads where JSON-file stores degrade** (lowdb point reads
@@ -853,7 +853,7 @@ are ~15× slower at 10k docs).
 
 A monlite database is **just a SQLite file** with documented conventions, so any
 language with a SQLite library can read/write it — no port required. The contract
-is in [`docs/FORMAT.md`](docs/FORMAT.md).
+is in [`docs/docs/reference/file-format.md`](docs/docs/reference/file-format.md).
 
 ---
 

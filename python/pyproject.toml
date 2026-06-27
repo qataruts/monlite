@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "monlite"
+version = "0.1.0"
+description = "Local-first database for Python — documents, cache, queue, FTS, vectors over one SQLite file. The Python port of monlite; reads/writes the same .db as the TypeScript packages."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "monlite" }]
+keywords = ["sqlite", "database", "document", "local-first", "vector", "rag", "cache", "queue", "fts"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Topic :: Database",
+  "Intended Audience :: Developers",
+]
+
+# Core (documents + kv + queue + cron + fts) is pure stdlib (sqlite3). Extras pull the
+# native bits, mirroring the TypeScript packages.
+[project.optional-dependencies]
+vector = ["sqlite-vec>=0.1"]
+postgres = ["psycopg[binary]>=3"]
+mongo = ["pymongo>=4"]
+dev = ["pytest>=7"]
+
+[project.urls]
+Homepage = "https://monlite.dev"
+Repository = "https://github.com/qataruts/monlite"
+
+[tool.setuptools.packages.find]
+where = ["src"]

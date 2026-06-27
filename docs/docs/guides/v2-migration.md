@@ -1,3 +1,8 @@
+---
+id: v2-migration
+title: Migrating to 2.0
+---
+
 # Migrating to `@monlite/core` 2.0
 
 2.0 is a **types-only** release: stronger TypeScript inference. **Runtime behavior

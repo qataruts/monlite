@@ -1,3 +1,8 @@
+---
+id: benchmarks
+title: Benchmarks
+---
+
 # Benchmarks
 
 Indicative numbers comparing `@monlite/core` to the raw SQLite driver and to the
