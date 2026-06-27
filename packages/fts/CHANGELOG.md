@@ -1,5 +1,9 @@
 # @monlite/fts
 
+## 0.2.0
+
+- `collection.catchUp()` + an `updated_at` high-water-mark: incrementally index documents written by **another process** (and reconcile cross-process deletes) without a full reindex — so a separate searcher process stays fresh. Indexes on open too.
+
 ## 0.1.3
 
 - Allow `@monlite/core` 2.0 (dependency range `^2.0.0`). No API changes.

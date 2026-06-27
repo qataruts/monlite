@@ -94,4 +94,34 @@ describe("@monlite/fts", () => {
       rmSync(tmp, { recursive: true, force: true });
     }
   });
+
+  it("catchUp() picks up cross-process writes and deletes", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "monlite-fts-"));
+    try {
+      const file = join(tmp, "app.db");
+      const reader = open({ posts: ["title"] }, file); // has FTS
+      const writer = open({}, file, false); // separate connection, no FTS plugin
+
+      // the writer adds a doc — the reader's in-process index doesn't know about it
+      await writer.collection("posts").create({
+        data: { _id: "p1", title: "hello world" },
+      });
+      expect((await reader.collection("posts").search("hello")).length).toBe(0);
+
+      // catch up → now searchable
+      const res = reader.collection("posts").catchUp();
+      expect(res.indexed).toBeGreaterThan(0);
+      expect(
+        (await reader.collection("posts").search("hello")).map((d) => d._id),
+      ).toEqual(["p1"]);
+
+      // a cross-process delete is also reconciled
+      await writer.collection("posts").delete({ where: { _id: "p1" } });
+      const res2 = reader.collection("posts").catchUp();
+      expect(res2.removed).toBe(1);
+      expect((await reader.collection("posts").search("hello")).length).toBe(0);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
 });

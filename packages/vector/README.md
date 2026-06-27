@@ -75,6 +75,18 @@ table keyed by the document `_id`, indexes on `init` (backfilling existing
 documents), and keeps it current via the plugin `afterWrite` hook. `findSimilar`
 runs a KNN query, then returns the live documents in distance order.
 
+## Multi-process ingest
+
+`afterWrite` only sees writes from *its own* connection. If a **separate process**
+ingests vectors (the common agent pattern), call `collection.catchUp()` in the
+searching process to incrementally index the new vectors (and reconcile
+cross-process deletes) before querying — no full reindex:
+
+```ts
+db.collection("memories").catchUp(); // → { indexed, removed }; call periodically
+await db.collection("memories").findSimilar({ vector, topK: 5 });
+```
+
 ## Hybrid search
 
 For the best retrieval quality, combine keyword (FTS) and semantic (vector)

@@ -66,6 +66,20 @@ existing documents when the index is empty) and keeps it current via the plugin
 `afterWrite` hook. Search runs `MATCH` against that table, then returns the live
 documents from the collection in rank order.
 
+## Multi-process freshness
+
+The `afterWrite` hook only sees writes made through *its own* connection. If a
+**separate process** writes documents (e.g. an ingest worker), call
+`collection.catchUp()` in the searching process to incrementally index what
+changed (and reconcile cross-process deletes) — no full reindex:
+
+```ts
+db.collection("posts").catchUp(); // → { indexed, removed }; call periodically
+await db.collection("posts").search("hello");
+```
+
+It tracks an `updated_at` high-water-mark, so each call only does the new work.
+
 ## License
 
 MIT 🌙

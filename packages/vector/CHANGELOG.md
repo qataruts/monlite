@@ -1,5 +1,9 @@
 # @monlite/vector
 
+## 0.3.0
+
+- `collection.catchUp()` + an `updated_at` high-water-mark: incrementally index vectors written by **another process** (and reconcile cross-process deletes) without a full reindex — multi-process ingest → search now works. Indexes on open too.
+
 ## 0.2.1
 
 - Allow `@monlite/core` 2.0 (dependency range `^2.0.0`). No API changes.

@@ -1,4 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createDb, type Monlite, type MonliteOptions } from "@monlite/core";
 import { fts } from "@monlite/fts";
 import { vector, hybridSearch, type VectorSpec } from "../src/index";
@@ -134,5 +137,44 @@ describe("hybridSearch (FTS + vector, RRF)", () => {
       topK: 1,
     });
     expect(r[0]._id).toBe("x");
+  });
+
+  it("catchUp() picks up cross-process writes", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "monlite-vec-"));
+    try {
+      const file = join(tmp, "app.db");
+      const reader = createDb(file, {
+        allowExtensions: true,
+        plugins: [vector(spec)],
+        ...(driver ? { driver } : {}),
+      });
+      dbs.push(reader);
+      const writer = createDb(file, { ...(driver ? { driver } : {}) }); // no vector plugin
+      dbs.push(writer);
+
+      // a separate connection ingests a vector; the reader hasn't indexed it
+      await writer
+        .collection("docs")
+        .create({ data: { _id: "d1", embedding: [1, 0, 0] } });
+      expect(
+        (
+          await reader
+            .collection("docs")
+            .findSimilar({ vector: [1, 0, 0], topK: 1 })
+        ).length,
+      ).toBe(0);
+
+      const res = reader.collection("docs").catchUp();
+      expect(res.indexed).toBeGreaterThan(0);
+      expect(
+        (
+          await reader
+            .collection("docs")
+            .findSimilar({ vector: [1, 0, 0], topK: 1 })
+        ).map((d) => d._id),
+      ).toEqual(["d1"]);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });

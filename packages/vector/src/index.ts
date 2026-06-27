@@ -35,6 +35,8 @@ export type SimilarResult<T = Doc> = WithId<T> & { _distance: number };
 declare module "@monlite/core" {
   interface Collection<T> {
     findSimilar(opts: FindSimilarOptions<T>): Promise<SimilarResult<T>[]>;
+    /** Pick up documents written by another process; returns counts. */
+    catchUp(): { indexed: number; removed: number };
   }
 }
 
@@ -83,6 +85,60 @@ export function reindex(db: Monlite, coll: string, def: VectorField): void {
   for (const doc of db.collection(coll).findManyCore({})) {
     indexDoc(db, coll, def, (doc as WithId<Doc>)._id);
   }
+}
+
+const STATE = "_monlite_vec_state";
+function ensureState(db: Monlite): void {
+  db.sqlite.exec(
+    `CREATE TABLE IF NOT EXISTS ${STATE} (coll TEXT PRIMARY KEY, high_water INTEGER NOT NULL)`,
+  );
+}
+function getHighWater(db: Monlite, coll: string): number {
+  const row = db.sqlite
+    .prepare(`SELECT high_water FROM ${STATE} WHERE coll = ?`)
+    .get(coll) as { high_water: number } | undefined;
+  return row?.high_water ?? 0;
+}
+function setHighWater(db: Monlite, coll: string, value: number): void {
+  db.sqlite
+    .prepare(
+      `INSERT INTO ${STATE}(coll, high_water) VALUES (?, ?) ON CONFLICT(coll) DO UPDATE SET high_water = excluded.high_water`,
+    )
+    .run(coll, value);
+}
+
+/**
+ * Incrementally index documents written by another process (and drop entries for
+ * cross-process deletes), so a separate searcher process becomes fresh without a
+ * full {@link reindex}. Returns how many docs were (re)indexed and removed.
+ */
+export function catchUp(
+  db: Monlite,
+  coll: string,
+  def: VectorField,
+): { indexed: number; removed: number } {
+  const sqlite = db.sqlite;
+  ensureState(db);
+  const hw = getHighWater(db, coll);
+  const docs = sqlite
+    .prepare(`SELECT _id, updated_at FROM "${coll}" WHERE updated_at >= ?`)
+    .all(hw) as Array<{ _id: string; updated_at: number }>;
+  let max = hw;
+  for (const d of docs) {
+    indexDoc(db, coll, def, d._id);
+    if (d.updated_at > max) max = d.updated_at;
+  }
+  const orphans = sqlite
+    .prepare(
+      `SELECT doc_id FROM "${vecTable(coll)}" WHERE doc_id NOT IN (SELECT _id FROM "${coll}")`,
+    )
+    .all() as Array<{ doc_id: string }>;
+  const del = sqlite.prepare(
+    `DELETE FROM "${vecTable(coll)}" WHERE doc_id = ?`,
+  );
+  for (const o of orphans) del.run(o.doc_id);
+  setHighWater(db, coll, max);
+  return { indexed: docs.length, removed: orphans.length };
 }
 
 function findSimilar<T = Doc>(
@@ -234,6 +290,7 @@ export function vector(spec: VectorSpec): MonlitePlugin {
             `{ allowExtensions: true }. (${(err as Error).message})`,
         );
       }
+      ensureState(db);
       for (const [coll, def] of Object.entries(spec)) {
         const metric =
           def.distance === "cosine" ? " distance_metric=cosine" : "";
@@ -245,16 +302,22 @@ export function vector(spec: VectorSpec): MonlitePlugin {
           .prepare(`SELECT count(*) AS n FROM "${vecTable(coll)}"`)
           .get() as { n: number };
         if (count.n === 0) reindex(db, coll, def);
+        catchUp(db, coll, def); // pick up other processes' writes
       }
     },
     afterWrite(db, { collection, ids }) {
       const def = spec[collection];
       if (!def) return;
       for (const id of ids) indexDoc(db, collection, def, id);
+      setHighWater(db, collection, Date.now());
     },
     collectionMethods: {
       findSimilar: (coll, opts: FindSimilarOptions) =>
         findSimilar(database, coll, spec, opts),
+      catchUp: (coll) =>
+        spec[coll.name]
+          ? catchUp(database, coll.name, spec[coll.name])
+          : { indexed: 0, removed: 0 },
     },
   };
 }
