@@ -194,12 +194,32 @@ export type Select<T = Doc> = { [K in keyof T]?: boolean } & {
   [path: string]: boolean;
 };
 
+/**
+ * A `$lookup`-style left join: for each result, fetch matching documents from
+ * another collection and attach them. With `unwind`, emit one row per match
+ * (`$unwind`); `unwind: "preserve"` also keeps rows that have no match.
+ */
+export interface LookupSpec {
+  /** The collection to join. */
+  from: string;
+  /** Field on this collection to match on. */
+  localField: string;
+  /** Field on the `from` collection to match against. */
+  foreignField: string;
+  /** Output field that receives the matched document(s). */
+  as: string;
+  /** Flatten the `as` array to a single object (one output row per match). */
+  unwind?: boolean | "preserve";
+}
+
 export interface FindManyArgs<T = Doc> {
   where?: WhereInput<T>;
   orderBy?: OrderBy<T>;
   select?: Select<T>;
   skip?: number;
   take?: number;
+  /** Join related documents from other collections ($lookup / $unwind). */
+  lookup?: LookupSpec | LookupSpec[];
 }
 
 export interface FindFirstArgs<T = Doc> {
@@ -207,6 +227,7 @@ export interface FindFirstArgs<T = Doc> {
   orderBy?: OrderBy<T>;
   select?: Select<T>;
   skip?: number;
+  lookup?: LookupSpec | LookupSpec[];
 }
 
 export interface CreateArgs<T = Doc> {

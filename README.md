@@ -317,6 +317,28 @@ await users.distinct("age", { role: "admin" });     // [28, 31]
 await users.distinct("tags");                        // ["a", "b", "c"]
 ```
 
+### Joins (`$lookup` / `$unwind`)
+
+Pull in related documents from another collection with a `lookup` on `findMany`
+— a left join, run as **two queries (no N+1)**, in either storage mode:
+
+```ts
+// Attach each user's orders as an array ($lookup):
+await db.collection("users").findMany({
+  lookup: { from: "orders", localField: "_id", foreignField: "user_id", as: "orders" },
+});
+// → [{ _id: "u1", name: "Ali", orders: [ {…}, {…} ] }, …]
+
+// Flatten to one row per match with `unwind` ($unwind); use "preserve" to keep
+// rows that have no match (left-outer):
+await db.collection("orders").findMany({
+  lookup: { from: "users", localField: "user_id", foreignField: "_id", as: "user", unwind: true },
+});
+// → [{ _id: "o1", user_id: "u1", user: { _id: "u1", name: "Ali" } }, …]
+```
+
+Pass an array of specs to join several collections at once.
+
 ---
 
 ## Live queries (reactivity)

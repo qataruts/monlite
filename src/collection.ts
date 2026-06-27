@@ -17,6 +17,7 @@ import type {
   GroupByArgs,
   GroupByResult,
   LiveEvent,
+  LookupSpec,
   MigrateOptions,
   UpdateArgs,
   UpdateData,
@@ -665,7 +666,66 @@ export class Collection<T = Doc> {
   }
 
   async findMany(args: FindManyArgs<T> = {}): Promise<WithId<T>[]> {
-    return this.findManyCore(args);
+    if (!args.lookup) return this.findManyCore(args);
+
+    const specs = Array.isArray(args.lookup) ? args.lookup : [args.lookup];
+    // Fetch full base docs (need localFields), join, then project.
+    let rows: any[] = this.findManyCore({
+      ...args,
+      select: undefined,
+      lookup: undefined,
+    });
+    for (const spec of specs) rows = await this.applyLookup(rows, spec);
+
+    if (args.select) {
+      rows = rows.map((r) => {
+        const projected = project(r, args.select) as Record<string, any>;
+        for (const spec of specs) projected[spec.as] = r[spec.as];
+        return projected;
+      });
+    }
+    return rows as WithId<T>[];
+  }
+
+  /** Resolve one `$lookup` spec against already-fetched rows (2 queries, no N+1). */
+  private async applyLookup(rows: any[], spec: LookupSpec): Promise<any[]> {
+    const localValues = [
+      ...new Set(
+        rows
+          .map((r) => r[spec.localField])
+          .filter((v) => v !== undefined && v !== null),
+      ),
+    ];
+    const foreign = localValues.length
+      ? await this.mon.collection(spec.from).findMany({
+          where: { [spec.foreignField]: { in: localValues } } as WhereInput,
+        })
+      : [];
+
+    const byKey = new Map<any, any[]>();
+    for (const f of foreign) {
+      const key = (f as Record<string, any>)[spec.foreignField];
+      const list = byKey.get(key);
+      if (list) list.push(f);
+      else byKey.set(key, [f]);
+    }
+
+    if (spec.unwind) {
+      const out: any[] = [];
+      for (const r of rows) {
+        const matches = byKey.get(r[spec.localField]) ?? [];
+        if (matches.length === 0) {
+          if (spec.unwind === "preserve") out.push({ ...r, [spec.as]: null });
+        } else {
+          for (const m of matches) out.push({ ...r, [spec.as]: m });
+        }
+      }
+      return out;
+    }
+    return rows.map((r) => ({
+      ...r,
+      [spec.as]: byKey.get(r[spec.localField]) ?? [],
+    }));
   }
 
   async findFirst(args: FindFirstArgs<T> = {}): Promise<WithId<T> | null> {

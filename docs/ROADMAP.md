@@ -59,6 +59,8 @@ sync to them.
 - **Full migration runner** — `collection.$migrate({ rename, drop })` rebuilds a
   structured table to the declared schema (drop/rename/type-change), preserving
   data and indexes, with an unacknowledged-drop guard.
+- **Joins** — `lookup` on `findMany` ($lookup / $unwind), two-query left joins
+  across collections in both storage modes.
 
 ## Planned
 
@@ -73,7 +75,6 @@ sync to them.
 ### Wave 4 — DX depth
 - **Stronger TypeScript inference** — typed `where`/`orderBy`/`select` and
   `select`-narrowed return types.
-- **`$lookup` / `$unwind`** aggregation.
 - A **docs site** and migration/custom-adapter **guides**.
 
 ### Wave 5 — breadth (demand-driven)

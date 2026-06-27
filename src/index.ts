@@ -36,6 +36,7 @@ export type {
   Select,
   FindManyArgs,
   FindFirstArgs,
+  LookupSpec,
   CreateArgs,
   CreateManyArgs,
   UpdateArgs,

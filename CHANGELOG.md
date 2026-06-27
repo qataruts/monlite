@@ -1,5 +1,13 @@
 # @monlite/core
 
+## 1.4.0 — joins ($lookup / $unwind)
+
+- **`lookup` on `findMany`** — left-join related documents from another
+  collection: `{ from, localField, foreignField, as }` attaches matches as an
+  array ($lookup); `unwind: true` flattens to one row per match ($unwind), and
+  `unwind: "preserve"` keeps unmatched rows. Pass an array to join several at
+  once. Runs as two queries (no N+1) in both document and structured modes.
+
 ## 1.3.0 — custom drivers (browser/WASM)
 
 - **`createDb(path, { driver })` now accepts a custom `Driver` instance**, not
