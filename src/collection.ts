@@ -17,6 +17,7 @@ import type {
   GroupByArgs,
   GroupByResult,
   LiveEvent,
+  MigrateOptions,
   UpdateArgs,
   UpdateData,
   UpsertArgs,
@@ -215,6 +216,145 @@ export class Collection<T = Doc> {
         );
       }
     }
+  }
+
+  private foreignKeysOn(): boolean {
+    try {
+      const row = this.db.prepare(`PRAGMA foreign_keys`).get() as
+        | { foreign_keys?: number }
+        | undefined;
+      return !!row?.foreign_keys;
+    } catch {
+      return true; // monlite enables foreign keys at open
+    }
+  }
+
+  private declaredIndexDdl(): string[] {
+    // UNIQUE is emitted inline by columnDdl(false), so only regular indexes are
+    // recreated here (mirrors ensureTable).
+    const out: string[] = [];
+    for (const field of this.columnOrder) {
+      if (this.columnDefs[field]!.index) {
+        out.push(
+          `CREATE INDEX IF NOT EXISTS "idx_${this.name}_${field}" ON "${this.name}"("${field}")`,
+        );
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Reconcile the physical table to the declared schema, performing the changes
+   * the auto-additive path can't: **dropping** columns, **renaming** them, and
+   * **changing a column's type/constraints** — via a safe, transactional table
+   * rebuild that preserves data. Structured collections only.
+   *
+   * Pass `rename` to map an existing physical column to a new declared name, and
+   * `drop` to acknowledge columns that the new schema removes (an unacknowledged
+   * column drop throws, so data is never lost by accident).
+   *
+   * ```ts
+   * const users = db.collection("users", { schema: { name: "TEXT", age: "INTEGER" } });
+   * await users.$migrate({ rename: { fullname: "name" }, drop: ["legacy"] });
+   * ```
+   */
+  async $migrate(options: MigrateOptions = {}): Promise<void> {
+    if (this.mode !== "structured") {
+      throw new MonliteError(
+        `$migrate() is only available on structured collections (declare a schema).`,
+      );
+    }
+    this.ensureTable();
+    const rename = options.rename ?? {};
+    const drop = new Set(options.drop ?? []);
+    const SYSTEM = new Set(["_id", "created_at", "updated_at", "data"]);
+
+    const physical = (
+      this.db.prepare(`PRAGMA table_info("${this.name}")`).all() as Array<{
+        name: string;
+      }>
+    )
+      .map((r) => r.name)
+      .filter((n) => !SYSTEM.has(n));
+    const physicalSet = new Set(physical);
+    const targetSet = new Set(this.columnOrder);
+
+    // target declared name -> source physical column to copy from.
+    const renamedFrom: Record<string, string> = {};
+    for (const [from, to] of Object.entries(rename)) {
+      if (!physicalSet.has(from)) {
+        throw new MonliteError(
+          `Cannot rename "${from}": no such column in "${this.name}".`,
+        );
+      }
+      if (!targetSet.has(to)) {
+        throw new MonliteError(
+          `Cannot rename "${from}" to "${to}": "${to}" is not in the schema.`,
+        );
+      }
+      renamedFrom[to] = from;
+    }
+
+    // Any physical column not kept (same name), renamed, or dropped is an
+    // unacknowledged drop — refuse it so data is never silently lost.
+    const renameSources = new Set(Object.keys(rename));
+    for (const col of physical) {
+      if (targetSet.has(col) || renameSources.has(col) || drop.has(col))
+        continue;
+      throw new MonliteError(
+        `Column "${col}" exists in "${this.name}" but isn't in the schema. ` +
+          `Add it to the schema, or list it in \`drop\` to remove it.`,
+      );
+    }
+
+    const tmp = `__mon_migrate_${this.name}`;
+    const newCols = [
+      `_id        TEXT    PRIMARY KEY`,
+      `created_at INTEGER NOT NULL`,
+      `updated_at INTEGER NOT NULL`,
+      `data       TEXT    NOT NULL DEFAULT '{}'`,
+      ...this.columnOrder.map((f) => this.columnDdl(f, false)),
+    ];
+    const destCols = [
+      "_id",
+      "created_at",
+      "updated_at",
+      "data",
+      ...this.columnOrder.map((f) => `"${f}"`),
+    ].join(", ");
+    const srcCols = [
+      "_id",
+      "created_at",
+      "updated_at",
+      "data",
+      ...this.columnOrder.map((t) => {
+        const src = renamedFrom[t] ?? (physicalSet.has(t) ? t : null);
+        return src ? `"${src}"` : "NULL";
+      }),
+    ].join(", ");
+
+    // FK enforcement can't be toggled inside a transaction, so do it around it.
+    const fkOn = this.foreignKeysOn();
+    if (fkOn) this.db.exec(`PRAGMA foreign_keys = OFF`);
+    try {
+      this.guard(() =>
+        this.db.transaction(() => {
+          this.db.exec(`DROP TABLE IF EXISTS "${tmp}"`);
+          this.db.exec(
+            `CREATE TABLE "${tmp}" (\n  ${newCols.join(",\n  ")}\n)`,
+          );
+          this.db.exec(
+            `INSERT INTO "${tmp}" (${destCols}) SELECT ${srcCols} FROM "${this.name}"`,
+          );
+          this.db.exec(`DROP TABLE "${this.name}"`);
+          this.db.exec(`ALTER TABLE "${tmp}" RENAME TO "${this.name}"`);
+          for (const ddl of this.declaredIndexDdl()) this.db.exec(ddl);
+        }),
+      );
+    } finally {
+      if (fkOn) this.db.exec(`PRAGMA foreign_keys = ON`);
+    }
+    this.insertSqlCache = undefined; // column set may have changed
   }
 
   /* --------------------------- row <-> doc -------------------------- */

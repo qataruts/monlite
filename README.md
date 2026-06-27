@@ -389,8 +389,21 @@ definition supports `index`, `unique`, `notNull`, `default`, and `references`.
 
 **Migrations are automatic for additive changes.** Re-opening a collection with a
 new declared column adds it (`ALTER TABLE ADD COLUMN`) on declaration — give
-`NOT NULL` columns a `default` so existing rows can be backfilled. Destructive
-changes (rename/drop/type-change) still need a manual migration.
+`NOT NULL` columns a `default` so existing rows can be backfilled.
+
+For **destructive changes** — dropping, renaming, or changing a column's
+type/constraints — call `$migrate()`. It safely rebuilds the table (in a
+transaction, preserving data and indexes) to match the new declared schema:
+
+```ts
+// v2 schema: `fullname` → `name`, `age` is now INTEGER, `legacy` removed.
+const users = db.collection("users", { schema: { name: "TEXT", age: "INTEGER" } });
+await users.$migrate({ rename: { fullname: "name" }, drop: ["legacy"] });
+```
+
+A column that exists on disk but isn't in the new schema (and isn't listed in
+`drop`) throws — so you never lose data by accident. Run migrations at startup,
+before using the collection.
 
 ### Do I have to care: JSON vs native columns?
 

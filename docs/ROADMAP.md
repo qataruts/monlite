@@ -53,11 +53,13 @@ sync to them.
   safe), and **`@monlite/cron`** (persisted cron schedules). Both drivers.
 - **Encryption at rest** — the `encryption` option (`createDb(path, { encryption:
   { key } })`) backed by `better-sqlite3-multiple-ciphers`, plus `db.rekey()`.
+- **Full migration runner** — `collection.$migrate({ rename, drop })` rebuilds a
+  structured table to the declared schema (drop/rename/type-change), preserving
+  data and indexes, with an unacknowledged-drop guard.
 
 ## Planned
 
 ### Wave 3 — desktop production
-- **Full migration runner** (rename/drop/rebuild) for structured collections.
 - **Electron/multi-window** helper (main-process DB + IPC bridge).
 - **`@monlite/devtools`** — inspector / query explorer ("Studio").
 
@@ -80,5 +82,7 @@ sync to them.
 
 ---
 
-*Directional, not a commitment of dates. Core stays zero-dependency; native
-capabilities (vector, cipher) are always opt-in packages.*
+*Directional, not a commitment of dates. Core stays zero-dependency by default;
+native capabilities are opt-in — either as separate packages (e.g. `@monlite/vector`)
+or as core options that only load a native module when used (e.g. `encryption`,
+which loads `better-sqlite3-multiple-ciphers` lazily).*

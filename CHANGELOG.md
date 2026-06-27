@@ -1,5 +1,13 @@
 # @monlite/core
 
+## 1.2.0 — full migrations
+
+- **`collection.$migrate({ rename?, drop? })`** — destructive structured-collection
+  migrations the auto-additive path can't do: **drop** columns, **rename** them,
+  and **change a column's type/constraints**. Implemented as a safe, transactional
+  table rebuild that preserves data and recreates indexes. An unacknowledged
+  column drop throws, so data is never lost by accident.
+
 ## 1.1.0 — encryption at rest
 
 - **`encryption` option** — encrypt the database file at rest:

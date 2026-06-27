@@ -57,6 +57,14 @@ export interface CollectionOptions {
 
 export type CollectionMode = "document" | "structured";
 
+/** Options for {@link Collection.$migrate}. */
+export interface MigrateOptions {
+  /** Rename existing physical columns: `{ oldName: newDeclaredName }`. */
+  rename?: Record<string, string>;
+  /** Acknowledge physical columns to drop (not present in the new schema). */
+  drop?: string[];
+}
+
 /** A column as reported by {@link Monlite.$schema}. */
 export interface ColumnInfo {
   name: string;

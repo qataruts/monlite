@@ -21,6 +21,7 @@ export type {
   CollectionSchema,
   CollectionOptions,
   CollectionMode,
+  MigrateOptions,
   ColumnInfo,
   LiveEvent,
   WatchHandle,
