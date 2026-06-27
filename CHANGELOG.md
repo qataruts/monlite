@@ -1,5 +1,17 @@
 # @monlite/core
 
+## 2.3.0 — observability
+
+Closes P1-3 from `plan/PRODUCTION-READINESS.md`.
+
+- **`db.stats()`** — `{ sizeBytes, pageSize, pageCount, collections, indexes }`
+  for monitoring/diagnostics.
+- **`onQuery` option** on `createDb` — a hook called after each statement with
+  `{ sql, durationMs }`. Wire a slow-query log or metrics; zero overhead when
+  unset. Implemented on `better-sqlite3` and `node:sqlite`.
+- New [production guide](docs/guides/production.md) — durability, transactions,
+  backup/recovery, concurrency, money-precision, and the error reference.
+
 ## 2.2.0 — async transactions & Mongo-API completeness
 
 Closes P0-1 and a chunk of P1-1 from `plan/PRODUCTION-READINESS.md`.

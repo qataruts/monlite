@@ -1,6 +1,7 @@
 import type {
   CollectionOptions,
   ColumnInfo,
+  DbStats,
   Doc,
   MonliteOptions,
 } from "./types.js";
@@ -70,6 +71,7 @@ export class Monlite {
       allowExtensions: options.allowExtensions,
       encryption: options.encryption,
       verbose: options.verbose,
+      onQuery: options.onQuery,
     });
     this.encrypted = options.encryption !== undefined;
 
@@ -318,6 +320,42 @@ export class Monlite {
   analyze(): void {
     this.assertOpen();
     this.driver.exec("ANALYZE");
+  }
+
+  /** Database size and object counts (for monitoring/diagnostics). */
+  stats(): DbStats {
+    this.assertOpen();
+    const scalar = (sql: string, key: string): number =>
+      ((this.driver.prepare(sql).get() as Record<string, any>)?.[
+        key
+      ] as number) ?? 0;
+    const pageSize = scalar("PRAGMA page_size", "page_size");
+    const pageCount = scalar("PRAGMA page_count", "page_count");
+    const tables = this.driver
+      .prepare(
+        `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`,
+      )
+      .all() as Array<{ name: string }>;
+    let collections = 0;
+    for (const { name } of tables) {
+      const cols = (
+        this.driver.prepare(`PRAGMA table_info("${name}")`).all() as Array<{
+          name: string;
+        }>
+      ).map((c) => c.name);
+      if (cols.includes("_id") && cols.includes("data")) collections++;
+    }
+    const indexes = scalar(
+      `SELECT COUNT(*) AS n FROM sqlite_master WHERE type='index'`,
+      "n",
+    );
+    return {
+      sizeBytes: pageSize * pageCount,
+      pageSize,
+      pageCount,
+      collections,
+      indexes,
+    };
   }
 
   /**

@@ -436,4 +436,22 @@ export interface MonliteOptions {
   allowExtensions?: boolean;
   /** Verbose logger for executed SQL (debugging). */
   verbose?: (sql: string) => void;
+  /**
+   * Observability hook called after each statement runs, with its timing —
+   * wire a slow-query log or metrics here (filter by `durationMs`). Only adds
+   * overhead when provided.
+   */
+  onQuery?: (event: { sql: string; durationMs: number }) => void;
+}
+
+/** Database statistics from {@link Monlite.stats}. */
+export interface DbStats {
+  /** On-disk size in bytes (`page_size * page_count`). */
+  sizeBytes: number;
+  pageSize: number;
+  pageCount: number;
+  /** Number of monlite collections (tables with `_id` + `data`). */
+  collections: number;
+  /** Number of indexes. */
+  indexes: number;
 }

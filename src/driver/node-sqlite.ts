@@ -15,6 +15,7 @@ export class NodeSqliteDriver implements Driver {
   readonly name = "node:sqlite";
   readonly raw: any;
   private readonly verbose?: (sql: string) => void;
+  private readonly onQuery?: (e: { sql: string; durationMs: number }) => void;
   private readonly cache = new Map<string, PreparedStatement>();
   private depth = 0;
 
@@ -26,6 +27,7 @@ export class NodeSqliteDriver implements Driver {
       );
     }
     this.verbose = options.verbose;
+    this.onQuery = options.onQuery;
     const { DatabaseSync } = nodeSqlite;
     this.raw = new DatabaseSync(filename, {
       readOnly: options.readonly ?? false,
@@ -52,10 +54,21 @@ export class NodeSqliteDriver implements Driver {
     if (cached) return cached;
 
     const stmt = this.raw.prepare(sql);
+    const report = this.onQuery;
+    const time = report
+      ? <R>(run: () => R): R => {
+          const start = performance.now();
+          try {
+            return run();
+          } finally {
+            report({ sql, durationMs: performance.now() - start });
+          }
+        }
+      : <R>(run: () => R): R => run();
     const wrapped: PreparedStatement = {
-      run: (...p: any[]) => stmt.run(...p),
-      get: (...p: any[]) => stmt.get(...p),
-      all: (...p: any[]) => stmt.all(...p),
+      run: (...p: any[]) => time(() => stmt.run(...p)),
+      get: (...p: any[]) => time(() => stmt.get(...p)),
+      all: (...p: any[]) => time(() => stmt.all(...p)),
     };
     if (this.cache.size >= STMT_CACHE_MAX) {
       const oldest = this.cache.keys().next().value;

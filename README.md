@@ -618,6 +618,19 @@ createDb("app.db", { synchronous: "FULL" }); // max power-loss safety
 WAL defaults to `synchronous = NORMAL` (safe across app crashes). Auto-index
 learning persists across restarts, so cold-start query plans stay predictable.
 
+### Observability
+
+```ts
+db.stats();   // { sizeBytes, pageSize, pageCount, collections, indexes }
+
+// Per-query timing — wire a slow-query log or metrics (opt-in, low overhead):
+createDb("app.db", {
+  onQuery: ({ sql, durationMs }) => {
+    if (durationMs > 50) console.warn("slow query", durationMs, sql);
+  },
+});
+```
+
 ---
 
 ## Plugins
@@ -784,6 +797,8 @@ browser backend. `cd examples && npm install && node notes.mjs`.
   or a new SQLite binding/environment.
 - [Migrating to 2.0](docs/guides/v2-migration.md) — the typed-query / select
   changes (types only; runtime unchanged).
+- [Running in production](docs/guides/production.md) — durability, transactions,
+  backups/recovery, concurrency, and the error reference.
 
 ## Studio (inspector)
 

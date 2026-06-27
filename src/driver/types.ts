@@ -47,6 +47,8 @@ export interface DriverOpenOptions {
   /** Encrypt the database at rest (better-sqlite3-multiple-ciphers only). */
   encryption?: { key: string; cipher?: string };
   verbose?: (sql: string) => void;
+  /** Observability hook: called after each statement executes, with its timing. */
+  onQuery?: (event: { sql: string; durationMs: number }) => void;
 }
 
 export type DriverName = "auto" | "better-sqlite3" | "node:sqlite";

@@ -10,6 +10,7 @@ export class BetterSqlite3Driver implements Driver {
   readonly name = "better-sqlite3";
   readonly raw: any;
   private readonly verbose?: (sql: string) => void;
+  private readonly onQuery?: (e: { sql: string; durationMs: number }) => void;
   private readonly cache = new Map<string, PreparedStatement>();
 
   constructor(
@@ -18,6 +19,7 @@ export class BetterSqlite3Driver implements Driver {
     options: DriverOpenOptions,
   ) {
     this.verbose = options.verbose;
+    this.onQuery = options.onQuery;
     this.raw = new BetterSqlite3(filename, {
       readonly: options.readonly ?? false,
     });
@@ -44,9 +46,28 @@ export class BetterSqlite3Driver implements Driver {
     this.verbose?.(sql);
     const cached = this.cache.get(sql);
     if (cached) return cached;
-    const stmt = this.raw.prepare(sql) as PreparedStatement; // reusable
+    const raw = this.raw.prepare(sql) as PreparedStatement; // reusable
+    const stmt = this.onQuery ? this.timed(sql, raw) : raw;
     this.cacheStmt(sql, stmt);
     return stmt;
+  }
+
+  /** Wrap a statement so each execution reports its duration to `onQuery`. */
+  private timed(sql: string, stmt: PreparedStatement): PreparedStatement {
+    const report = this.onQuery!;
+    const time = <R>(run: () => R): R => {
+      const start = performance.now();
+      try {
+        return run();
+      } finally {
+        report({ sql, durationMs: performance.now() - start });
+      }
+    };
+    return {
+      run: (...p: any[]) => time(() => stmt.run(...p)),
+      get: (...p: any[]) => time(() => stmt.get(...p)),
+      all: (...p: any[]) => time(() => stmt.all(...p)),
+    };
   }
 
   private cacheStmt(sql: string, stmt: PreparedStatement): void {

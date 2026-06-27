@@ -57,6 +57,7 @@ export type {
   HavingInput,
   MonliteOptions,
   EncryptionOptions,
+  DbStats,
   DriverName,
 } from "./types.js";
 export type {
