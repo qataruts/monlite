@@ -54,13 +54,18 @@ sync to them.
   safe), and **`@monlite/cron`** (persisted cron schedules). Both drivers.
 - **Encryption at rest** — the `encryption` option (`createDb(path, { encryption:
   { key } })`) backed by `better-sqlite3-multiple-ciphers`, plus `db.rekey()`.
+- **Browser / WASM** — `@monlite/wasm` runs monlite in the browser on SQLite-WASM
+  (sql.js) via a custom `Driver`; snapshot persistence to IndexedDB/OPFS today.
 - **Full migration runner** — `collection.$migrate({ rename, drop })` rebuilds a
   structured table to the declared schema (drop/rename/type-change), preserving
   data and indexes, with an unacknowledged-drop guard.
 
 ## Planned
 
-### Wave 3 — desktop production
+### Wave 3 — desktop & browser
+- **Incremental OPFS persistence** for `@monlite/wasm` — a driver over the
+  official `@sqlite.org/sqlite-wasm` + OPFS VFS (Web Worker, sync access handles),
+  so large browser databases persist without full-file snapshots.
 - **Electron/multi-window** helper (main-process DB + IPC bridge).
 - **`@monlite/devtools`** — inspector / query explorer ("Studio").
 

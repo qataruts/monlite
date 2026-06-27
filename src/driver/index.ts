@@ -44,7 +44,17 @@ function loadNodeSqlite(): any | null {
 }
 
 export interface CreateDriverOptions extends DriverOpenOptions {
-  driver?: DriverName;
+  driver?: DriverName | Driver;
+}
+
+/** A custom driver instance (e.g. `@monlite/wasm`) implements this shape. */
+function isDriverInstance(d: unknown): d is Driver {
+  return (
+    typeof d === "object" &&
+    d !== null &&
+    typeof (d as Driver).prepare === "function" &&
+    typeof (d as Driver).exec === "function"
+  );
 }
 
 /**
@@ -55,6 +65,9 @@ export function createDriver(
   filename: string,
   options: CreateDriverOptions = {},
 ): Driver {
+  // A custom driver instance (e.g. the browser WASM driver) is used as-is.
+  if (isDriverInstance(options.driver)) return options.driver;
+
   const choice = options.driver ?? "auto";
 
   // Encryption requires the better-sqlite3-multiple-ciphers drop-in.

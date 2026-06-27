@@ -6,6 +6,7 @@
  */
 
 import type { MonlitePlugin } from "./plugin.js";
+import type { Driver } from "./driver/types.js";
 
 /** A free-form document. */
 export type Doc = Record<string, any>;
@@ -315,8 +316,10 @@ export interface MonliteOptions {
   /**
    * Which SQLite backend to use. `"auto"` (default) prefers `better-sqlite3`
    * when installed, otherwise the built-in `node:sqlite` (Node >= 22.5).
+   * You can also pass a custom {@link Driver} instance (e.g. `@monlite/wasm`
+   * for the browser).
    */
-  driver?: DriverName;
+  driver?: DriverName | Driver;
   /**
    * Encrypt the database at rest. Requires the `better-sqlite3-multiple-ciphers`
    * package (a drop-in for `better-sqlite3`); not supported on `node:sqlite`.

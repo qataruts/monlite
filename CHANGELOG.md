@@ -1,5 +1,12 @@
 # @monlite/core
 
+## 1.3.0 — custom drivers (browser/WASM)
+
+- **`createDb(path, { driver })` now accepts a custom `Driver` instance**, not
+  just `"auto"`/`"better-sqlite3"`/`"node:sqlite"`. This is the seam that lets
+  [`@monlite/wasm`](https://www.npmjs.com/package/@monlite/wasm) run monlite in
+  the browser on SQLite-WASM. Exported `RunResult`/`DriverOpenOptions` types.
+
 ## 1.2.0 — full migrations
 
 - **`collection.$migrate({ rename?, drop? })`** — destructive structured-collection

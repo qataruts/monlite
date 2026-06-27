@@ -53,7 +53,12 @@ export type {
   EncryptionOptions,
   DriverName,
 } from "./types.js";
-export type { Driver, PreparedStatement } from "./driver/types.js";
+export type {
+  Driver,
+  PreparedStatement,
+  RunResult,
+  DriverOpenOptions,
+} from "./driver/types.js";
 export type { MonlitePlugin, PluginChange } from "./plugin.js";
 
 // Sync primitives (used by @monlite/sync; advanced).

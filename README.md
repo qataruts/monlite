@@ -601,13 +601,14 @@ Redis/Mongo/Qdrant replacement. For scale, keep the real services and
 
 ## Drivers & zero dependencies
 
-monlite talks to SQLite through a tiny driver adapter, so it runs on two
+monlite talks to SQLite through a tiny driver adapter, so it runs on
 interchangeable backends:
 
 | Backend | When it's used | Notes |
 |---|---|---|
 | **`node:sqlite`** | Built into Node **22.5+** | **Zero dependencies.** Still flagged experimental by Node, so it prints a one-time `ExperimentalWarning`. |
 | **`better-sqlite3`** | When the package is installed | Battle-tested native driver. Works on Node 18/20/22, no warning. Install it yourself: `npm i better-sqlite3`. |
+| **WASM (browser)** | Via [`@monlite/wasm`](https://www.npmjs.com/package/@monlite/wasm) | Runs monlite **in the browser** on SQLite-WASM (sql.js); pass `driver: wasmDriver(SQL)`. Snapshot persistence to IndexedDB/OPFS. |
 
 By default (`driver: "auto"`) monlite uses `better-sqlite3` if it's installed,
 otherwise falls back to the built-in `node:sqlite`. Force one explicitly:
