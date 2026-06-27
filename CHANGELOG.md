@@ -1,5 +1,19 @@
 # @monlite/core
 
+## 2.2.0 — async transactions (unit-of-work)
+
+Closes the #1 production gap from `plan/PRODUCTION-READINESS.md` (P0-1).
+
+- **`db.transactionAsync(async (tx) => …)`** — an atomic unit of work whose
+  callback **may `await`** (read → compute → write), all inside one
+  `BEGIN IMMEDIATE … COMMIT`; a throw rolls the whole thing back. Unlike
+  `$transaction` (sync-callback only), it supports interleaved async reads/compute.
+- **Serialized** so two concurrent async transactions can't interleave on the
+  shared connection — prevents lost updates (e.g. a double-entry posting is atomic
+  under concurrent callers). Read-your-writes holds within a unit.
+- Implemented on `better-sqlite3`, `node:sqlite`, and `@monlite/wasm`. Custom
+  drivers may add an optional `transactionAsync` to the `Driver` interface.
+
 ## 2.1.0 — durability & maintenance
 
 Hardening toward system-of-record use (see `plan/PRODUCTION-READINESS.md`).

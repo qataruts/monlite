@@ -528,6 +528,17 @@ await db.$executeRawUnsafe(`DELETE FROM users WHERE _id = ?`, id);
 await db.$transaction((tx) => {
   // ...use tx.collection(...) or tx.sqlite...
 });
+
+// Async unit-of-work — the callback MAY await (read → compute → write), all
+// atomic inside one BEGIN IMMEDIATE … COMMIT. Calls are serialized, so concurrent
+// units can't interleave (no lost updates). Ideal for e.g. double-entry posting:
+await db.transactionAsync(async (tx) => {
+  const acct = await tx.collection("accounts").findById(id);
+  const next = acct.balance - amount;            // async compute is fine here
+  await tx.collection("accounts").update({ where: { _id: id }, data: { balance: next } });
+  await tx.collection("ledger").create({ data: { acct: id, amount } });
+  // throwing anywhere rolls the whole unit back
+});
 ```
 
 Need the raw driver? `db.sqlite` is the underlying native handle (a
@@ -731,7 +742,8 @@ future-proofing.
 - `_id`, `created_at`, `updated_at` are reserved; document fields with those
   names are managed by monlite and won't round-trip as ordinary data.
 - `contains`/`startsWith`/`endsWith` are case-sensitive (see above).
-- `$transaction` callbacks run synchronously and must not be `async`.
+- `$transaction` callbacks run synchronously and must not be `async` — use
+  `db.transactionAsync` when you need to `await` inside an atomic unit of work.
 - Collection names must be identifier-like (`[A-Za-z_][A-Za-z0-9_]*`).
 
 ---

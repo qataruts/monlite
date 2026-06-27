@@ -22,6 +22,12 @@ export interface Driver {
   prepare(sql: string): PreparedStatement;
   /** Run `fn` inside a transaction; rolls back and rethrows if it throws. */
   transaction<T>(fn: () => T): T;
+  /**
+   * Like {@link transaction} but `fn` may be async — the transaction stays open
+   * across `await`s (BEGIN IMMEDIATE … COMMIT). Optional: custom drivers that
+   * don't implement it can't use `db.transactionAsync`.
+   */
+  transactionAsync?<T>(fn: () => Promise<T>): Promise<T>;
   close(): void;
   /** Rotate the encryption key (encrypted backends only). */
   rekey?(key: string, cipher?: string): void;

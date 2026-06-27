@@ -128,6 +128,34 @@ export class WasmDriver implements Driver {
     }
   }
 
+  async transactionAsync<T>(fn: () => Promise<T>): Promise<T> {
+    const savepoint = `monlite_sp_${this.depth}`;
+    if (this.depth === 0) this.raw.run("BEGIN IMMEDIATE");
+    else this.raw.run(`SAVEPOINT ${savepoint}`);
+    this.depth++;
+    try {
+      const result = await fn();
+      this.depth--;
+      if (this.depth === 0) this.raw.run("COMMIT");
+      else this.raw.run(`RELEASE ${savepoint}`);
+      return result;
+    } catch (err) {
+      this.depth--;
+      try {
+        if (this.depth === 0) this.raw.run("ROLLBACK");
+        else this.raw.run(`ROLLBACK TO ${savepoint}; RELEASE ${savepoint}`);
+      } catch {
+        this.depth = 0;
+        try {
+          this.raw.run("ROLLBACK");
+        } catch {
+          /* already rolled back */
+        }
+      }
+      throw err;
+    }
+  }
+
   /** Serialize the whole database to bytes (for persistence). */
   export(): Uint8Array {
     return this.raw.export();

@@ -57,6 +57,8 @@ export class Monlite {
   private readonly plugins: MonlitePlugin[];
   private readonly encrypted: boolean;
   private closed = false;
+  /** Serializes async transactions so their await points never interleave. */
+  private txTail: Promise<unknown> = Promise.resolve();
 
   constructor(filename: string, options: MonliteOptions = {}) {
     this.driver = createDriver(filename, {
@@ -221,6 +223,35 @@ export class Monlite {
     // Transactions are synchronous; `fn` must not be async. A throw inside
     // rolls back and (being in an async method) rejects this promise.
     return this.driver.transaction(() => fn(this));
+  }
+
+  /**
+   * Run an **async** unit of work atomically. Unlike {@link $transaction}, `fn`
+   * may `await` (read → compute → write); everything runs inside one
+   * `BEGIN IMMEDIATE … COMMIT`, and a throw rolls the whole thing back.
+   *
+   * Calls are **serialized** so two concurrent async transactions can't
+   * interleave on the shared connection — the right primitive for things like a
+   * double-entry posting (`read balances → compute → write debit + credit`).
+   * Avoid issuing unrelated writes from outside while one is in flight.
+   */
+  async transactionAsync<R>(fn: (db: this) => Promise<R> | R): Promise<R> {
+    this.assertOpen();
+    if (!this.driver.transactionAsync) {
+      throw new MonliteError(
+        "The active driver does not support transactionAsync. Use a built-in " +
+          "driver (better-sqlite3 / node:sqlite) or update @monlite/wasm.",
+      );
+    }
+    const run = this.txTail.then(() =>
+      this.driver.transactionAsync!(async () => fn(this)),
+    );
+    // Keep the queue alive even if this run rejects.
+    this.txTail = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run as Promise<R>;
   }
 
   /** List all collection (table) names. */

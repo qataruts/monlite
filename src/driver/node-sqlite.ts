@@ -96,6 +96,35 @@ export class NodeSqliteDriver implements Driver {
     }
   }
 
+  async transactionAsync<T>(fn: () => Promise<T>): Promise<T> {
+    const savepoint = `monlite_sp_${this.depth}`;
+    if (this.depth === 0) this.raw.exec("BEGIN IMMEDIATE");
+    else this.raw.exec(`SAVEPOINT ${savepoint}`);
+    this.depth++;
+
+    try {
+      const result = await fn();
+      this.depth--;
+      if (this.depth === 0) this.raw.exec("COMMIT");
+      else this.raw.exec(`RELEASE ${savepoint}`);
+      return result;
+    } catch (err) {
+      this.depth--;
+      try {
+        if (this.depth === 0) this.raw.exec("ROLLBACK");
+        else this.raw.exec(`ROLLBACK TO ${savepoint}; RELEASE ${savepoint}`);
+      } catch {
+        this.depth = 0;
+        try {
+          this.raw.exec("ROLLBACK");
+        } catch {
+          /* already rolled back / no active txn */
+        }
+      }
+      throw err;
+    }
+  }
+
   close(): void {
     this.cache.clear();
     this.raw.close();

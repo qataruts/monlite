@@ -1,5 +1,9 @@
 # @monlite/wasm
 
+## 0.1.2
+
+- Implement `transactionAsync` so `db.transactionAsync` works on the WASM driver.
+
 ## 0.1.1
 
 - Allow `@monlite/core` 2.0 (dependency range `^2.0.0`). No API changes.

@@ -62,6 +62,29 @@ export class BetterSqlite3Driver implements Driver {
     return this.raw.transaction(fn)();
   }
 
+  private asyncSp = 0;
+
+  async transactionAsync<T>(fn: () => Promise<T>): Promise<T> {
+    // BEGIN IMMEDIATE at the top level; SAVEPOINT when already in a transaction.
+    const top = !this.raw.inTransaction;
+    const sp = `monlite_async_${this.asyncSp++}`;
+    this.raw.exec(top ? "BEGIN IMMEDIATE" : `SAVEPOINT ${sp}`);
+    try {
+      const result = await fn();
+      this.raw.exec(top ? "COMMIT" : `RELEASE ${sp}`);
+      return result;
+    } catch (err) {
+      try {
+        this.raw.exec(top ? "ROLLBACK" : `ROLLBACK TO ${sp}; RELEASE ${sp}`);
+      } catch {
+        /* already rolled back */
+      }
+      throw err;
+    } finally {
+      if (top) this.asyncSp = 0;
+    }
+  }
+
   /** Apply the encryption key and verify it by reading the schema. */
   private applyKey(key: string, cipher?: string): void {
     if (cipher) this.raw.pragma(`cipher='${quote(cipher)}'`);
