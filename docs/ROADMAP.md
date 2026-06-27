@@ -45,8 +45,18 @@ sync to them.
 - **`@monlite/vector`** — local vector / semantic search (sqlite-vec) via
   `collection.findSimilar()`, plus **`hybridSearch()`** (FTS + vector fused with
   Reciprocal Rank Fusion) for RAG and AI-agent memory.
-- **Semver-stable** — `@monlite/core` (now `2.0`) and `@monlite/sync` follow
+- **Semver-stable** — `@monlite/core` (now `2.x`) and `@monlite/sync` follow
   semantic versioning; companion packages depend on `@monlite/core ^2.0.0`.
+- **Production hardening (2.1–2.4)** — `transactionAsync` (atomic async
+  unit-of-work, serialized), `findOneAndUpdate` (incl. CAS) · `bulkWrite` ·
+  `$addToSet`, durability (`checkIntegrity`/`vacuum`/`analyze`/`checkpoint`/
+  `synchronous`), persisted auto-index, observability (`db.stats`/`onQuery`),
+  compound unique indexes, collection TTL (`purgeExpired`), and a systems test
+  program (property-based + large-dataset). See
+  [`docs/guides/production.md`](./guides/production.md).
+- **Agent-backend primitives** — `@monlite/kv` `setNX` (locks), `@monlite/queue`
+  dedupe-by-jobId, and **cross-process index freshness** (`collection.catchUp()`
+  on `@monlite/fts`/`@monlite/vector`) for multi-process ingest → search.
 - **Examples, benchmarks & guides** — runnable demos in [`examples/`](../examples/)
   (CRUD/FTS, vector/hybrid, sync, the kv/queue/cron harness, `$lookup` joins, the
   WASM backend), a benchmark suite ([`docs/BENCHMARKS.md`](./BENCHMARKS.md)), and
