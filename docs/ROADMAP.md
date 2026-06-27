@@ -33,7 +33,7 @@ are fully addressed; the API surface is frozen for the 2.x line.
 
 | Package | Version | Package | Version |
 |---|---|---|---|
-| `@monlite/core` | 2.6.0 | `@monlite/kv` | 0.2.0 |
+| `@monlite/core` | 2.6.1 | `@monlite/kv` | 0.2.0 |
 | `@monlite/sync` | 1.3.0 | `@monlite/queue` | 0.2.0 |
 | `@monlite/fts` | 0.2.0 | `@monlite/cron` | 0.1.1 |
 | `@monlite/vector` | 0.3.0 | `@monlite/wasm` | 0.2.0 |

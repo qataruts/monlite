@@ -1,5 +1,18 @@
 # @monlite/core
 
+## 2.6.1 — cross-process CAS
+
+- **`findOneAndUpdate` CAS hardened to `BEGIN IMMEDIATE`.** The read-modify-write now
+  takes the write lock up front (via the driver's `transactionAsync`), so a
+  `version`/`status` guard is a true compare-and-swap **across processes** too: a
+  racing writer (e.g. a separate jobs worker on the same `.db`) blocks, re-reads the
+  already-bumped row, and cleanly returns `null` (lost CAS) instead of erroring on a
+  stale WAL snapshot. Single-connection callers are unaffected (they serialize
+  anyway). This is the load-bearing primitive for the platform-ai durable tier
+  (`plan/PLATFORM-AI-ADOPTION.md`). Proven by a cross-process test: 8 separate
+  worker processes race to claim one job — exactly one wins, the rest return `null`,
+  zero `SQLITE_BUSY` errors, version bumped exactly once.
+
 ## 2.6.0 — regex operator
 
 - **`regex` where operator** — JavaScript-`RegExp` matching: `{ name: { regex:

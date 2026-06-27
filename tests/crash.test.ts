@@ -33,8 +33,17 @@ describe("crash consistency", () => {
 
       // a separate process hammers atomic A→B transfers…
       const child = spawn("node", [worker, file], { stdio: "ignore" });
-      await sleep(500); // let it commit many transactions
-      child.kill("SIGKILL"); // …then die abruptly, mid-flight
+      // …wait until it has actually committed progress (so the test is meaningful
+      // and not timing-flaky under load), then kill it abruptly, mid-flight.
+      const probe = createDb(file);
+      let moved = 0;
+      for (let i = 0; i < 400 && moved < 100; i++) {
+        await sleep(25);
+        moved = (await probe.collection("acct").findById("B"))?.bal ?? 0;
+      }
+      await probe.$disconnect();
+      expect(moved).toBeGreaterThanOrEqual(100); // worker made real progress
+      child.kill("SIGKILL");
       await new Promise((r) => child.on("exit", r));
       await sleep(100);
 

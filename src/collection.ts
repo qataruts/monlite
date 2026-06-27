@@ -1015,34 +1015,45 @@ export class Collection<T = Doc> {
       onPath: this.trackPath,
       columns: this.columns,
     });
-    const result = this.guard(() =>
-      this.db.transaction(() => {
-        const row = this.db
-          .prepare(`SELECT * FROM "${this.name}" WHERE ${clause} LIMIT 1`)
-          .get(...params) as Row | undefined;
-        if (!row) return null;
-        const before = this.rowToDoc(row) as WithId<T>;
-        const now = Date.now();
-        const updated = stripSystem(
-          applyUpdate(stripSystem(this.rowToDoc(row)), args.data),
-        );
-        const { setSql, values } = this.buildUpdateSet(updated, now);
-        this.db
-          .prepare(`UPDATE "${this.name}" SET ${setSql} WHERE _id = ?`)
-          .run(...values, row._id);
-        this.recorder?.recordLocal(this.name, row._id, "upsert", now);
-        const after = {
-          ...updated,
-          _id: row._id,
-          created_at: row.created_at,
-          updated_at: now,
-        } as WithId<T>;
-        return {
-          id: row._id,
-          doc: args.returnDocument === "before" ? before : after,
-        };
-      }),
-    );
+    // The read-modify-write runs under BEGIN IMMEDIATE (the write lock is taken
+    // up front) when the driver supports it, so a version/status guard in `where`
+    // is a true compare-and-swap even ACROSS processes: a racing writer blocks on
+    // the lock, then re-reads the already-bumped row, finds its guard no longer
+    // matches, and cleanly returns null (lost CAS) — instead of racing on a stale
+    // WAL snapshot. Single-connection callers serialize anyway, so this is free.
+    const work = (): { id: string; doc: WithId<T> } | null => {
+      const row = this.db
+        .prepare(`SELECT * FROM "${this.name}" WHERE ${clause} LIMIT 1`)
+        .get(...params) as Row | undefined;
+      if (!row) return null;
+      const before = this.rowToDoc(row) as WithId<T>;
+      const now = Date.now();
+      const updated = stripSystem(applyUpdate(stripSystem(before), args.data));
+      const { setSql, values } = this.buildUpdateSet(updated, now);
+      this.db
+        .prepare(`UPDATE "${this.name}" SET ${setSql} WHERE _id = ?`)
+        .run(...values, row._id);
+      this.recorder?.recordLocal(this.name, row._id, "upsert", now);
+      const after = {
+        ...updated,
+        _id: row._id,
+        created_at: row.created_at,
+        updated_at: now,
+      } as WithId<T>;
+      return {
+        id: row._id,
+        doc: args.returnDocument === "before" ? before : after,
+      };
+    };
+
+    let result: { id: string; doc: WithId<T> } | null;
+    try {
+      result = this.db.transactionAsync
+        ? await this.db.transactionAsync(async () => work())
+        : this.db.transaction(work);
+    } catch (err) {
+      throw normalizeDriverError(err, this.name);
+    }
     if (!result) return null;
     this.afterWrite([result.id]);
     return result.doc;
