@@ -5,7 +5,11 @@ const driver = (process.env.MONLITE_DRIVER as any) || undefined;
 
 let db: Monlite;
 beforeEach(() => {
-  db = createDb(":memory:", { sync: true, nodeId: "nodeA", ...(driver ? { driver } : {}) });
+  db = createDb(":memory:", {
+    sync: true,
+    nodeId: "nodeA",
+    ...(driver ? { driver } : {}),
+  });
 });
 afterEach(async () => {
   await db.$disconnect();
@@ -104,7 +108,11 @@ describe("M1: sync store / change feed", () => {
       version: makeVersion(1, "nodeB"),
       doc: { _id: a._id, name: "old-remote" },
     });
-    expect(lose).toMatchObject({ applied: false, conflict: true, winner: "local" });
+    expect(lose).toMatchObject({
+      applied: false,
+      conflict: true,
+      winner: "local",
+    });
     expect((await users.findById(a._id))!.name).toBe("local");
 
     // newer remote wins

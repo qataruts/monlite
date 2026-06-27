@@ -1,5 +1,9 @@
 import { EventEmitter } from "node:events";
-import { MonliteError, type Monlite, type ConflictResolver } from "@monlite/core";
+import {
+  MonliteError,
+  type Monlite,
+  type ConflictResolver,
+} from "@monlite/core";
 import type {
   SyncAdapter,
   SyncMode,
@@ -169,8 +173,10 @@ export class SyncEngine extends EventEmitter {
 
   private async pullOnce() {
     const state = this.store.getState(this.remote);
+    // Pass the concrete collection list (adapters like Mongo can't enumerate
+    // "all" themselves), so `collections: "*"` works for every adapter.
     const res = await this.adapter.pull(state.cursor, {
-      collections: this.explicitCollections,
+      collections: await this.collections(),
       limit: this.batchSize,
     });
 
@@ -196,7 +202,10 @@ export class SyncEngine extends EventEmitter {
   }
 
   private async pushOnce() {
-    const pending = this.store.pending(this.explicitCollections, this.batchSize);
+    const pending = this.store.pending(
+      this.explicitCollections,
+      this.batchSize,
+    );
     if (!pending.length) return { pushed: 0, rejected: 0 };
 
     const res = await this.adapter.push(pending);

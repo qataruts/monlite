@@ -92,11 +92,14 @@ Every resolved conflict is recorded in the local conflict log
 ## Status & limitations
 
 - Works against any monlite SQLite backend (`better-sqlite3` or built-in `node:sqlite`).
-- The engine, `MemoryAdapter` and `MonliteAdapter` are covered by end-to-end
-  tests. `MongoAdapter` translation is unit-tested; **live change streams
-  require a MongoDB replica set** and are not exercised in CI.
-- **Structured collections are not synced yet** (document collections are) —
-  planned follow-up.
+- The engine and all adapters are covered by end-to-end tests. `MongoAdapter`
+  is verified against a **live MongoDB replica set** (push, pull, two-way
+  convergence, soft-deletes, and **change streams**) in CI's `mongo` job.
+- **Both document and structured collections sync.** For a structured
+  collection, open it with its `schema` on each node before syncing so every
+  side knows the native columns.
+- Conflict resolution is last-write-wins by version; a node that wins a conflict
+  re-propagates its value so the two ends converge.
 
 ## License
 

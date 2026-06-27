@@ -379,8 +379,10 @@ createDb("./app.db", { verbose: (sql) => console.log(sql) }); // see json_extrac
 > **Rule of thumb:** unknown/flexible shape → document (JSON); known/stable shape
 > with heavy joins, reporting, or external SQL tooling → structured (native columns).
 
-> Note: structured collections are not yet covered by `@monlite/sync` (document
-> collections are) — that's planned follow-up work.
+> Both document and structured collections are syncable via
+> [`@monlite/sync`](#sync--local-first). To sync a structured collection, open it
+> with its `schema` on every node before syncing (so each side knows the native
+> columns).
 
 ---
 

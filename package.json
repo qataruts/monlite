@@ -1,6 +1,6 @@
 {
   "name": "@monlite/core",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "An embedded document database for TypeScript apps. MongoDB-like API, Prisma-like DX, SQLite under the hood. Zero config, zero migrations, zero server.",
   "type": "module",
   "packageManager": "pnpm@10.30.3",
@@ -29,6 +29,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -67,11 +70,15 @@
     }
   },
   "devDependencies": {
+    "@eslint/js": "^9.17.0",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.10.0",
     "better-sqlite3": "^11.8.0",
+    "eslint": "^9.17.0",
+    "prettier": "^3.4.2",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.0",
     "vitest": "^2.1.8"
   },
   "pnpm": {

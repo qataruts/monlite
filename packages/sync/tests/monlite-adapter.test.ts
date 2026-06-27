@@ -44,7 +44,9 @@ describe("MonliteAdapter (M5: second real adapter)", () => {
     await remote.collection("docs").create({ data: { _id: "3", n: 3 } });
     await engine.sync();
 
-    expect(await local.collection("docs").findById("3")).toMatchObject({ n: 3 });
+    expect(await local.collection("docs").findById("3")).toMatchObject({
+      n: 3,
+    });
   });
 
   it("two locals converge through a monlite hub (two-way)", async () => {
@@ -61,8 +63,12 @@ describe("MonliteAdapter (M5: second real adapter)", () => {
     await eb.start();
     await ea.sync();
 
-    expect(await a.collection("docs").findById("d2")).toMatchObject({ who: "b" });
-    expect(await b.collection("docs").findById("d1")).toMatchObject({ who: "a" });
+    expect(await a.collection("docs").findById("d2")).toMatchObject({
+      who: "b",
+    });
+    expect(await b.collection("docs").findById("d1")).toMatchObject({
+      who: "a",
+    });
     expect(await hub.collection("docs").count()).toBe(2);
   });
 

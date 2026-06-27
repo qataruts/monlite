@@ -48,7 +48,8 @@ export function applyUpdate(
   const ops = data as Record<string, Record<string, any>>;
 
   if (ops.$set) {
-    for (const [path, value] of Object.entries(ops.$set)) setPath(next, path, value);
+    for (const [path, value] of Object.entries(ops.$set))
+      setPath(next, path, value);
   }
   if (ops.$inc) {
     for (const [path, by] of Object.entries(ops.$inc)) {
@@ -66,7 +67,11 @@ export function applyUpdate(
       const cur = getPath(next, path);
       const arr = Array.isArray(cur) ? cur.slice() : [];
       // `{ $each: [...] }` pushes multiple values.
-      if (value && typeof value === "object" && Array.isArray((value as any).$each)) {
+      if (
+        value &&
+        typeof value === "object" &&
+        Array.isArray((value as any).$each)
+      ) {
         arr.push(...(value as any).$each);
       } else {
         arr.push(value);

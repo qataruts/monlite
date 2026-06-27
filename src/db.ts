@@ -68,7 +68,7 @@ export class Monlite {
     );
 
     if (options.sync) {
-      this.$sync = new SyncStore(this.driver, options.nodeId);
+      this.$sync = new SyncStore(this.driver, options.nodeId, this);
     }
   }
 
@@ -92,7 +92,10 @@ export class Monlite {
    * it a structured collection backed by native SQL columns; omit for the
    * default schema-free document mode. Options apply only on first access.
    */
-  collection<T = Doc>(name: string, options?: CollectionOptions): Collection<T> {
+  collection<T = Doc>(
+    name: string,
+    options?: CollectionOptions,
+  ): Collection<T> {
     this.assertOpen();
     validateName(name);
     let col = this.collections.get(name);
@@ -124,7 +127,12 @@ export class Monlite {
     validateName(name);
     const rows = this.driver
       .prepare(`PRAGMA table_info("${name}")`)
-      .all() as Array<{ name: string; type: string; notnull: number; pk: number }>;
+      .all() as Array<{
+      name: string;
+      type: string;
+      notnull: number;
+      pk: number;
+    }>;
     return Promise.resolve(
       rows.map((r) => ({
         name: r.name,
@@ -136,7 +144,10 @@ export class Monlite {
   }
 
   /** Tagged-template SQL query returning rows. Values are safely parameterized. */
-  $queryRaw<R = any>(strings: TemplateStringsArray, ...values: any[]): Promise<R[]> {
+  $queryRaw<R = any>(
+    strings: TemplateStringsArray,
+    ...values: any[]
+  ): Promise<R[]> {
     this.assertOpen();
     const { sql, params } = buildTagged(strings, values);
     return Promise.resolve(this.driver.prepare(sql).all(...params) as R[]);
@@ -151,7 +162,10 @@ export class Monlite {
   }
 
   /** Tagged-template SQL statement returning the number of affected rows. */
-  $executeRaw(strings: TemplateStringsArray, ...values: any[]): Promise<number> {
+  $executeRaw(
+    strings: TemplateStringsArray,
+    ...values: any[]
+  ): Promise<number> {
     this.assertOpen();
     const { sql, params } = buildTagged(strings, values);
     try {

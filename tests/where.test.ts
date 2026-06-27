@@ -8,9 +8,27 @@ beforeEach(async () => {
   db = openDb();
   await db.collection("users").createMany({
     data: [
-      { name: "Ali", age: 28, role: "admin", tags: ["a", "b"], address: { city: "Riyadh" } },
-      { name: "Sara", age: 24, role: "editor", tags: ["b", "c"], address: { city: "Jeddah" } },
-      { name: "Omar", age: 31, role: "admin", tags: ["c"], address: { city: "Riyadh" } },
+      {
+        name: "Ali",
+        age: 28,
+        role: "admin",
+        tags: ["a", "b"],
+        address: { city: "Riyadh" },
+      },
+      {
+        name: "Sara",
+        age: 24,
+        role: "editor",
+        tags: ["b", "c"],
+        address: { city: "Jeddah" },
+      },
+      {
+        name: "Omar",
+        age: 31,
+        role: "admin",
+        tags: ["c"],
+        address: { city: "Riyadh" },
+      },
       { name: "Lina", age: 19, role: "guest", address: { city: "Mecca" } },
     ],
   });
@@ -20,9 +38,9 @@ afterEach(async () => {
 });
 
 const names = async (where: any) =>
-  (await db.collection("users").findMany({ where, orderBy: { name: "asc" } })).map(
-    (u: any) => u.name,
-  );
+  (
+    await db.collection("users").findMany({ where, orderBy: { name: "asc" } })
+  ).map((u: any) => u.name);
 
 describe("comparison operators", () => {
   it("equals (shorthand and explicit)", async () => {
@@ -46,7 +64,10 @@ describe("comparison operators", () => {
       "Lina",
       "Omar",
     ]);
-    expect(await names({ role: { notIn: ["admin"] } })).toEqual(["Lina", "Sara"]);
+    expect(await names({ role: { notIn: ["admin"] } })).toEqual([
+      "Lina",
+      "Sara",
+    ]);
   });
 });
 
@@ -61,10 +82,9 @@ describe("string operators", () => {
   it("mode: insensitive matches case-insensitively", async () => {
     // case-sensitive "li" misses "Lina" (capital L); insensitive catches it
     expect(await names({ name: { contains: "li" } })).toEqual(["Ali"]);
-    expect(await names({ name: { contains: "li", mode: "insensitive" } })).toEqual([
-      "Ali",
-      "Lina",
-    ]);
+    expect(
+      await names({ name: { contains: "li", mode: "insensitive" } }),
+    ).toEqual(["Ali", "Lina"]);
     expect(
       await names({ name: { startsWith: "s", mode: "insensitive" } }),
     ).toEqual(["Sara"]);
@@ -82,12 +102,18 @@ describe("array operators", () => {
 
 describe("existence + nested paths", () => {
   it("exists true/false", async () => {
-    expect(await names({ tags: { exists: true } })).toEqual(["Ali", "Omar", "Sara"]);
+    expect(await names({ tags: { exists: true } })).toEqual([
+      "Ali",
+      "Omar",
+      "Sara",
+    ]);
     expect(await names({ tags: { exists: false } })).toEqual(["Lina"]);
   });
   it("dot-notation nested path", async () => {
     expect(await names({ "address.city": "Riyadh" })).toEqual(["Ali", "Omar"]);
-    expect(await names({ "address.city": { equals: "Jeddah" } })).toEqual(["Sara"]);
+    expect(await names({ "address.city": { equals: "Jeddah" } })).toEqual([
+      "Sara",
+    ]);
   });
 });
 

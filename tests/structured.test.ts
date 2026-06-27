@@ -20,7 +20,12 @@ describe("structured collections: storage", () => {
     const o = await orders.create({
       data: { user_id: "u1", amount: 100, status: "paid", note: "extra" },
     });
-    expect(o).toMatchObject({ user_id: "u1", amount: 100, status: "paid", note: "extra" });
+    expect(o).toMatchObject({
+      user_id: "u1",
+      amount: 100,
+      status: "paid",
+      note: "extra",
+    });
 
     // native columns hold the declared fields; overflow holds the rest
     const raw = db.sqlite
@@ -97,7 +102,10 @@ describe("structured collections: querying (same API)", () => {
       { status: "pending", _sum: { amount: 200 } },
     ]);
 
-    const agg = await orders.aggregate({ _count: true, _sum: { amount: true } });
+    const agg = await orders.aggregate({
+      _count: true,
+      _sum: { amount: true },
+    });
     expect(agg).toEqual({ _count: 3, _sum: { amount: 350 } });
   });
 });
@@ -107,7 +115,10 @@ describe("structured collections: update / delete", () => {
     const c = db.collection("u", { schema: { age: "INTEGER" } });
     const d = await c.create({ data: { age: 1, name: "Ali" } });
 
-    const inc = await c.update({ where: { _id: d._id }, data: { $inc: { age: 5 } } });
+    const inc = await c.update({
+      where: { _id: d._id },
+      data: { $inc: { age: 5 } },
+    });
     expect(inc!.age).toBe(6);
     expect(inc!.name).toBe("Ali"); // overflow preserved
 
@@ -173,9 +184,18 @@ describe("structured collections: introspection", () => {
 
     const cols = (await db.$schema("t")).map((c) => c.name);
     expect(cols).toEqual(
-      expect.arrayContaining(["_id", "created_at", "updated_at", "data", "amount", "meta"]),
+      expect.arrayContaining([
+        "_id",
+        "created_at",
+        "updated_at",
+        "data",
+        "amount",
+        "meta",
+      ]),
     );
-    expect((await db.$schema("t")).find((c) => c.name === "_id")!.primaryKey).toBe(true);
+    expect(
+      (await db.$schema("t")).find((c) => c.name === "_id")!.primaryKey,
+    ).toBe(true);
   });
 
   it("rejects reserved column names", () => {

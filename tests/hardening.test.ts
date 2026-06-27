@@ -23,11 +23,15 @@ describe("security: SQL injection", () => {
     const evil = 'x" AS y, (SELECT 1) AS z --';
     // Generated aliases + path escaping mean this can't inject; SQLite safely
     // rejects the malformed path as a normalized MonliteError (no breakout).
-    await expect(c.groupBy({ by: [evil], _count: true })).rejects.toBeInstanceOf(
-      MonliteError,
-    );
+    await expect(
+      c.groupBy({ by: [evil], _count: true }),
+    ).rejects.toBeInstanceOf(MonliteError);
     // A normal groupBy still works (alias fix didn't break the happy path).
-    const ok = await c.groupBy({ by: ["x"], _count: true, orderBy: { x: "asc" } });
+    const ok = await c.groupBy({
+      by: ["x"],
+      _count: true,
+      orderBy: { x: "asc" },
+    });
     expect(ok.map((r) => r.x)).toEqual([1, 2]);
   });
 });
@@ -103,7 +107,9 @@ describe("new query methods", () => {
   });
 
   it("findUnique", async () => {
-    expect(await db.collection("u").findUnique({ where: { _id: "k" } })).toMatchObject({ n: 1 });
+    expect(
+      await db.collection("u").findUnique({ where: { _id: "k" } }),
+    ).toMatchObject({ n: 1 });
   });
   it("exists", async () => {
     expect(await db.collection("u").exists({ n: 1 })).toBe(true);

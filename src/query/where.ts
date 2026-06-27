@@ -63,7 +63,11 @@ function isFilterObject(v: any): v is FieldFilter {
   );
 }
 
-function translateField(field: string, condition: any, ctx: WhereContext): string {
+function translateField(
+  field: string,
+  condition: any,
+  ctx: WhereContext,
+): string {
   if (ctx.onPath && !isColumn(field, ctx.columns)) ctx.onPath(field);
   const expr = fieldExpr(field, ctx.columns);
 
@@ -164,9 +168,7 @@ function inExpr(
   negate: boolean,
 ): string {
   if (!Array.isArray(arr)) {
-    throw new MonliteQueryError(
-      `${negate ? "notIn" : "in"} expects an array`,
-    );
+    throw new MonliteQueryError(`${negate ? "notIn" : "in"} expects an array`);
   }
   if (arr.length === 0) return negate ? "1" : "0";
   const placeholders = arr
@@ -192,7 +194,9 @@ function containsExpr(
   ctx: WhereContext,
   ci: boolean,
 ): string {
-  const sub = ci ? `instr(lower(${expr}), lower(?)) > 0` : `instr(${expr}, ?) > 0`;
+  const sub = ci
+    ? `instr(lower(${expr}), lower(?)) > 0`
+    : `instr(${expr}, ?) > 0`;
   if (isColumn(field, ctx.columns)) {
     ctx.params.push(bindable(v));
     return sub;

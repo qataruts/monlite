@@ -1,4 +1,8 @@
-import type { RemoteChange, LocalChange, ConflictResolver } from "@monlite/core";
+import type {
+  RemoteChange,
+  LocalChange,
+  ConflictResolver,
+} from "@monlite/core";
 
 export type { RemoteChange, LocalChange, ConflictResolver };
 

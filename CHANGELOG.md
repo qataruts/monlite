@@ -1,5 +1,17 @@
 # @monlite/core
 
+## 0.7.0 — structured sync + convergence
+
+- **Structured collections now sync.** Remote changes are applied through the
+  mode-aware collection, so native columns (not just JSON overflow) round-trip.
+  Open a structured collection with its `schema` on each node before syncing.
+- **LWW convergence fix**: when a local document wins a conflict, its winning
+  version is re-enqueued so it propagates back to the remote (the two ends no
+  longer diverge).
+- `seed` skips collections whose local table doesn't exist yet.
+- Tooling: ESLint (flat config) + Prettier with `lint`/`format` scripts, wired
+  into CI.
+
 ## 0.6.0 — production hardening
 
 ### Security

@@ -36,7 +36,6 @@ import {
   fieldExpr,
   isColumn,
   pathLiteral,
-  quoteIdent,
   RESERVED_FIELDS,
 } from "./query/sql.js";
 import { aggregate, groupBy } from "./aggregation/aggregate.js";
@@ -159,7 +158,8 @@ export class Collection<T = Doc> {
         let line = `"${field}" ${sqliteType(def.type)}`;
         if (def.notNull) line += " NOT NULL";
         if (def.unique) line += " UNIQUE";
-        if (def.default !== undefined) line += ` DEFAULT ${formatDefault(def.default)}`;
+        if (def.default !== undefined)
+          line += ` DEFAULT ${formatDefault(def.default)}`;
         if (def.references) line += ` REFERENCES ${def.references}`;
         lines.push(line);
       }
@@ -246,7 +246,12 @@ export class Collection<T = Doc> {
     const now = Date.now();
     const id = input._id != null ? String(input._id) : objectId();
     const doc = stripSystem(input);
-    const returned = { ...doc, _id: id, created_at: now, updated_at: now } as WithId<T>;
+    const returned = {
+      ...doc,
+      _id: id,
+      created_at: now,
+      updated_at: now,
+    } as WithId<T>;
 
     if (this.mode === "document") {
       return {
@@ -305,9 +310,87 @@ export class Collection<T = Doc> {
     return { setSql: setParts.join(", "), values };
   }
 
-  /** Sync store, but only for document collections (structured sync is future work). */
+  /** Sync store for recording local changes (both document and structured). */
   private get recorder() {
-    return this.mode === "document" ? this.mon.$sync : undefined;
+    return this.mon.$sync;
+  }
+
+  /** @internal Read a full document by id (mode-aware), synchronously. */
+  getRaw(id: string): WithId<T> | null {
+    this.ensureTable();
+    const row = this.db
+      .prepare(`SELECT * FROM "${this.name}" WHERE _id = ?`)
+      .get(id) as Row | undefined;
+    return row ? this.rowToDoc(row) : null;
+  }
+
+  /**
+   * @internal Apply a remote change to storage WITHOUT recording it to the
+   * change feed (the sync store records the `remote` feed row itself). Used by
+   * `@monlite/sync` so structured collections sync correctly through the same
+   * column/overflow split as local writes.
+   */
+  applyRemoteWrite(
+    op: "upsert" | "delete",
+    id: string,
+    doc: Record<string, any> | undefined,
+    ts: number,
+  ): void {
+    this.ensureTable();
+    if (op === "delete") {
+      this.db.prepare(`DELETE FROM "${this.name}" WHERE _id = ?`).run(id);
+      return;
+    }
+    const clean = stripSystem(doc ?? {});
+    const createdAt =
+      typeof (doc as any)?.created_at === "number"
+        ? (doc as any).created_at
+        : ts;
+
+    if (this.mode === "document") {
+      this.db
+        .prepare(
+          `INSERT INTO "${this.name}" (_id, data, created_at, updated_at) VALUES (?, ?, ?, ?)
+           ON CONFLICT(_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
+        )
+        .run(id, JSON.stringify(clean), createdAt, ts);
+      return;
+    }
+
+    const overflow: Record<string, any> = {};
+    const colValues: Record<string, any> = {};
+    for (const [k, v] of Object.entries(clean)) {
+      if (this.columns.has(k)) colValues[k] = v;
+      else overflow[k] = v;
+    }
+    const cols = [
+      "_id",
+      "created_at",
+      "updated_at",
+      "data",
+      ...this.columnOrder,
+    ];
+    const values = [
+      id,
+      createdAt,
+      ts,
+      JSON.stringify(overflow),
+      ...this.columnOrder.map((c) =>
+        c in colValues ? this.encodeColumn(c, colValues[c]) : null,
+      ),
+    ];
+    const colList = cols.map((c) => `"${c}"`).join(", ");
+    const placeholders = cols.map(() => "?").join(", ");
+    const updateSet = cols
+      .filter((c) => c !== "_id" && c !== "created_at")
+      .map((c) => `"${c}" = excluded."${c}"`)
+      .join(", ");
+    this.db
+      .prepare(
+        `INSERT INTO "${this.name}" (${colList}) VALUES (${placeholders}) ` +
+          `ON CONFLICT(_id) DO UPDATE SET ${updateSet}`,
+      )
+      .run(...values);
   }
 
   /* ----------------------------- create ----------------------------- */
@@ -601,7 +684,12 @@ export class Collection<T = Doc> {
     this.ensureTable();
     return this.guard(() =>
       aggregate(
-        { db: this.db, table: this.name, onPath: this.trackPath, columns: this.columns },
+        {
+          db: this.db,
+          table: this.name,
+          onPath: this.trackPath,
+          columns: this.columns,
+        },
         args,
       ),
     );
@@ -611,7 +699,12 @@ export class Collection<T = Doc> {
     this.ensureTable();
     return this.guard(() =>
       groupBy(
-        { db: this.db, table: this.name, onPath: this.trackPath, columns: this.columns },
+        {
+          db: this.db,
+          table: this.name,
+          onPath: this.trackPath,
+          columns: this.columns,
+        },
         args,
       ),
     );

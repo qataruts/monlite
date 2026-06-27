@@ -118,10 +118,12 @@ export class MongoAdapter implements SyncAdapter {
         );
         if (failed.size === 0) {
           // Unknown failure shape — reject the whole batch to be safe.
-          for (const c of list) rejected.push({ change: c, reason: String(err?.message ?? err) });
+          for (const c of list)
+            rejected.push({ change: c, reason: String(err?.message ?? err) });
         } else {
           list.forEach((c, idx) => {
-            if (failed.has(idx)) rejected.push({ change: c, reason: String(err?.message ?? err) });
+            if (failed.has(idx))
+              rejected.push({ change: c, reason: String(err?.message ?? err) });
             else acked.push(c);
           });
         }
@@ -137,14 +139,21 @@ export class MongoAdapter implements SyncAdapter {
     let maxVersion = cursor ?? "";
 
     for (const collName of collections) {
-      let query = this.coll(collName).find(filter).sort({ [VERSION_FIELD]: 1 });
+      let query = this.coll(collName)
+        .find(filter)
+        .sort({ [VERSION_FIELD]: 1 });
       if (opts.limit != null && opts.limit > 0) query = query.limit(opts.limit);
       const docs: any[] = await query.toArray();
       for (const d of docs) {
         const version: string = d[VERSION_FIELD] ?? "";
         const idHex = d._id?.toString?.() ?? String(d._id);
         if (d[DELETED_FIELD]) {
-          changes.push({ collection: collName, _id: idHex, op: "delete", version });
+          changes.push({
+            collection: collName,
+            _id: idHex,
+            op: "delete",
+            version,
+          });
         } else {
           const { [VERSION_FIELD]: _v, [DELETED_FIELD]: _d, ...rest } = d;
           changes.push({
@@ -187,9 +196,15 @@ export class MongoAdapter implements SyncAdapter {
           }
           const d = evt.fullDocument;
           if (!d) return;
-          const version: string = d[VERSION_FIELD] ?? makeVersion(Date.now(), "mongo");
+          const version: string =
+            d[VERSION_FIELD] ?? makeVersion(Date.now(), "mongo");
           if (d[DELETED_FIELD]) {
-            onChange({ collection: collName, _id: idHex, op: "delete", version });
+            onChange({
+              collection: collName,
+              _id: idHex,
+              op: "delete",
+              version,
+            });
           } else {
             const { [VERSION_FIELD]: _v, [DELETED_FIELD]: _dd, ...rest } = d;
             onChange({

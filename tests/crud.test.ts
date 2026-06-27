@@ -34,7 +34,9 @@ describe("create", () => {
 
   it("honors a user-provided _id", async () => {
     const users = db.collection<User>("users");
-    const u = await users.create({ data: { _id: "custom-1", name: "Sara" } as any });
+    const u = await users.create({
+      data: { _id: "custom-1", name: "Sara" } as any,
+    });
     expect(u._id).toBe("custom-1");
     expect(await users.findById("custom-1")).toMatchObject({ name: "Sara" });
   });

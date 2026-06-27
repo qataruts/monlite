@@ -18,7 +18,10 @@ export class MonliteQueryError extends MonliteError {
 /** A database constraint was violated (base class for the specific kinds). */
 export class MonliteConstraintError extends MonliteError {
   readonly collection?: string;
-  constructor(message: string, options?: { cause?: unknown; collection?: string }) {
+  constructor(
+    message: string,
+    options?: { cause?: unknown; collection?: string },
+  ) {
     super(message, options);
     this.name = "MonliteConstraintError";
     this.collection = options?.collection;
@@ -27,7 +30,10 @@ export class MonliteConstraintError extends MonliteError {
 
 /** A UNIQUE (or primary-key) constraint was violated. */
 export class MonliteUniqueConstraintError extends MonliteConstraintError {
-  constructor(message: string, options?: { cause?: unknown; collection?: string }) {
+  constructor(
+    message: string,
+    options?: { cause?: unknown; collection?: string },
+  ) {
     super(message, options);
     this.name = "MonliteUniqueConstraintError";
   }
@@ -35,7 +41,10 @@ export class MonliteUniqueConstraintError extends MonliteConstraintError {
 
 /** A NOT NULL constraint was violated. */
 export class MonliteNotNullError extends MonliteConstraintError {
-  constructor(message: string, options?: { cause?: unknown; collection?: string }) {
+  constructor(
+    message: string,
+    options?: { cause?: unknown; collection?: string },
+  ) {
     super(message, options);
     this.name = "MonliteNotNullError";
   }
@@ -43,7 +52,10 @@ export class MonliteNotNullError extends MonliteConstraintError {
 
 /** A FOREIGN KEY constraint was violated. */
 export class MonliteForeignKeyError extends MonliteConstraintError {
-  constructor(message: string, options?: { cause?: unknown; collection?: string }) {
+  constructor(
+    message: string,
+    options?: { cause?: unknown; collection?: string },
+  ) {
     super(message, options);
     this.name = "MonliteForeignKeyError";
   }
@@ -54,7 +66,10 @@ export class MonliteForeignKeyError extends MonliteConstraintError {
  * error) into a typed {@link MonliteError}. The two backends differ in error
  * shape, so we sniff both the `code` and the message text.
  */
-export function normalizeDriverError(err: unknown, collection?: string): MonliteError {
+export function normalizeDriverError(
+  err: unknown,
+  collection?: string,
+): MonliteError {
   if (err instanceof MonliteError) return err;
 
   const code = (err as any)?.code ? String((err as any).code) : "";

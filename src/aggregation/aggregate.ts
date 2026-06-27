@@ -130,17 +130,18 @@ function buildHaving(
     if (!selection) continue;
     for (const field of Object.keys(selection)) {
       parts.push(
-        ...comparisonSql(`${fn}(${fieldExpr(field, columns)})`, selection[field]!, params),
+        ...comparisonSql(
+          `${fn}(${fieldExpr(field, columns)})`,
+          selection[field]!,
+          params,
+        ),
       );
     }
   }
   return parts.join(" AND ");
 }
 
-export function groupBy(
-  ctx: AggContext,
-  args: GroupByArgs,
-): GroupByResult[] {
+export function groupBy(ctx: AggContext, args: GroupByArgs): GroupByResult[] {
   if (!Array.isArray(args.by) || args.by.length === 0) {
     throw new MonliteQueryError("groupBy requires a non-empty `by` array");
   }
@@ -167,7 +168,11 @@ export function groupBy(
   });
 
   selects.push(`COUNT(*) AS agg_count`);
-  const { selects: accSelects, cols } = buildAccumulators(args, ctx.onPath, ctx.columns);
+  const { selects: accSelects, cols } = buildAccumulators(
+    args,
+    ctx.onPath,
+    ctx.columns,
+  );
   selects.push(...accSelects);
 
   let sql =

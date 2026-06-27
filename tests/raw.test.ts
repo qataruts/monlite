@@ -75,7 +75,11 @@ describe("database management", () => {
     await users.create({ data: { name: "seed" } });
     await expect(
       db.$transaction(() => {
-        db.sqlite.prepare(`INSERT INTO users(_id,data,created_at,updated_at) VALUES('z','{}',0,0)`).run();
+        db.sqlite
+          .prepare(
+            `INSERT INTO users(_id,data,created_at,updated_at) VALUES('z','{}',0,0)`,
+          )
+          .run();
         throw new Error("boom");
       }),
     ).rejects.toThrow("boom");

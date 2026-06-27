@@ -1,0 +1,9 @@
+dist
+node_modules
+coverage
+plan
+pnpm-lock.yaml
+*.md
+*.json
+*.yaml
+*.yml

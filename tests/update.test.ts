@@ -13,7 +13,9 @@ afterEach(async () => {
 describe("update operators", () => {
   it("$set with nested dot path", async () => {
     const c = db.collection("docs");
-    const d = await c.create({ data: { name: "Ali", address: { city: "Riyadh" } } });
+    const d = await c.create({
+      data: { name: "Ali", address: { city: "Riyadh" } },
+    });
     const u = await c.update({
       where: { _id: d._id },
       data: { $set: { "address.city": "Jeddah", verified: true } },
@@ -28,14 +30,23 @@ describe("update operators", () => {
   it("$inc increments (missing field starts at 0)", async () => {
     const c = db.collection("docs");
     const d = await c.create({ data: { score: 5 } });
-    expect((await c.update({ where: { _id: d._id }, data: { $inc: { score: 3 } } }))!.score).toBe(8);
-    expect((await c.update({ where: { _id: d._id }, data: { $inc: { fresh: 1 } } }))!.fresh).toBe(1);
+    expect(
+      (await c.update({ where: { _id: d._id }, data: { $inc: { score: 3 } } }))!
+        .score,
+    ).toBe(8);
+    expect(
+      (await c.update({ where: { _id: d._id }, data: { $inc: { fresh: 1 } } }))!
+        .fresh,
+    ).toBe(1);
   });
 
   it("$push appends, $each pushes many", async () => {
     const c = db.collection("docs");
     const d = await c.create({ data: { tags: ["a"] } });
-    let u = await c.update({ where: { _id: d._id }, data: { $push: { tags: "b" } } });
+    let u = await c.update({
+      where: { _id: d._id },
+      data: { $push: { tags: "b" } },
+    });
     expect(u!.tags).toEqual(["a", "b"]);
     u = await c.update({
       where: { _id: d._id },
@@ -47,14 +58,20 @@ describe("update operators", () => {
   it("$pull removes matching elements", async () => {
     const c = db.collection("docs");
     const d = await c.create({ data: { tags: ["a", "b", "a", "c"] } });
-    const u = await c.update({ where: { _id: d._id }, data: { $pull: { tags: "a" } } });
+    const u = await c.update({
+      where: { _id: d._id },
+      data: { $pull: { tags: "a" } },
+    });
     expect(u!.tags).toEqual(["b", "c"]);
   });
 
   it("$unset removes a field", async () => {
     const c = db.collection("docs");
     const d = await c.create({ data: { name: "Ali", temp: 1 } });
-    const u = await c.update({ where: { _id: d._id }, data: { $unset: { temp: true } } });
+    const u = await c.update({
+      where: { _id: d._id },
+      data: { $unset: { temp: true } },
+    });
     expect(u).toMatchObject({ name: "Ali" });
     expect("temp" in (u as any)).toBe(false);
   });
@@ -62,7 +79,10 @@ describe("update operators", () => {
   it("cannot change _id via update", async () => {
     const c = db.collection("docs");
     const d = await c.create({ data: { name: "Ali" } });
-    const u = await c.update({ where: { _id: d._id }, data: { _id: "hacked" } as any });
+    const u = await c.update({
+      where: { _id: d._id },
+      data: { _id: "hacked" } as any,
+    });
     expect(u!._id).toBe(d._id);
     expect(await c.findById("hacked")).toBeNull();
   });
@@ -71,7 +91,10 @@ describe("update operators", () => {
     const c = db.collection("docs");
     const d = await c.create({ data: { name: "Ali" } });
     await expect(
-      c.update({ where: { _id: d._id }, data: { $set: { a: 1 }, b: 2 } as any }),
+      c.update({
+        where: { _id: d._id },
+        data: { $set: { a: 1 }, b: 2 } as any,
+      }),
     ).rejects.toBeInstanceOf(MonliteQueryError);
   });
 });

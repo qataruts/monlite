@@ -130,7 +130,9 @@ export interface UpdateOperators {
  * Update payload. Either a plain object (shallow-merged into the document)
  * or an object using update operators. The two forms cannot be mixed.
  */
-export type UpdateData<T = Doc> = (Partial<T> & Record<string, any>) | UpdateOperators;
+export type UpdateData<T = Doc> =
+  | (Partial<T> & Record<string, any>)
+  | UpdateOperators;
 
 /* ------------------------------------------------------------------ *
  * Read options

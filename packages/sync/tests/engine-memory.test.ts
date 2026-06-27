@@ -66,8 +66,12 @@ describe("engine: two-way convergence (M3)", () => {
     await eb.start(); // pull d1, push d2
     await ea.sync(); // pull d2
 
-    expect(await a.collection("docs").findById("d2")).toMatchObject({ who: "b" });
-    expect(await b.collection("docs").findById("d1")).toMatchObject({ who: "a" });
+    expect(await a.collection("docs").findById("d2")).toMatchObject({
+      who: "b",
+    });
+    expect(await b.collection("docs").findById("d1")).toMatchObject({
+      who: "a",
+    });
   });
 });
 

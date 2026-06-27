@@ -89,7 +89,12 @@ describe("MongoAdapter translation", () => {
 
   it("pull: maps docs to changes, surfaces deletes, advances cursor", async () => {
     const users = new FakeCollection([
-      { _id: new ObjectId(HEX1), name: "Ali", _monlite_v: "v5", _monlite_deleted: false },
+      {
+        _id: new ObjectId(HEX1),
+        name: "Ali",
+        _monlite_v: "v5",
+        _monlite_deleted: false,
+      },
       { _id: new ObjectId(HEX2), _monlite_v: "v6", _monlite_deleted: true },
     ]);
     const adapter = new MongoAdapter({
@@ -109,8 +114,18 @@ describe("MongoAdapter translation", () => {
 
   it("pull: cursor filters already-seen versions", async () => {
     const users = new FakeCollection([
-      { _id: new ObjectId(HEX1), name: "old", _monlite_v: "v1", _monlite_deleted: false },
-      { _id: new ObjectId(HEX2), name: "new", _monlite_v: "v9", _monlite_deleted: false },
+      {
+        _id: new ObjectId(HEX1),
+        name: "old",
+        _monlite_v: "v1",
+        _monlite_deleted: false,
+      },
+      {
+        _id: new ObjectId(HEX2),
+        name: "new",
+        _monlite_v: "v9",
+        _monlite_deleted: false,
+      },
     ]);
     const adapter = new MongoAdapter({
       client: new FakeClient({ users }) as any,

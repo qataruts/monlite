@@ -9,7 +9,11 @@ export class BetterSqlite3Driver implements Driver {
   private readonly verbose?: (sql: string) => void;
   private readonly cache = new Map<string, PreparedStatement>();
 
-  constructor(BetterSqlite3: any, filename: string, options: DriverOpenOptions) {
+  constructor(
+    BetterSqlite3: any,
+    filename: string,
+    options: DriverOpenOptions,
+  ) {
     this.verbose = options.verbose;
     this.raw = new BetterSqlite3(filename, {
       readonly: options.readonly ?? false,

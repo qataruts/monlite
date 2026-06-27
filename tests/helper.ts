@@ -6,7 +6,9 @@ import { createDb, type MonliteOptions } from "../src/index";
  * whole suite against both adapters; otherwise it defaults to `"auto"`.
  */
 export function openDb(options: MonliteOptions = {}) {
-  const envDriver = process.env.MONLITE_DRIVER as MonliteOptions["driver"] | undefined;
+  const envDriver = process.env.MONLITE_DRIVER as
+    | MonliteOptions["driver"]
+    | undefined;
   return createDb(":memory:", {
     ...(envDriver ? { driver: envDriver } : {}),
     ...options,

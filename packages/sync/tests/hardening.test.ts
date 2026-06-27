@@ -23,7 +23,9 @@ describe("sync hardening", () => {
 
   it("assigns unique versions even within the same millisecond", async () => {
     const a = db("A");
-    await a.collection("c").createMany({ data: [{ n: 1 }, { n: 2 }, { n: 3 }] });
+    await a
+      .collection("c")
+      .createMany({ data: [{ n: 1 }, { n: 2 }, { n: 3 }] });
     const versions = a.$sync!.pending().map((p) => p.version);
     expect(new Set(versions).size).toBe(3);
   });

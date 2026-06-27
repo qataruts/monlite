@@ -1,4 +1,5 @@
 import type { Driver } from "../driver/types.js";
+import type { Monlite } from "../db.js";
 import { objectId } from "../id.js";
 import {
   makeVersion,
@@ -95,6 +96,7 @@ export class SyncStore {
   constructor(
     private readonly db: Driver,
     nodeId?: string,
+    private readonly mon?: Monlite,
   ) {
     this.init();
     this.nodeId = this.resolveNodeId(nodeId);
@@ -134,7 +136,9 @@ export class SyncStore {
   private resolveNodeId(explicit?: string): string {
     if (explicit) {
       this.db
-        .prepare(`INSERT OR REPLACE INTO _monlite_meta (key, value) VALUES ('nodeId', ?)`)
+        .prepare(
+          `INSERT OR REPLACE INTO _monlite_meta (key, value) VALUES ('nodeId', ?)`,
+        )
         .run(explicit);
       return explicit;
     }
@@ -278,6 +282,13 @@ export class SyncStore {
       }
 
       if (winner !== "remote") {
+        // Local won a real conflict. Re-enqueue it so the winning version
+        // propagates back to the remote; otherwise the remote keeps the stale
+        // value and the two ends diverge. (`pending` downgrades to a delete if
+        // the doc no longer exists locally.)
+        if (localVersion !== null) {
+          this.recordLocal(change.collection, change._id, "upsert", Date.now());
+        }
         return { applied: false, conflict: localVersion !== null, winner };
       }
 
@@ -295,28 +306,41 @@ export class SyncStore {
           versionTs(change.version),
         );
 
-      return { applied: true, conflict: localVersion !== null, winner: "remote" };
+      return {
+        applied: true,
+        conflict: localVersion !== null,
+        winner: "remote",
+      };
     });
   }
 
   private applyData(change: RemoteChange): void {
-    const { collection: coll, _id, op } = change;
+    const ts = versionTs(change.version);
+    // Route through the collection so storage respects its mode (document vs
+    // structured). Structured collections must be opened with their schema
+    // before their remote changes are applied — otherwise they default to
+    // document mode.
+    if (this.mon) {
+      this.mon
+        .collection(change.collection)
+        .applyRemoteWrite(change.op, change._id, change.doc, ts);
+      return;
+    }
+    // Fallback (no Monlite ref): document-mode raw write.
+    const coll = change.collection;
     this.ensureCollTable(coll);
-    if (op === "delete") {
-      this.db.prepare(`DELETE FROM "${coll}" WHERE _id = ?`).run(_id);
+    if (change.op === "delete") {
+      this.db.prepare(`DELETE FROM "${coll}" WHERE _id = ?`).run(change._id);
       return;
     }
     const doc = change.doc ?? {};
-    const data = JSON.stringify(stripSystem(doc));
-    const ts = versionTs(change.version);
-    const createdAt =
-      typeof doc.created_at === "number" ? doc.created_at : ts;
+    const createdAt = typeof doc.created_at === "number" ? doc.created_at : ts;
     this.db
       .prepare(
         `INSERT INTO "${coll}" (_id, data, created_at, updated_at) VALUES (?, ?, ?, ?)
          ON CONFLICT(_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
       )
-      .run(_id, data, createdAt, ts);
+      .run(change._id, JSON.stringify(stripSystem(doc)), createdAt, ts);
   }
 
   /**
@@ -385,6 +409,7 @@ export class SyncStore {
     this.db.transaction(() => {
       for (const coll of collections) {
         assertName(coll);
+        if (!this.tableExists(coll)) continue; // nothing to seed yet
         const docs = this.db
           .prepare(`SELECT _id, updated_at FROM "${coll}"`)
           .all() as Array<{ _id: string; updated_at: number }>;
@@ -449,7 +474,14 @@ export class SyncStore {
         `INSERT INTO _monlite_conflicts (coll, doc_id, local_version, remote_version, winner, ts)
          VALUES (?, ?, ?, ?, ?, ?)`,
       )
-      .run(coll, id, localVersion, remoteVersion, winner, versionTs(remoteVersion));
+      .run(
+        coll,
+        id,
+        localVersion,
+        remoteVersion,
+        winner,
+        versionTs(remoteVersion),
+      );
   }
 
   conflicts(): ConflictRow[] {
@@ -473,6 +505,11 @@ export class SyncStore {
 
   private readDoc(coll: string, id: string): Record<string, any> | null {
     assertName(coll);
+    // Read through the collection so structured (native-column) documents are
+    // reassembled correctly, not just their JSON overflow.
+    if (this.mon) return this.mon.collection(coll).getRaw(id);
+
+    if (!this.tableExists(coll)) return null;
     const row = this.db
       .prepare(
         `SELECT _id, data, created_at, updated_at FROM "${coll}" WHERE _id = ?`,
@@ -486,6 +523,14 @@ export class SyncStore {
     doc.created_at = row.created_at;
     doc.updated_at = row.updated_at;
     return doc;
+  }
+
+  private tableExists(name: string): boolean {
+    return (
+      this.db
+        .prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?`)
+        .get(name) != null
+    );
   }
 
   private ensureCollTable(coll: string): void {

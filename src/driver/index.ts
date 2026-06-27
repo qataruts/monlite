@@ -4,7 +4,12 @@ import type { Driver, DriverName, DriverOpenOptions } from "./types.js";
 import { BetterSqlite3Driver } from "./better-sqlite3.js";
 import { NodeSqliteDriver } from "./node-sqlite.js";
 
-export type { Driver, DriverName, DriverOpenOptions, PreparedStatement } from "./types.js";
+export type {
+  Driver,
+  DriverName,
+  DriverOpenOptions,
+  PreparedStatement,
+} from "./types.js";
 
 // Resolve relative to this module so optional deps load from the host app.
 const req = createRequire(import.meta.url);

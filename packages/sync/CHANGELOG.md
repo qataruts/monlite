@@ -1,5 +1,16 @@
 # @monlite/sync
 
+## 0.3.0 — structured sync + live MongoDB tests
+
+- **Structured collections sync** end to end (native columns preserved). Open
+  the collection with its `schema` on each node before syncing.
+- **Live MongoDB integration tests** against a real replica set: push, pull,
+  two-way convergence, soft-delete propagation, and **change streams**. Run in
+  CI's `mongo` job and locally via `MONGO_URL`.
+- `collections: "*"` now resolves to the concrete local collection list before
+  pulling, so it works with the Mongo adapter (which can't enumerate "all").
+- Requires `@monlite/core` ^0.7.0.
+
 ## 0.2.0 — robustness
 
 - **Backoff**: the poll loop now retries with exponential backoff + jitter (up to
