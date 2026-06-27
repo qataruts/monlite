@@ -612,6 +612,30 @@ based on your Node version and whether you want the extra dependency.
 
 ---
 
+## Encryption at rest
+
+Encrypt the whole database file with a key. Install the drop-in cipher driver
+and pass an `encryption` option:
+
+```bash
+npm install better-sqlite3-multiple-ciphers
+```
+
+```ts
+const db = createDb("./secure.db", { encryption: { key: process.env.DB_KEY } });
+// ...use db exactly as normal — everything on disk is encrypted.
+
+db.rekey(newKey); // rotate the key
+```
+
+- A **wrong or missing key throws `MonliteEncryptionError`** when opening.
+- Optional `cipher` selects the scheme (`"sqlcipher"`, `"chacha20"`,
+  `"aes256cbc"`, …); the default is ChaCha20-Poly1305.
+- Encryption requires `better-sqlite3-multiple-ciphers` (a drop-in for
+  `better-sqlite3`) and is **not** available on the `node:sqlite` backend.
+
+---
+
 ## How it works
 
 Every collection is a single SQLite table:

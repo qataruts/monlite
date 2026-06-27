@@ -51,15 +51,22 @@ sync to them.
   **`@monlite/kv`** (cache/KV with TTL), **`@monlite/queue`** (durable job queue —
   retries, backoff, delays, priorities, concurrency, dead-letter, multi-process
   safe), and **`@monlite/cron`** (persisted cron schedules). Both drivers.
+- **Encryption at rest** — the `encryption` option (`createDb(path, { encryption:
+  { key } })`) backed by `better-sqlite3-multiple-ciphers`, plus `db.rekey()`.
 
 ## Planned
 
 ### Wave 3 — desktop production
-- **`@monlite/cipher`** / `encryption` option — encryption at rest (SQLCipher via
-  better-sqlite3-multiple-ciphers). *(In progress.)*
 - **Full migration runner** (rename/drop/rebuild) for structured collections.
 - **Electron/multi-window** helper (main-process DB + IPC bridge).
 - **`@monlite/devtools`** — inspector / query explorer ("Studio").
+
+### Server-DB sync adapters
+- **Postgres / MySQL sync adapters** for `@monlite/sync` (same shape as the
+  MongoDB adapter) — keep local monlite as the fast embedded runtime and use a
+  server DB as the cloud of record. This is the right way monlite touches a
+  server DB: as a **sync target, not the engine** (Postgres is the natural fit —
+  JSONB, `SKIP LOCKED`, `pgvector`).
 
 ### Wave 4 — DX depth
 - **Stronger TypeScript inference** — typed `where`/`orderBy`/`select` and

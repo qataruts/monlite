@@ -23,6 +23,8 @@ export interface Driver {
   /** Run `fn` inside a transaction; rolls back and rethrows if it throws. */
   transaction<T>(fn: () => T): T;
   close(): void;
+  /** Rotate the encryption key (encrypted backends only). */
+  rekey?(key: string, cipher?: string): void;
   /** The underlying native handle (better-sqlite3 Database / node:sqlite DatabaseSync). */
   readonly raw: any;
 }
@@ -34,6 +36,8 @@ export interface DriverOpenOptions {
   busyTimeout?: number;
   /** Allow loading SQLite extensions (needed by `@monlite/vector`). Default false. */
   allowExtensions?: boolean;
+  /** Encrypt the database at rest (better-sqlite3-multiple-ciphers only). */
+  encryption?: { key: string; cipher?: string };
   verbose?: (sql: string) => void;
 }
 

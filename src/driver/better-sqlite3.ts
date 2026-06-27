@@ -1,6 +1,9 @@
+import { MonliteEncryptionError } from "../errors.js";
 import type { Driver, DriverOpenOptions, PreparedStatement } from "./types.js";
 
 const STMT_CACHE_MAX = 256;
+
+const quote = (s: string) => s.replace(/'/g, "''");
 
 /** Adapter over the `better-sqlite3` native driver. */
 export class BetterSqlite3Driver implements Driver {
@@ -18,6 +21,10 @@ export class BetterSqlite3Driver implements Driver {
     this.raw = new BetterSqlite3(filename, {
       readonly: options.readonly ?? false,
     });
+    // The key must be applied before any other access to the database.
+    if (options.encryption) {
+      this.applyKey(options.encryption.key, options.encryption.cipher);
+    }
     this.raw.pragma("foreign_keys = ON");
     this.raw.pragma(`busy_timeout = ${options.busyTimeout ?? 5000}`);
     if (!options.readonly && (options.wal ?? true)) {
@@ -50,6 +57,33 @@ export class BetterSqlite3Driver implements Driver {
   transaction<T>(fn: () => T): T {
     // Nested calls automatically use SAVEPOINTs in better-sqlite3.
     return this.raw.transaction(fn)();
+  }
+
+  /** Apply the encryption key and verify it by reading the schema. */
+  private applyKey(key: string, cipher?: string): void {
+    if (cipher) this.raw.pragma(`cipher='${quote(cipher)}'`);
+    this.raw.pragma(`key='${quote(key)}'`);
+    try {
+      // A wrong key (or an unencrypted file) fails here with SQLITE_NOTADB.
+      this.raw.exec("SELECT count(*) FROM sqlite_master");
+    } catch (err) {
+      this.raw.close();
+      throw new MonliteEncryptionError(
+        "Failed to open the encrypted database: the key is incorrect, or the " +
+          "file is not encrypted.",
+        { cause: err },
+      );
+    }
+  }
+
+  rekey(key: string, cipher?: string): void {
+    if (cipher) this.raw.pragma(`cipher='${quote(cipher)}'`);
+    // Rekeying is not permitted in WAL mode; drop out and restore it.
+    const mode = String(this.raw.pragma("journal_mode", { simple: true }));
+    const wasWal = mode.toLowerCase() === "wal";
+    if (wasWal) this.raw.pragma("journal_mode = DELETE");
+    this.raw.pragma(`rekey='${quote(key)}'`);
+    if (wasWal) this.raw.pragma("journal_mode = WAL");
   }
 
   close(): void {

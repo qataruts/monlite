@@ -1,5 +1,14 @@
 # @monlite/core
 
+## 1.1.0 — encryption at rest
+
+- **`encryption` option** — encrypt the database file at rest:
+  `createDb(path, { encryption: { key, cipher? } })`. Backed by the
+  `better-sqlite3-multiple-ciphers` drop-in (optional peer dependency); not
+  available on `node:sqlite`. A wrong/missing key throws the new
+  **`MonliteEncryptionError`** on open.
+- **`db.rekey(key, cipher?)`** — rotate the encryption key (handles WAL mode).
+
 ## 1.0.0 — stable
 
 First stable release. The CRUD/query, aggregation, structured-collection,

@@ -15,6 +15,14 @@ export class MonliteQueryError extends MonliteError {
   }
 }
 
+/** Thrown when an encrypted database can't be opened (wrong key, not encrypted). */
+export class MonliteEncryptionError extends MonliteError {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = "MonliteEncryptionError";
+  }
+}
+
 /** A database constraint was violated (base class for the specific kinds). */
 export class MonliteConstraintError extends MonliteError {
   readonly collection?: string;

@@ -23,6 +23,16 @@ function loadBetterSqlite3(): any | null {
   }
 }
 
+/** The encryption-capable drop-in for better-sqlite3 (same API). */
+function loadCipherSqlite3(): any | null {
+  try {
+    const mod = req("better-sqlite3-multiple-ciphers");
+    return mod?.default ?? mod;
+  } catch {
+    return null;
+  }
+}
+
 function loadNodeSqlite(): any | null {
   try {
     // Only required when actually selected, so better-sqlite3 users never
@@ -46,6 +56,25 @@ export function createDriver(
   options: CreateDriverOptions = {},
 ): Driver {
   const choice = options.driver ?? "auto";
+
+  // Encryption requires the better-sqlite3-multiple-ciphers drop-in.
+  if (options.encryption) {
+    if (choice === "node:sqlite") {
+      throw new MonliteError(
+        `Encryption is not supported on the node:sqlite backend. Use ` +
+          `better-sqlite3 with the better-sqlite3-multiple-ciphers package.`,
+      );
+    }
+    const cipher = loadCipherSqlite3();
+    if (!cipher) {
+      throw new MonliteError(
+        `Encryption requires the "better-sqlite3-multiple-ciphers" package ` +
+          `(a drop-in for better-sqlite3). Run ` +
+          `\`npm install better-sqlite3-multiple-ciphers\`.`,
+      );
+    }
+    return new BetterSqlite3Driver(cipher, filename, options);
+  }
 
   if (choice === "better-sqlite3") {
     const mod = loadBetterSqlite3();

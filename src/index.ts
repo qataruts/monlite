@@ -7,6 +7,7 @@ export {
   MonliteUniqueConstraintError,
   MonliteNotNullError,
   MonliteForeignKeyError,
+  MonliteEncryptionError,
   normalizeDriverError,
 } from "./errors.js";
 export { objectId, isObjectId } from "./id.js";
@@ -48,6 +49,7 @@ export type {
   HavingComparison,
   HavingInput,
   MonliteOptions,
+  EncryptionOptions,
   DriverName,
 } from "./types.js";
 export type { Driver, PreparedStatement } from "./driver/types.js";

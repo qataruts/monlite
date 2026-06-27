@@ -292,12 +292,29 @@ export type GroupByResult = Record<string, any>;
 
 export type DriverName = "auto" | "better-sqlite3" | "node:sqlite";
 
+/** Encryption-at-rest configuration (requires `better-sqlite3-multiple-ciphers`). */
+export interface EncryptionOptions {
+  /** The passphrase used to encrypt/decrypt the database file. */
+  key: string;
+  /**
+   * Cipher scheme to use (e.g. `"sqlcipher"`, `"chacha20"`, `"aes256cbc"`).
+   * Defaults to the library default (ChaCha20-Poly1305).
+   */
+  cipher?: string;
+}
+
 export interface MonliteOptions {
   /**
    * Which SQLite backend to use. `"auto"` (default) prefers `better-sqlite3`
    * when installed, otherwise the built-in `node:sqlite` (Node >= 22.5).
    */
   driver?: DriverName;
+  /**
+   * Encrypt the database at rest. Requires the `better-sqlite3-multiple-ciphers`
+   * package (a drop-in for `better-sqlite3`); not supported on `node:sqlite`.
+   * Use `db.rekey(newKey)` to rotate the key.
+   */
+  encryption?: EncryptionOptions;
   /** Opt-in plugins (e.g. `@monlite/fts`). */
   plugins?: MonlitePlugin[];
   /**

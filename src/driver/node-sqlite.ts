@@ -1,3 +1,4 @@
+import { MonliteError } from "../errors.js";
 import type { Driver, DriverOpenOptions, PreparedStatement } from "./types.js";
 
 const STMT_CACHE_MAX = 256;
@@ -18,6 +19,12 @@ export class NodeSqliteDriver implements Driver {
   private depth = 0;
 
   constructor(nodeSqlite: any, filename: string, options: DriverOpenOptions) {
+    if (options.encryption) {
+      throw new MonliteError(
+        "Encryption is not supported on the node:sqlite backend. Use " +
+          "better-sqlite3 with the better-sqlite3-multiple-ciphers package.",
+      );
+    }
     this.verbose = options.verbose;
     const { DatabaseSync } = nodeSqlite;
     this.raw = new DatabaseSync(filename, {

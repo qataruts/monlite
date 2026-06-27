@@ -55,6 +55,7 @@ export class Monlite {
 
   private readonly collections = new Map<string, Collection<any>>();
   private readonly plugins: MonlitePlugin[];
+  private readonly encrypted: boolean;
   private closed = false;
 
   constructor(filename: string, options: MonliteOptions = {}) {
@@ -64,8 +65,10 @@ export class Monlite {
       wal: options.wal,
       busyTimeout: options.busyTimeout,
       allowExtensions: options.allowExtensions,
+      encryption: options.encryption,
       verbose: options.verbose,
     });
+    this.encrypted = options.encryption !== undefined;
 
     this.autoIndexer = new AutoIndexer(
       this.driver,
@@ -257,6 +260,20 @@ export class Monlite {
     this.assertOpen();
     this.driver.exec(`VACUUM INTO '${path.replace(/'/g, "''")}'`);
     return Promise.resolve();
+  }
+
+  /**
+   * Rotate the encryption key. Only valid for a database opened with the
+   * `encryption` option; throws otherwise. Pass `cipher` to also change scheme.
+   */
+  rekey(key: string, cipher?: string): void {
+    this.assertOpen();
+    if (!this.encrypted || !this.driver.rekey) {
+      throw new MonliteError(
+        "rekey() requires a database opened with the `encryption` option.",
+      );
+    }
+    this.driver.rekey(key, cipher);
   }
 
   /** Close the underlying SQLite connection. */
