@@ -12,6 +12,7 @@ import { createDriver } from "./driver/index.js";
 import type { Driver } from "./driver/types.js";
 import { SyncStore } from "./sync/store.js";
 import { Reactor } from "./reactive.js";
+import type { MonlitePlugin } from "./plugin.js";
 
 function validateName(name: string): void {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
@@ -53,6 +54,7 @@ export class Monlite {
   readonly $sync?: SyncStore;
 
   private readonly collections = new Map<string, Collection<any>>();
+  private readonly plugins: MonlitePlugin[];
   private closed = false;
 
   constructor(filename: string, options: MonliteOptions = {}) {
@@ -72,6 +74,17 @@ export class Monlite {
 
     if (options.sync) {
       this.$sync = new SyncStore(this.driver, options.nodeId, this);
+    }
+
+    this.plugins = options.plugins ?? [];
+    for (const plugin of this.plugins) plugin.init?.(this);
+  }
+
+  /** @internal Notify plugins that documents changed (post-commit). */
+  firePluginAfterWrite(collection: string, ids: string[]): void {
+    if (this.plugins.length === 0 || ids.length === 0) return;
+    for (const plugin of this.plugins) {
+      plugin.afterWrite?.(this, { collection, ids });
     }
   }
 
@@ -105,6 +118,14 @@ export class Monlite {
     if (!col) {
       col = new Collection<T>(this, name, options);
       this.collections.set(name, col);
+      // Attach plugin-provided methods (e.g. `search`) to the handle.
+      for (const plugin of this.plugins) {
+        for (const [method, impl] of Object.entries(
+          plugin.collectionMethods ?? {},
+        )) {
+          (col as any)[method] = (...args: any[]) => impl(col!, ...args);
+        }
+      }
     } else if (options?.schema) {
       // A collection's mode/columns are fixed on first access; surface conflicts
       // instead of silently ignoring a re-declaration.

@@ -1,5 +1,14 @@
 # @monlite/core
 
+## 0.9.0 — plugin system
+
+- **Plugin system** — `createDb({ plugins: [...] })` with a `MonlitePlugin`
+  interface (`init` / `afterWrite` / `collectionMethods` hooks). Keeps core lean
+  while opt-in packages add capabilities. First consumer:
+  [`@monlite/fts`](https://www.npmjs.com/package/@monlite/fts) (full-text search).
+- `afterWrite` fires synchronously post-commit for both local and synced writes,
+  so plugin-maintained indexes stay current.
+
 ## 0.8.0 — Wave 1: reactivity, migrations, explain, backup
 
 - **Reactivity** — `collection.watch(args, cb)` live queries with **row-level**

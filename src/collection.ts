@@ -436,9 +436,11 @@ export class Collection<T = Doc> {
     this.afterWrite([id]);
   }
 
-  /** @internal Notify reactivity watchers that documents changed. */
+  /** @internal Notify reactivity watchers and plugins that documents changed. */
   private afterWrite(ids: string[]): void {
+    if (ids.length === 0) return;
     this.mon.reactor.emit(this.name, ids);
+    this.mon.firePluginAfterWrite(this.name, ids);
   }
 
   /* ----------------------------- create ----------------------------- */

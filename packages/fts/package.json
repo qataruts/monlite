@@ -1,7 +1,7 @@
 {
-  "name": "@monlite/sync",
-  "version": "0.3.2",
-  "description": "Local-first sync for @monlite/core — replicate a local SQLite document database with MongoDB and other backends.",
+  "name": "@monlite/fts",
+  "version": "0.1.0",
+  "description": "Full-text search for @monlite/core, powered by SQLite FTS5. Adds collection.search().",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -29,21 +29,20 @@
   },
   "keywords": [
     "monlite",
-    "sync",
-    "replication",
-    "local-first",
-    "mongodb",
+    "fts",
+    "fts5",
+    "full-text-search",
     "sqlite",
-    "offline"
+    "search"
   ],
   "license": "MIT",
   "author": "Emad Jumaah <emadjumaah@gmail.com>",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/qataruts/monlite.git",
-    "directory": "packages/sync"
+    "directory": "packages/fts"
   },
-  "homepage": "https://github.com/qataruts/monlite/tree/main/packages/sync#readme",
+  "homepage": "https://github.com/qataruts/monlite/tree/main/packages/fts#readme",
   "bugs": {
     "url": "https://github.com/qataruts/monlite/issues"
   },
@@ -56,18 +55,9 @@
   "dependencies": {
     "@monlite/core": "workspace:^"
   },
-  "peerDependencies": {
-    "mongodb": ">=5"
-  },
-  "peerDependenciesMeta": {
-    "mongodb": {
-      "optional": true
-    }
-  },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "better-sqlite3": "^11.8.0",
-    "mongodb": "^6.12.0",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"

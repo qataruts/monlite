@@ -16,20 +16,15 @@ heavier capabilities as opt-in packages.
   LWW + custom conflict resolution, change feed + tombstones, and adapters for
   **MongoDB** (verified against a live replica set, incl. change streams),
   monlite-to-monlite, and in-memory. Document **and** structured collections sync.
-
-## In progress — Wave 1: foundations & quick wins
-
-- **Reactivity** — `collection.watch()` / live queries with **row-level** change
-  matching (only recompute when a changed row actually affects the query).
-- **Auto-additive migrations** for structured collections (`ADD COLUMN` on schema diff).
-- **`collection.explain()`** — query plan + whether an index was used.
-- **`db.backup(path)`** — consistent on-disk snapshots.
+- **Wave 1** — `collection.watch()` reactivity (row-level), auto-additive
+  migrations, `collection.explain()`, and `db.backup()`.
+- **Plugin system** — `createDb({ plugins })` with `init`/`afterWrite`/
+  `collectionMethods` hooks.
+- **`@monlite/fts`** — full-text search (SQLite FTS5) via `collection.search()`.
 
 ## Planned
 
-### Wave 2 — search & the AI wedge
-- **Plugin system** (lifecycle hooks; keeps core lean) — landed with its first consumer.
-- **`@monlite/fts`** — FTS5 full-text search (`collection.search(...)`).
+### Wave 2 (cont.) — the AI wedge
 - **`@monlite/vector`** — local vector / semantic search (sqlite-vec) + **hybrid
   search** (keyword + vector) for RAG and AI-agent memory.
 

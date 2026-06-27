@@ -1,5 +1,9 @@
 # @monlite/sync
 
+## 0.3.2
+
+- Track `@monlite/core` ^0.9.0 (plugin system; no sync changes).
+
 ## 0.3.1
 
 - Track `@monlite/core` ^0.8.0 (reactivity also fires for synced-in changes).

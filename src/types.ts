@@ -5,6 +5,8 @@
  * stored document: `_id`, `created_at`, and `updated_at`.
  */
 
+import type { MonlitePlugin } from "./plugin.js";
+
 /** A free-form document. */
 export type Doc = Record<string, any>;
 
@@ -296,6 +298,8 @@ export interface MonliteOptions {
    * when installed, otherwise the built-in `node:sqlite` (Node >= 22.5).
    */
   driver?: DriverName;
+  /** Opt-in plugins (e.g. `@monlite/fts`). */
+  plugins?: MonlitePlugin[];
   /**
    * Enable sync metadata (change feed, tombstones, version tracking) so the
    * database can replicate via `@monlite/sync`. Off by default — adds zero

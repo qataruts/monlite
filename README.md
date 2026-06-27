@@ -525,6 +525,31 @@ db.driverName;             // "better-sqlite3" | "node:sqlite"
 
 ---
 
+## Plugins
+
+`@monlite/core` stays lean; heavier or optional capabilities are opt-in plugins
+passed to `createDb`:
+
+```ts
+import { createDb } from "@monlite/core";
+import { fts } from "@monlite/fts";
+
+const db = createDb("./app.db", {
+  plugins: [fts({ posts: ["title", "body"] })],
+});
+
+await db.collection("posts").search("hello world"); // full-text search
+```
+
+| Plugin | Adds |
+|---|---|
+| [`@monlite/fts`](https://www.npmjs.com/package/@monlite/fts) | Full-text search (SQLite FTS5) via `collection.search()` |
+
+Write your own against the `MonlitePlugin` interface (`init` / `afterWrite` /
+`collectionMethods` hooks).
+
+---
+
 ## Drivers & zero dependencies
 
 monlite talks to SQLite through a tiny driver adapter, so it runs on two
