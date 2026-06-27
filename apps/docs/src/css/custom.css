@@ -1,0 +1,36 @@
+/* monlite docs theme — a calm, moonlit palette. */
+:root {
+  --ifm-color-primary: #5b6cff;
+  --ifm-color-primary-dark: #3a4fff;
+  --ifm-color-primary-darker: #2a40ff;
+  --ifm-color-primary-darkest: #0a22d6;
+  --ifm-color-primary-light: #7c89ff;
+  --ifm-color-primary-lighter: #8c97ff;
+  --ifm-color-primary-lightest: #bcc3ff;
+  --ifm-code-font-size: 92%;
+  --ifm-font-family-base:
+    system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --docusaurus-highlighted-code-line-bg: rgba(91, 108, 255, 0.12);
+}
+
+[data-theme="dark"] {
+  --ifm-color-primary: #97a2ff;
+  --ifm-color-primary-dark: #7280ff;
+  --ifm-color-primary-darker: #5e6eff;
+  --ifm-color-primary-darkest: #2c40ff;
+  --ifm-color-primary-light: #bcc3ff;
+  --ifm-color-primary-lighter: #ccd1ff;
+  --ifm-color-primary-lightest: #e6e9ff;
+  --ifm-background-color: #0c0e1a;
+  --ifm-background-surface-color: #12152a;
+  --docusaurus-highlighted-code-line-bg: rgba(151, 162, 255, 0.16);
+}
+
+.markdown table {
+  display: table;
+  width: 100%;
+}
+
+.navbar__title {
+  font-weight: 700;
+}
