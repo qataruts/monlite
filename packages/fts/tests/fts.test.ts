@@ -91,6 +91,8 @@ describe("@monlite/fts", () => {
       const r = await b.collection("posts").search("prewritten");
       expect(r.map((d) => d._id)).toEqual(["p1"]);
     } finally {
+      // Windows can't unlink an open file — close handles before removing.
+      while (dbs.length) await dbs.pop()!.$disconnect();
       rmSync(tmp, { recursive: true, force: true });
     }
   });
@@ -121,6 +123,8 @@ describe("@monlite/fts", () => {
       expect(res2.removed).toBe(1);
       expect((await reader.collection("posts").search("hello")).length).toBe(0);
     } finally {
+      // Windows can't unlink an open file — close handles before removing.
+      while (dbs.length) await dbs.pop()!.$disconnect();
       rmSync(tmp, { recursive: true, force: true });
     }
   });

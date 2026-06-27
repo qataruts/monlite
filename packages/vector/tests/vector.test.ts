@@ -174,6 +174,8 @@ describe("hybridSearch (FTS + vector, RRF)", () => {
         ).map((d) => d._id),
       ).toEqual(["d1"]);
     } finally {
+      // Windows can't unlink an open file — close handles before removing.
+      while (dbs.length) await dbs.pop()!.$disconnect();
       rmSync(tmp, { recursive: true, force: true });
     }
   });
