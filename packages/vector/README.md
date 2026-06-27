@@ -68,6 +68,33 @@ import { reindex } from "@monlite/vector";
 reindex(db, "docs", { field: "embedding", dimensions: 384 }); // rebuild
 ```
 
+## Dynamic store — `createVectorStore(db)`
+
+The `vector()` plugin attaches semantic search to a **document** collection using a
+**static spec**. When you instead need a **programmatic** store over collections
+created **at runtime** — RAG corpora, per-tenant indexes, "give me a vector table
+for this id" — use `createVectorStore(db)`:
+
+```ts
+import { createDb } from "@monlite/core";
+import { createVectorStore } from "@monlite/vector";
+
+const db = createDb("./rag.db", { allowExtensions: true });
+const store = createVectorStore(db);
+
+store.ensureCollection("docs", { dimensions: 384, indexedFields: ["docId"] });
+store.upsert("docs", [{ id: "c1", vector: emb, metadata: { docId: "d1", text } }]);
+
+// `where` on an indexed field is applied INSIDE the KNN — exact pre-filtered recall,
+// so a per-case / per-tenant query stays exact even over a large corpus:
+store.search("docs", { vector: q, topK: 5, where: { docId: "d1" } });
+store.delete("docs", { where: { docId: "d1" } });
+```
+
+Synchronous (raw SQLite). Each collection is its own `vec0` table; `indexedFields`
+become filterable metadata columns and the rest of `metadata` rides in a `+payload`
+column. Ceiling: great to ~1M vectors locally; beyond that use a dedicated vector DB.
+
 ## How it works
 
 For each configured collection the plugin creates a `sqlite-vec` `vec0` virtual

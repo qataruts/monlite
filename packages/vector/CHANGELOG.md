@@ -1,5 +1,15 @@
 # @monlite/vector
 
+## 0.4.0 — dynamic vector store
+
+- **`createVectorStore(db)`** — a programmatic, **dynamic** vector store (collections
+  created at runtime), alongside the existing static `vector()` plugin. `ensureCollection`/
+  `upsert`/`search`/`delete` over `vec0`, with the chosen `indexedFields` as metadata
+  columns so a `where` is applied **inside** the KNN — **exact pre-filtered recall** (scope to
+  one case/tenant even over a large corpus) — and arbitrary metadata in a `+payload` column.
+  This is the API for RAG corpora and per-tenant indexes (the plugin needs a static spec).
+  Synchronous; requires `{ allowExtensions: true }`. Both drivers.
+
 ## 0.3.0
 
 - `collection.catchUp()` + an `updated_at` high-water-mark: incrementally index vectors written by **another process** (and reconcile cross-process deletes) without a full reindex — multi-process ingest → search now works. Indexes on open too.

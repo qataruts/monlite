@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createDb, type Monlite, type MonliteOptions } from "@monlite/core";
 import { fts } from "@monlite/fts";
-import { vector, hybridSearch, type VectorSpec } from "../src/index";
+import {
+  vector,
+  hybridSearch,
+  createVectorStore,
+  type VectorSpec,
+} from "../src/index";
 
 const driver =
   (process.env.MONLITE_DRIVER as MonliteOptions["driver"]) || undefined;
@@ -178,5 +183,86 @@ describe("hybridSearch (FTS + vector, RRF)", () => {
       while (dbs.length) await dbs.pop()!.$disconnect();
       rmSync(tmp, { recursive: true, force: true });
     }
+  });
+});
+
+describe("createVectorStore (dynamic, programmatic)", () => {
+  function storeDb(): Monlite {
+    const d = createDb(":memory:", {
+      allowExtensions: true,
+      ...(driver ? { driver } : {}),
+    });
+    dbs.push(d);
+    return d;
+  }
+
+  it("ensure/upsert/search ranks nearest and returns metadata", () => {
+    const store = createVectorStore(storeDb());
+    store.ensureCollection("docs", { dimensions: 3, indexedFields: ["docId"] });
+    store.upsert("docs", [
+      { id: "a", vector: [1, 0, 0], metadata: { docId: "d1", text: "apple" } },
+      { id: "b", vector: [0, 1, 0], metadata: { docId: "d2", text: "banana" } },
+      {
+        id: "c",
+        vector: [0.9, 0.1, 0],
+        metadata: { docId: "d1", text: "apricot" },
+      },
+    ]);
+    const hits = store.search("docs", { vector: [1, 0, 0], topK: 2 });
+    expect(hits.map((h) => h.id)).toEqual(["a", "c"]);
+    expect(hits[0].metadata.text).toBe("apple");
+    expect(hits[0].distance).toBeLessThan(hits[1].distance);
+  });
+
+  it("scoped where is exact pre-filtered KNN (per-tenant/per-case)", () => {
+    const store = createVectorStore(storeDb());
+    store.ensureCollection("docs", { dimensions: 3, indexedFields: ["docId"] });
+    const pts = [];
+    for (let i = 0; i < 20; i++)
+      pts.push({
+        id: `d1_${i}`,
+        vector: [1, i * 0.001, 0],
+        metadata: { docId: "d1" },
+      });
+    pts.push({
+      id: "d2_hit",
+      vector: [0.8, 0.6, 0],
+      metadata: { docId: "d2", text: "target" },
+    });
+    store.upsert("docs", pts);
+    // query near d1 but scoped to d2 → must return d2's best, never the globally-closer d1 chunks
+    const hits = store.search("docs", {
+      vector: [1, 0, 0],
+      topK: 1,
+      where: { docId: "d2" },
+    });
+    expect(hits.length).toBe(1);
+    expect(hits[0].id).toBe("d2_hit");
+    expect(hits[0].metadata.docId).toBe("d2");
+  });
+
+  it("upsert is idempotent by id; delete by id and by where", () => {
+    const store = createVectorStore(storeDb());
+    store.ensureCollection("docs", { dimensions: 3, indexedFields: ["docId"] });
+    store.upsert("docs", [
+      { id: "a", vector: [1, 0, 0], metadata: { docId: "d1", v: 1 } },
+    ]);
+    store.upsert("docs", [
+      { id: "a", vector: [1, 0, 0], metadata: { docId: "d1", v: 2 } },
+    ]);
+    expect(store.search("docs", { vector: [1, 0, 0], topK: 5 }).length).toBe(1);
+    expect(
+      store.search("docs", { vector: [1, 0, 0], topK: 1 })[0].metadata.v,
+    ).toBe(2);
+
+    store.upsert("docs", [
+      { id: "b", vector: [0, 1, 0], metadata: { docId: "d2" } },
+    ]);
+    store.delete("docs", { id: "a" });
+    expect(
+      store.search("docs", { vector: [1, 0, 0], topK: 5 }).map((h) => h.id),
+    ).toEqual(["b"]);
+    store.delete("docs", { where: { docId: "d2" } });
+    expect(store.search("docs", { vector: [0, 1, 0], topK: 5 }).length).toBe(0);
   });
 });

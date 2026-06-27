@@ -321,3 +321,247 @@ export function vector(spec: VectorSpec): MonlitePlugin {
     },
   };
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// Dynamic vector store (programmatic, not document-bound)
+//
+// The `vector()` plugin indexes an embedding FIELD of an existing document
+// collection with a STATIC spec. When you instead need a programmatic store over
+// collections created at runtime — RAG corpora, per-tenant indexes, "give me a
+// vector table for this id" — use `createVectorStore(db)`. Each collection is its
+// own `vec0` table with the chosen `indexedFields` as metadata columns (so a
+// `where` is applied INSIDE the KNN — exact pre-filtered recall, e.g. scoped to
+// one case/tenant even over a large corpus) and the full metadata in a `+payload`
+// auxiliary column. Synchronous (raw SQLite). Requires `allowExtensions: true`.
+// ────────────────────────────────────────────────────────────────────────────
+
+export interface VectorStoreCollectionOptions {
+  /** Embedding dimensionality (must match your model). */
+  dimensions: number;
+  /** Distance metric. Default `"cosine"`. */
+  metric?: "cosine" | "l2";
+  /** Metadata fields to index as filterable columns (exact pre-filtered KNN). Default `[]`. */
+  indexedFields?: string[];
+}
+
+export interface VectorStorePoint {
+  id: string;
+  vector: number[];
+  /** Arbitrary JSON metadata stored alongside the vector and returned on search. */
+  metadata?: Record<string, unknown>;
+}
+
+export interface VectorStoreHit {
+  id: string;
+  /** Raw metric distance (smaller = closer): cosine-distance or L2. */
+  distance: number;
+  metadata: Record<string, unknown>;
+}
+
+export interface VectorSearchOptions {
+  vector: number[];
+  /** Nearest neighbours to return. Default 10. */
+  topK?: number;
+  /** Exact metadata filter (`{ field: value }`). Fields declared in `indexedFields`
+   *  are pushed into the KNN (pre-filtered); others are matched after. */
+  where?: Record<string, unknown>;
+}
+
+export interface VectorStore {
+  ensureCollection(name: string, opts: VectorStoreCollectionOptions): void;
+  upsert(name: string, points: VectorStorePoint[]): void;
+  search(name: string, opts: VectorSearchOptions): VectorStoreHit[];
+  delete(
+    name: string,
+    opts: { id?: string; where?: Record<string, unknown> },
+  ): void;
+}
+
+const VEC_IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const vecLoaded = new WeakSet<Monlite>();
+
+function loadVec(db: Monlite): void {
+  if (vecLoaded.has(db)) return;
+  try {
+    db.sqlite.loadExtension(sqliteVec.getLoadablePath());
+  } catch (err) {
+    // The plugin may have already loaded it — verify before failing.
+    try {
+      db.sqlite.prepare("SELECT vec_version()").get();
+    } catch {
+      throw new Error(
+        `@monlite/vector: createVectorStore needs the database opened with ` +
+          `{ allowExtensions: true }. (${(err as Error).message})`,
+      );
+    }
+  }
+  vecLoaded.add(db);
+}
+
+function vecIdent(name: string): string {
+  if (!VEC_IDENT.test(name))
+    throw new Error(`@monlite/vector: unsafe collection/field name "${name}"`);
+  return name;
+}
+
+function wherePairs(
+  where: Record<string, unknown> | undefined,
+): Array<{ key: string; value: unknown }> {
+  if (!where) return [];
+  return Object.entries(where)
+    .filter(([, v]) => v != null)
+    .map(([key, value]) => ({ key, value }));
+}
+
+/**
+ * A programmatic, dynamic vector store over `@monlite/core` + sqlite-vec — collections
+ * are created at runtime, points carry arbitrary metadata, and a `where` filters the KNN.
+ *
+ * ```ts
+ * const db = createDb("./rag.db", { allowExtensions: true });
+ * const store = createVectorStore(db);
+ * store.ensureCollection("docs", { dimensions: 384, indexedFields: ["docId"] });
+ * store.upsert("docs", [{ id: "c1", vector: emb, metadata: { docId: "d1", text } }]);
+ * store.search("docs", { vector: q, topK: 5, where: { docId: "d1" } }); // scoped, exact
+ * ```
+ */
+export function createVectorStore(db: Monlite): VectorStore {
+  loadVec(db);
+  const configs = new Map<string, { metaFields: string[] }>();
+
+  const create = (
+    name: string,
+    dim: number,
+    metric: string,
+    metaFields: string[],
+  ) => {
+    const n = vecIdent(name);
+    const metricClause = metric === "l2" ? "" : " distance_metric=cosine";
+    const metaCols = metaFields.map((f) => `, ${vecIdent(f)} text`).join("");
+    db.sqlite.exec(
+      `CREATE VIRTUAL TABLE IF NOT EXISTS "${n}" USING vec0(` +
+        `doc_id text primary key, embedding float[${Math.floor(dim)}]${metricClause}${metaCols}, +payload text)`,
+    );
+    configs.set(name, { metaFields });
+    return configs.get(name)!;
+  };
+
+  const known = (name: string) => {
+    if (configs.has(name)) return configs.get(name)!;
+    const row = db.sqlite
+      .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name = ?`)
+      .get(name);
+    if (row) {
+      configs.set(name, { metaFields: [] });
+      return configs.get(name)!;
+    }
+    return undefined;
+  };
+
+  return {
+    ensureCollection(
+      name,
+      { dimensions, metric = "cosine", indexedFields = [] },
+    ) {
+      if (!configs.has(name)) create(name, dimensions, metric, indexedFields);
+    },
+
+    upsert(name, points) {
+      if (!points?.length) return;
+      const cfg =
+        configs.get(name) ??
+        create(name, points[0]!.vector.length, "cosine", []);
+      const meta = cfg.metaFields;
+      const colList = meta.map((f) => `, ${f}`).join("");
+      const ph = meta.map(() => ", ?").join("");
+      const del = db.sqlite.prepare(`DELETE FROM "${name}" WHERE doc_id = ?`);
+      const ins = db.sqlite.prepare(
+        `INSERT INTO "${name}"(doc_id, embedding${colList}, payload) VALUES (?, ?${ph}, ?)`,
+      );
+      db.sqlite.exec("BEGIN");
+      try {
+        for (const p of points) {
+          del.run(p.id);
+          const metaVals = meta.map((f) =>
+            p.metadata?.[f] != null ? String(p.metadata[f]) : null,
+          );
+          ins.run(
+            p.id,
+            JSON.stringify(p.vector),
+            ...metaVals,
+            JSON.stringify(p.metadata ?? {}),
+          );
+        }
+        db.sqlite.exec("COMMIT");
+      } catch (err) {
+        try {
+          db.sqlite.exec("ROLLBACK");
+        } catch {
+          /* ignore */
+        }
+        throw err;
+      }
+    },
+
+    search(name, { vector, topK = 10, where }) {
+      const cfg = known(name);
+      if (!cfg) return [];
+      const meta = new Set(cfg.metaFields);
+      const pairs = wherePairs(where);
+      const sqlF = pairs.filter((p) => meta.has(p.key));
+      const postF = pairs.filter((p) => !meta.has(p.key));
+      const k = Math.max(1, postF.length ? Math.max(topK * 8, 64) : topK);
+      const clause = sqlF.map((p) => ` AND ${p.key} = ?`).join("");
+      const sql =
+        `SELECT doc_id, distance, payload FROM "${name}" ` +
+        `WHERE embedding MATCH ? AND k = ?${clause} ORDER BY distance`;
+      let rows: Array<{ doc_id: string; distance: number; payload: string }>;
+      try {
+        rows = db.sqlite
+          .prepare(sql)
+          .all(JSON.stringify(vector), k, ...sqlF.map((p) => p.value)) as never;
+      } catch {
+        return [];
+      }
+      const out: VectorStoreHit[] = [];
+      for (const r of rows) {
+        const metadata = JSON.parse(r.payload || "{}");
+        if (postF.length && !postF.every((p) => metadata[p.key] === p.value))
+          continue;
+        out.push({ id: r.doc_id, distance: r.distance, metadata });
+        if (out.length >= topK) break;
+      }
+      return out;
+    },
+
+    delete(name, { id, where }) {
+      const cfg = known(name);
+      if (!cfg) return;
+      if (id != null) {
+        db.sqlite.prepare(`DELETE FROM "${name}" WHERE doc_id = ?`).run(id);
+        return;
+      }
+      const pairs = wherePairs(where);
+      if (!pairs.length) return;
+      const meta = new Set(cfg.metaFields);
+      if (pairs.every((p) => meta.has(p.key))) {
+        const clause = pairs.map((p) => `${p.key} = ?`).join(" AND ");
+        db.sqlite
+          .prepare(`DELETE FROM "${name}" WHERE ${clause}`)
+          .run(...pairs.map((p) => p.value));
+      } else {
+        const rows = db.sqlite
+          .prepare(`SELECT doc_id, payload FROM "${name}"`)
+          .all() as Array<{
+          doc_id: string;
+          payload: string;
+        }>;
+        const del = db.sqlite.prepare(`DELETE FROM "${name}" WHERE doc_id = ?`);
+        for (const r of rows) {
+          const m = JSON.parse(r.payload || "{}");
+          if (pairs.every((p) => m[p.key] === p.value)) del.run(r.doc_id);
+        }
+      }
+    },
+  };
+}
