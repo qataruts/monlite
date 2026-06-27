@@ -75,8 +75,35 @@ table keyed by the document `_id`, indexes on `init` (backfilling existing
 documents), and keeps it current via the plugin `afterWrite` hook. `findSimilar`
 runs a KNN query, then returns the live documents in distance order.
 
-> **Tip — hybrid search:** combine with [`@monlite/fts`](https://www.npmjs.com/package/@monlite/fts)
-> (keyword) and re-rank for the best retrieval quality.
+## Hybrid search
+
+For the best retrieval quality, combine keyword (FTS) and semantic (vector)
+results. `hybridSearch` runs both and fuses the rankings with Reciprocal Rank
+Fusion — no score normalization needed.
+
+```ts
+import { createDb } from "@monlite/core";
+import { fts } from "@monlite/fts";
+import { vector, hybridSearch } from "@monlite/vector";
+
+const db = createDb("./app.db", {
+  allowExtensions: true,
+  plugins: [
+    fts({ docs: ["title", "body"] }),
+    vector({ docs: { field: "embedding", dimensions: 384 } }),
+  ],
+});
+
+const hits = await hybridSearch(db.collection("docs"), {
+  text: "black holes",          // keyword arm (FTS)
+  vector: await embed("black holes"), // semantic arm (vector)
+  topK: 10,
+  where: { published: true },   // optional, applied to both arms
+});
+// [ { _id, title, …, _rrf } ]  — fused, best first
+```
+
+If `@monlite/fts` isn't configured on the collection, it falls back to vector-only.
 
 ## License
 

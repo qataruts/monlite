@@ -95,6 +95,9 @@ importers:
         specifier: ^0.1.6
         version: 0.1.9
     devDependencies:
+      '@monlite/fts':
+        specifier: workspace:^
+        version: link:../fts
       '@types/node':
         specifier: ^22.10.0
         version: 22.20.0

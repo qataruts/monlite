@@ -1,5 +1,10 @@
 # @monlite/fts
 
+## 0.1.2
+
+- Track @monlite/core ^1.0.0.
+
+
 ## 0.1.1
 
 - Track @monlite/core ^0.10.0 (no code change).

@@ -22,12 +22,11 @@ heavier capabilities as opt-in packages.
   `collectionMethods` hooks.
 - **`@monlite/fts`** — full-text search (SQLite FTS5) via `collection.search()`.
 - **`@monlite/vector`** — local vector / semantic search (sqlite-vec) via
-  `collection.findSimilar()`, for RAG and AI-agent memory.
+  `collection.findSimilar()`, plus **`hybridSearch()`** (FTS + vector fused with
+  Reciprocal Rank Fusion) for RAG and AI-agent memory.
+- **Stable 1.0** — `@monlite/core` and `@monlite/sync` are at `1.0.0` (semver-stable).
 
 ## Planned
-
-### Next — search polish
-- **Hybrid search** helper (combine `@monlite/fts` + `@monlite/vector`, re-ranked).
 
 ### Wave 3 — desktop production
 - **`@monlite/cipher`** — encryption at rest (SQLCipher).

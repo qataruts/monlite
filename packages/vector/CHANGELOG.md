@@ -1,5 +1,12 @@
 # @monlite/vector
 
+## 0.2.0
+
+- **hybridSearch()** — fuse FTS (keyword) + vector (semantic) results with
+  Reciprocal Rank Fusion. Falls back to vector-only when FTS is not configured.
+- Track @monlite/core ^1.0.0.
+
+
 ## 0.1.0
 
 - Initial release: local vector / semantic search via sqlite-vec. `vector()`

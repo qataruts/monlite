@@ -1,5 +1,12 @@
 # @monlite/core
 
+## 1.0.0 — stable
+
+First stable release. The CRUD/query, aggregation, structured-collection,
+reactivity, sync, and plugin APIs are now under semantic versioning. No code
+changes from 0.10.0 — this marks API stability. (The `@monlite/*` packages now
+depend on `^1.0.0`, so core minor releases no longer require lockstep republishes.)
+
 ## 0.10.0 — extension loading
 
 - **`allowExtensions` option** — open the database with SQLite extension loading

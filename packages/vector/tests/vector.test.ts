@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { createDb, type Monlite, type MonliteOptions } from "@monlite/core";
-import { vector, type VectorSpec } from "../src/index";
+import { fts } from "@monlite/fts";
+import { vector, hybridSearch, type VectorSpec } from "../src/index";
 
 const driver =
   (process.env.MONLITE_DRIVER as MonliteOptions["driver"]) || undefined;
@@ -91,5 +92,47 @@ describe("@monlite/vector", () => {
     await expect(
       docs.findSimilar({ vector: [1, 0], topK: 1 }),
     ).rejects.toThrow();
+  });
+});
+
+describe("hybridSearch (FTS + vector, RRF)", () => {
+  it("fuses keyword and semantic rankings", async () => {
+    const db = createDb(":memory:", {
+      allowExtensions: true,
+      plugins: [
+        fts({ docs: ["title"] }),
+        vector({ docs: { field: "embedding", dimensions: 3 } }),
+      ],
+      ...(driver ? { driver } : {}),
+    });
+    dbs.push(db);
+    const docs = db.collection("docs");
+    await docs.createMany({
+      data: [
+        { _id: "a", title: "quantum gravity", embedding: [1, 0, 0] },
+        { _id: "b", title: "black holes", embedding: [0.9, 0.1, 0] },
+        { _id: "c", title: "cooking recipes", embedding: [0, 0, 1] },
+      ],
+    });
+    // "a" is top of both the keyword (matches "quantum") and vector ([1,0,0]) arms.
+    const r = await hybridSearch(docs, {
+      text: "quantum",
+      vector: [1, 0, 0],
+      topK: 2,
+    });
+    expect(r[0]._id).toBe("a");
+    expect(r[0]._rrf).toBeGreaterThan(0);
+    expect(r).toHaveLength(2);
+  });
+
+  it("falls back to vector-only when FTS isn't configured", async () => {
+    const docs = open(spec).collection("docs");
+    await docs.create({ data: { _id: "x", embedding: [1, 0, 0] } });
+    const r = await hybridSearch(docs, {
+      text: "anything",
+      vector: [1, 0, 0],
+      topK: 1,
+    });
+    expect(r[0]._id).toBe("x");
   });
 });

@@ -150,6 +150,76 @@ function findSimilar<T = Doc>(
  * await db.collection("docs").findSimilar({ vector: queryEmbedding, topK: 5 });
  * ```
  */
+export interface HybridOptions<T = Doc> {
+  /** Keyword query (uses `@monlite/fts`'s `collection.search`, if active). */
+  text: string;
+  /** Semantic query embedding. */
+  vector: number[];
+  /** Final number of results. Default 10. */
+  topK?: number;
+  /** Constrain both arms with a normal monlite where clause. */
+  where?: WhereInput<T>;
+  /** Candidates pulled from each arm before fusing. Default `topK * 4`. */
+  candidates?: number;
+  /** Reciprocal-rank-fusion constant. Default 60. */
+  k?: number;
+}
+
+export type HybridResult<T = Doc> = WithId<T> & { _rrf: number };
+
+/**
+ * Hybrid search: run keyword (FTS) and semantic (vector) retrieval and fuse the
+ * two rankings with Reciprocal Rank Fusion. The collection should have both
+ * `@monlite/fts` and `@monlite/vector` configured; if FTS isn't active it falls
+ * back to vector-only.
+ *
+ * ```ts
+ * await hybridSearch(db.collection("docs"), { text: "black holes", vector: q, topK: 5 });
+ * ```
+ */
+export async function hybridSearch<T = Doc>(
+  collection: Collection<T>,
+  opts: HybridOptions<T>,
+): Promise<HybridResult<T>[]> {
+  const topK = opts.topK ?? 10;
+  const candidates = opts.candidates ?? topK * 4;
+  const k = opts.k ?? 60;
+
+  // Structural reference to @monlite/fts's `search` (kept decoupled from its types).
+  const searchable = collection as unknown as {
+    search?(
+      q: string,
+      o?: { limit?: number; where?: WhereInput<T> },
+    ): Promise<WithId<T>[]>;
+  };
+  const [keyword, semantic] = await Promise.all([
+    typeof searchable.search === "function"
+      ? searchable.search(opts.text, { limit: candidates, where: opts.where })
+      : Promise.resolve([] as WithId<T>[]),
+    collection.findSimilar({
+      vector: opts.vector,
+      topK: candidates,
+      where: opts.where,
+    }),
+  ]);
+
+  const scores = new Map<string, number>();
+  const docs = new Map<string, WithId<T>>();
+  const fuse = (list: WithId<T>[]) => {
+    list.forEach((doc, i) => {
+      scores.set(doc._id, (scores.get(doc._id) ?? 0) + 1 / (k + i + 1));
+      docs.set(doc._id, doc);
+    });
+  };
+  fuse(keyword);
+  fuse(semantic);
+
+  return [...scores.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, topK)
+    .map(([id, rrf]) => ({ ...docs.get(id)!, _rrf: rrf }) as HybridResult<T>);
+}
+
 export function vector(spec: VectorSpec): MonlitePlugin {
   let database: Monlite;
   return {

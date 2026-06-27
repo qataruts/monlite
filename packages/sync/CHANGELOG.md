@@ -1,5 +1,10 @@
 # @monlite/sync
 
+## 1.0.0 — stable
+
+First stable release; tracks @monlite/core ^1.0.0. No code changes from 0.3.x.
+
+
 ## 0.3.3
 
 - Track @monlite/core ^0.10.0 (no code change).
