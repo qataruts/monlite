@@ -11,6 +11,9 @@ export {
   normalizeDriverError,
 } from "./errors.js";
 export { objectId, isObjectId } from "./id.js";
+// Shared by custom drivers (e.g. @monlite/wasm) to register the `regex` operator's
+// backing SQL function on their connection.
+export { REGEXP_FN, monliteRegexp } from "./driver/regexp.js";
 
 export type {
   Doc,

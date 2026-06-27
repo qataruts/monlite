@@ -138,6 +138,9 @@ export interface FieldFilter<V = any> {
   contains?: V extends string ? string : any;
   startsWith?: string;
   endsWith?: string;
+  /** JavaScript-`RegExp` match — a pattern string or a `RegExp`. Pair a string
+   * with `mode: "insensitive"` for the `i` flag. */
+  regex?: string | RegExp;
   /** Explicit array element membership. */
   has?: any;
   /**

@@ -1,4 +1,5 @@
 import { MonliteError } from "../errors.js";
+import { REGEXP_FN, monliteRegexp } from "./regexp.js";
 import type { Driver, DriverOpenOptions, PreparedStatement } from "./types.js";
 
 const STMT_CACHE_MAX = 256;
@@ -35,6 +36,7 @@ export class NodeSqliteDriver implements Driver {
     });
     if (options.allowExtensions) this.raw.enableLoadExtension(true);
     this.raw.exec(`PRAGMA busy_timeout = ${options.busyTimeout ?? 5000}`);
+    this.raw.function(REGEXP_FN, { deterministic: true }, monliteRegexp);
     if (!options.readonly && (options.wal ?? true)) {
       this.raw.exec("PRAGMA journal_mode = WAL");
     }

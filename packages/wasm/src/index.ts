@@ -1,4 +1,10 @@
-import type { Driver, PreparedStatement, RunResult } from "@monlite/core";
+import {
+  REGEXP_FN,
+  monliteRegexp,
+  type Driver,
+  type PreparedStatement,
+  type RunResult,
+} from "@monlite/core";
 
 /**
  * The subset of the sql.js module/`Database` we rely on. Passing `sql.js`'s
@@ -11,6 +17,7 @@ export interface SqlJsDatabase {
   run(sql: string, params?: any[]): void;
   prepare(sql: string): SqlJsStatement;
   exec(sql: string): Array<{ columns: string[]; values: any[][] }>;
+  create_function(name: string, fn: (...args: any[]) => any): void;
   getRowsModified(): number;
   export(): Uint8Array;
   close(): void;
@@ -57,6 +64,7 @@ export class WasmDriver implements Driver {
   constructor(SQL: SqlJsStatic, options: WasmDriverOptions = {}) {
     this.raw = new SQL.Database(options.data ?? null);
     this.raw.run("PRAGMA foreign_keys = ON");
+    this.raw.create_function(REGEXP_FN, monliteRegexp); // backs the `regex` operator
   }
 
   exec(sql: string): void {

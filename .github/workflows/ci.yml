@@ -46,6 +46,13 @@ jobs:
         env:
           MONLITE_DRIVER: node:sqlite
 
+      # Informational: surfaces throughput numbers and catches a benchmark that
+      # crashes or regresses catastrophically. Never fails the build (machine
+      # variance makes a hard threshold flaky).
+      - name: Benchmark (informational)
+        if: matrix.node == 22
+        run: pnpm bench || true
+
   # Catch OS-specific issues: native better-sqlite3 prebuilds, Windows file
   # locking, path handling, and the SIGKILL crash test on each platform.
   cross-platform:

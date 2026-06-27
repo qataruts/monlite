@@ -1,6 +1,7 @@
 import type { WhereInput, FieldFilter } from "../types.js";
 import { MonliteQueryError } from "../errors.js";
 import { fieldExpr, pathLiteral, bindable, isColumn } from "./sql.js";
+import { REGEXP_FN } from "../driver/regexp.js";
 
 export interface WhereContext {
   params: any[];
@@ -126,6 +127,9 @@ function translateField(
             : `substr(${expr}, -length(?)) = ?`,
         );
         break;
+      case "regex":
+        clauses.push(regexExpr(expr, v, ci, ctx));
+        break;
       case "has":
         clauses.push(hasExpr(field, expr, v, ctx));
         break;
@@ -217,6 +221,32 @@ function elemMatchExpr(arrayExpr: string, sub: any, ctx: WhereContext): string {
     where = eqExpr("value", sub, ctx);
   }
   return `EXISTS (SELECT 1 FROM json_each(${arrayExpr}) WHERE ${where})`;
+}
+
+/**
+ * `regex` — JavaScript-`RegExp` match via the registered `monlite_regexp` SQL
+ * function. Accepts a pattern string or a `RegExp` (whose `i`/`m`/`s` flags are
+ * honoured); `mode: "insensitive"` adds the `i` flag.
+ */
+function regexExpr(
+  expr: string,
+  v: any,
+  ci: boolean,
+  ctx: WhereContext,
+): string {
+  let source: string;
+  let flags: string;
+  if (v instanceof RegExp) {
+    source = v.source;
+    flags = [...v.flags].filter((f) => "ims".includes(f)).join("");
+    if (ci && !flags.includes("i")) flags += "i";
+  } else {
+    source = String(v);
+    flags = ci ? "i" : "";
+  }
+  ctx.params.push(source);
+  ctx.params.push(flags);
+  return `${REGEXP_FN}(?, ${expr}, ?)`;
 }
 
 function eqExpr(expr: string, v: any, ctx: WhereContext): string {

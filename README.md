@@ -225,6 +225,10 @@ where: { name: { startsWith: "A" } }
 where: { name: { endsWith: "i" } }
 where: { name: { contains: "ALI", mode: "insensitive" } }  // case-insensitive (ASCII)
 
+// Regex (JavaScript RegExp semantics; works on every driver incl. browser/WASM)
+where: { email: { regex: "@acme\\.com$" } }
+where: { name: { regex: "^al", mode: "insensitive" } }     // or a literal: { regex: /^al/i }
+
 // Arrays
 where: { tags: { contains: "admin" } }   // element membership
 where: { tags: { has: "admin" } }        // explicit element membership
@@ -248,7 +252,9 @@ where: { role: "admin", age: { gt: 30 } } // multiple fields => implicit AND
 
 > `contains`/`startsWith`/`endsWith` are **case-sensitive** (implemented with
 > SQLite's `instr`/`substr`, so `%` and `_` are literal). On an array field,
-> `contains` checks element membership.
+> `contains` checks element membership. `regex` uses real JavaScript `RegExp`
+> (via a `monlite_regexp` function registered on every driver), so the same
+> pattern matches identically in Node and the browser.
 
 ---
 

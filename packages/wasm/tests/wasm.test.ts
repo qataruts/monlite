@@ -98,4 +98,18 @@ describe("@monlite/wasm — sql.js driver", () => {
     ).rejects.toThrow();
     expect(await items.count()).toBe(1); // B1 was rolled back with A1
   });
+
+  it("supports the regex operator (create_function in the wasm driver)", async () => {
+    const users = open().collection("users");
+    await users.createMany({
+      data: [
+        { _id: "u1", name: "Alice" },
+        { _id: "u2", name: "Bob" },
+      ],
+    });
+    const r = await users.findMany({
+      where: { name: { regex: "^ali", mode: "insensitive" } },
+    });
+    expect(r.map((u) => u._id)).toEqual(["u1"]);
+  });
 });

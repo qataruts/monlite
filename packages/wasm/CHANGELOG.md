@@ -1,5 +1,11 @@
 # @monlite/wasm
 
+## 0.2.0
+
+- Register the `monlite_regexp` SQL function via sql.js `create_function`, so the
+  new core **`regex` where operator** works in the browser too. Requires
+  `@monlite/core` ^2.6.0.
+
 ## 0.1.2
 
 - Implement `transactionAsync` so `db.transactionAsync` works on the WASM driver.

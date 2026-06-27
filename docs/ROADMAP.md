@@ -26,12 +26,26 @@ Boundary: this targets **local / edge / desktop / single-machine** runtimes, not
 distributed cloud-scale Redis/Mongo/Qdrant. For scale, keep the real services and
 sync to them.
 
+## Published versions
+
+Stable as of 2026-06-27. Both production-readiness and AI-agent-adoption reviews
+are fully addressed; the API surface is frozen for the 2.x line.
+
+| Package | Version | Package | Version |
+|---|---|---|---|
+| `@monlite/core` | 2.6.0 | `@monlite/kv` | 0.2.0 |
+| `@monlite/sync` | 1.3.0 | `@monlite/queue` | 0.2.0 |
+| `@monlite/fts` | 0.2.0 | `@monlite/cron` | 0.1.1 |
+| `@monlite/vector` | 0.3.0 | `@monlite/wasm` | 0.2.0 |
+| `@monlite/electron` | 0.1.1 | `@monlite/studio` | 0.1.1 |
+
 ## Shipped
 
 - **`@monlite/core`** — document + structured (native-column) collections, one
-  Mongo/Prisma-style query API, aggregation (`groupBy`/`having`/`distinct`),
-  auto-indexing, raw-SQL escape hatch, dual driver (`better-sqlite3` +
-  zero-dep built-in `node:sqlite`), typed errors, prepared-statement cache.
+  Mongo/Prisma-style query API (incl. `elemMatch` and `regex` operators),
+  aggregation (`groupBy`/`having`/`distinct`), auto-indexing, raw-SQL escape
+  hatch, dual driver (`better-sqlite3` + zero-dep built-in `node:sqlite`), typed
+  errors, prepared-statement cache.
 - **`@monlite/sync`** — local-first replication (pull / push / two-way / live),
   LWW + custom conflict resolution, change feed + tombstones, and adapters for
   **MongoDB** (live replica set, incl. change streams), **PostgreSQL** and

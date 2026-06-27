@@ -1,5 +1,14 @@
 # @monlite/core
 
+## 2.6.0 — regex operator
+
+- **`regex` where operator** — JavaScript-`RegExp` matching: `{ name: { regex:
+  "^al", mode: "insensitive" } }` or a `RegExp` literal `{ name: { regex: /^al/i } }`
+  (its `i`/`m`/`s` flags are honoured). Backed by a `monlite_regexp` SQL function
+  registered on every driver — `better-sqlite3`, `node:sqlite`, and
+  `@monlite/wasm` (sql.js) — so it works the same everywhere, including the
+  browser. Composes with other conditions and dot-path fields.
+
 ## 2.5.0 — elemMatch
 
 - **`elemMatch` where operator** (Mongo `$elemMatch`) — match if **any** array
