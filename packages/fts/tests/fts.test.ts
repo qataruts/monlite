@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createDb, type Monlite, type MonliteOptions } from "@monlite/core";
-import { fts, type FtsSpec } from "../src/index";
+import { fts, createSearchIndex, type FtsSpec } from "../src/index";
 
 const driver =
   (process.env.MONLITE_DRIVER as MonliteOptions["driver"]) || undefined;
@@ -127,5 +127,77 @@ describe("@monlite/fts", () => {
       while (dbs.length) await dbs.pop()!.$disconnect();
       rmSync(tmp, { recursive: true, force: true });
     }
+  });
+});
+
+describe("createSearchIndex (dynamic, programmatic)", () => {
+  function idxDb(): Monlite {
+    const d = createDb(":memory:", { ...(driver ? { driver } : {}) });
+    dbs.push(d);
+    return d;
+  }
+
+  it("indexes fields and searches by relevance", () => {
+    const idx = createSearchIndex(idxDb());
+    idx.ensureCollection("docs", {
+      fields: ["title", "body"],
+      filterFields: ["docId"],
+    });
+    idx.upsert("docs", [
+      {
+        id: "c1",
+        fields: { title: "hello world", body: "the quick brown fox" },
+        filters: { docId: "d1" },
+      },
+      {
+        id: "c2",
+        fields: { title: "goodbye", body: "lazy dog sleeps" },
+        filters: { docId: "d2" },
+      },
+    ]);
+    const hits = idx.search("docs", "quick fox");
+    expect(hits.map((h) => h.id)).toEqual(["c1"]);
+    expect(hits[0].score).toBeGreaterThan(-100);
+  });
+
+  it("scopes the MATCH with a where (per-case/per-tenant)", () => {
+    const idx = createSearchIndex(idxDb());
+    idx.ensureCollection("docs", { fields: ["body"], filterFields: ["docId"] });
+    idx.upsert("docs", [
+      {
+        id: "a",
+        fields: { body: "contract terms and conditions" },
+        filters: { docId: "d1" },
+      },
+      {
+        id: "b",
+        fields: { body: "contract pricing schedule" },
+        filters: { docId: "d2" },
+      },
+    ]);
+    const all = idx.search("docs", "contract");
+    expect(all.length).toBe(2);
+    const scoped = idx.search("docs", "contract", { where: { docId: "d1" } });
+    expect(scoped.map((h) => h.id)).toEqual(["a"]);
+  });
+
+  it("upsert is idempotent; delete by id and where", () => {
+    const idx = createSearchIndex(idxDb());
+    idx.ensureCollection("docs", { fields: ["body"], filterFields: ["docId"] });
+    idx.upsert("docs", [
+      { id: "a", fields: { body: "alpha" }, filters: { docId: "d1" } },
+    ]);
+    idx.upsert("docs", [
+      { id: "a", fields: { body: "beta" }, filters: { docId: "d1" } },
+    ]);
+    expect(idx.search("docs", "alpha").length).toBe(0);
+    expect(idx.search("docs", "beta").map((h) => h.id)).toEqual(["a"]);
+    idx.upsert("docs", [
+      { id: "b", fields: { body: "beta" }, filters: { docId: "d2" } },
+    ]);
+    idx.delete("docs", { id: "a" });
+    expect(idx.search("docs", "beta").map((h) => h.id)).toEqual(["b"]);
+    idx.delete("docs", { where: { docId: "d2" } });
+    expect(idx.search("docs", "beta").length).toBe(0);
   });
 });

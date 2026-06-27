@@ -219,3 +219,177 @@ export function fts(spec: FtsSpec): MonlitePlugin {
     },
   };
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// Dynamic search index (programmatic, not document-bound)
+//
+// The `fts()` plugin attaches `collection.search()` to a DOCUMENT collection with
+// a STATIC spec. When you instead need a programmatic full-text index over
+// collections created at RUNTIME — RAG corpora, per-tenant indexes — use
+// `createSearchIndex(db)`. Each collection is its own FTS5 table; `fields` are
+// indexed for search and `filterFields` are stored UNINDEXED so a `where` scopes
+// the MATCH (e.g. keyword search within one case/tenant). Synchronous.
+// ────────────────────────────────────────────────────────────────────────────
+
+const FTS_IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
+function ftsIdent(name: string): string {
+  if (!FTS_IDENT.test(name))
+    throw new Error(`@monlite/fts: unsafe collection/field name "${name}"`);
+  return name;
+}
+
+export interface SearchIndexOptions {
+  /** Text fields indexed for full-text search. */
+  fields: string[];
+  /** Fields stored UNINDEXED, for exact `where` filtering (scoped search). Default `[]`. */
+  filterFields?: string[];
+}
+
+export interface SearchIndexPoint {
+  id: string;
+  /** Indexed text, keyed by field name (the configured `fields`). */
+  fields: Record<string, string>;
+  /** Filter values, keyed by field name (the configured `filterFields`). */
+  filters?: Record<string, string>;
+}
+
+export interface SearchIndexHit {
+  id: string;
+  /** Relevance (higher = better; derived from BM25 rank). */
+  score: number;
+}
+
+export interface SearchIndex {
+  ensureCollection(name: string, opts: SearchIndexOptions): void;
+  upsert(name: string, points: SearchIndexPoint[]): void;
+  search(
+    name: string,
+    query: string,
+    opts?: { limit?: number; where?: Record<string, string> },
+  ): SearchIndexHit[];
+  delete(
+    name: string,
+    opts: { id?: string; where?: Record<string, string> },
+  ): void;
+}
+
+/**
+ * A programmatic, dynamic full-text index over `@monlite/core` (SQLite FTS5) —
+ * collections created at runtime, with optional scoped filtering.
+ *
+ * ```ts
+ * const idx = createSearchIndex(db);
+ * idx.ensureCollection("docs", { fields: ["title", "body"], filterFields: ["docId"] });
+ * idx.upsert("docs", [{ id: "c1", fields: { title, body }, filters: { docId: "d1" } }]);
+ * idx.search("docs", "hello world", { where: { docId: "d1" }, limit: 10 }); // scoped
+ * ```
+ */
+export function createSearchIndex(db: Monlite): SearchIndex {
+  const configs = new Map<
+    string,
+    { fields: string[]; filterFields: string[] }
+  >();
+
+  const create = (name: string, fields: string[], filterFields: string[]) => {
+    const n = ftsIdent(name);
+    const fcols = fields.map(ftsIdent).join(", ");
+    const ucols = filterFields
+      .map((f) => `, ${ftsIdent(f)} UNINDEXED`)
+      .join("");
+    db.sqlite.exec(
+      `CREATE VIRTUAL TABLE IF NOT EXISTS "${n}" USING fts5(doc_id UNINDEXED, ${fcols}${ucols})`,
+    );
+    configs.set(name, { fields, filterFields });
+    return configs.get(name)!;
+  };
+
+  const known = (name: string) => {
+    if (configs.has(name)) return configs.get(name)!;
+    const row = db.sqlite
+      .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name = ?`)
+      .get(name);
+    if (row) {
+      configs.set(name, { fields: [], filterFields: [] });
+      return configs.get(name)!;
+    }
+    return undefined;
+  };
+
+  return {
+    ensureCollection(name, { fields, filterFields = [] }) {
+      if (!configs.has(name)) create(name, fields, filterFields);
+    },
+
+    upsert(name, points) {
+      if (!points?.length) return;
+      const cfg = configs.get(name);
+      if (!cfg)
+        throw new Error(
+          `@monlite/fts: ensureCollection("${name}") before upsert`,
+        );
+      const cols = [...cfg.fields, ...cfg.filterFields];
+      const colList = cols.map((c) => `, ${c}`).join("");
+      const ph = cols.map(() => ", ?").join("");
+      const del = db.sqlite.prepare(`DELETE FROM "${name}" WHERE doc_id = ?`);
+      const ins = db.sqlite.prepare(
+        `INSERT INTO "${name}"(doc_id${colList}) VALUES (?${ph})`,
+      );
+      db.sqlite.exec("BEGIN");
+      try {
+        for (const p of points) {
+          del.run(p.id);
+          const vals = [
+            ...cfg.fields.map((f) => p.fields?.[f] ?? ""),
+            ...cfg.filterFields.map((f) => p.filters?.[f] ?? ""),
+          ];
+          ins.run(p.id, ...vals);
+        }
+        db.sqlite.exec("COMMIT");
+      } catch (err) {
+        try {
+          db.sqlite.exec("ROLLBACK");
+        } catch {
+          /* ignore */
+        }
+        throw err;
+      }
+    },
+
+    search(name, query, opts = {}) {
+      const cfg = known(name);
+      if (!cfg) return [];
+      const limit = opts.limit ?? 50;
+      const where = Object.entries(opts.where ?? {}).filter(
+        ([, v]) => v != null,
+      );
+      const clause = where.map(([k]) => ` AND ${ftsIdent(k)} = ?`).join("");
+      const sql =
+        `SELECT doc_id, rank FROM "${name}" ` +
+        `WHERE "${name}" MATCH ?${clause} ORDER BY rank LIMIT ?`;
+      let rows: Array<{ doc_id: string; rank: number }>;
+      try {
+        rows = db.sqlite
+          .prepare(sql)
+          .all(query, ...where.map(([, v]) => v), limit) as never;
+      } catch {
+        return [];
+      }
+      return rows.map((r) => ({ id: r.doc_id, score: -r.rank }));
+    },
+
+    delete(name, { id, where }) {
+      const cfg = known(name);
+      if (!cfg) return;
+      if (id != null) {
+        db.sqlite.prepare(`DELETE FROM "${name}" WHERE doc_id = ?`).run(id);
+        return;
+      }
+      const pairs = Object.entries(where ?? {}).filter(([, v]) => v != null);
+      if (!pairs.length) return;
+      const clause = pairs.map(([k]) => `${ftsIdent(k)} = ?`).join(" AND ");
+      db.sqlite
+        .prepare(`DELETE FROM "${name}" WHERE ${clause}`)
+        .run(...pairs.map(([, v]) => v));
+    },
+  };
+}

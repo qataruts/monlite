@@ -58,6 +58,23 @@ import { reindex } from "@monlite/fts";
 reindex(db, "posts", ["title", "body"]); // rebuild a collection's index
 ```
 
+## Dynamic index — `createSearchIndex(db)`
+
+The `fts()` plugin attaches `collection.search()` to a document collection with a **static
+spec**. For a **programmatic** index over collections created **at runtime** (RAG, per-tenant),
+use `createSearchIndex(db)`:
+
+```ts
+import { createSearchIndex } from "@monlite/fts";
+const idx = createSearchIndex(db);
+idx.ensureCollection("docs", { fields: ["title", "body"], filterFields: ["docId"] });
+idx.upsert("docs", [{ id: "c1", fields: { title, body }, filters: { docId: "d1" } }]);
+idx.search("docs", "hello world", { where: { docId: "d1" } }); // scoped to one case/tenant
+```
+
+Each collection is its own FTS5 table; `filterFields` are UNINDEXED so a `where` scopes the
+MATCH. Synchronous.
+
 ## How it works
 
 For each configured collection, the plugin creates an FTS5 virtual table
