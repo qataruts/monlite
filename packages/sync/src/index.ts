@@ -10,10 +10,7 @@ export type {
   PostgresAdapterOptions,
   PgQueryable,
 } from "./adapters/postgres.js";
-export type {
-  MySqlAdapterOptions,
-  MySqlQueryable,
-} from "./adapters/mysql.js";
+export type { MySqlAdapterOptions, MySqlQueryable } from "./adapters/mysql.js";
 export type {
   SyncAdapter,
   SyncOptions,
