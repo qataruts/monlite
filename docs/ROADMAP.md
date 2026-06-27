@@ -6,6 +6,26 @@ is to be the **batteries-included local-first layer** for desktop, CLI, and
 AI-native TS apps — keeping `@monlite/core` lean and zero-dependency, with
 heavier capabilities as opt-in packages.
 
+## Vision — the local backend for AI agents
+
+Collapse the whole local data layer into **one embedded `.db` file, one install**:
+documents (replacing Mongo), vectors (Qdrant), and Redis's local roles — cache,
+queue, and cron — then sync to the cloud when you want. Each is just structured
+tables + access patterns over SQLite, which is fast, durable, and transactional.
+
+| Cloud service | monlite |
+|---|---|
+| MongoDB | `@monlite/core` (documents) ✅ |
+| Qdrant | `@monlite/vector` ✅ |
+| Redis (cache) | `@monlite/kv` 🔲 |
+| Redis / BullMQ (queue) | `@monlite/queue` 🔲 |
+| Redis / cron (scheduling) | `@monlite/cron` 🔲 |
+| cloud sync | `@monlite/sync` ✅ |
+
+Boundary: this targets **local / edge / desktop / single-machine** runtimes, not
+distributed cloud-scale Redis/Mongo/Qdrant. For scale, keep the real services and
+sync to them.
+
 ## Shipped
 
 - **`@monlite/core`** — document + structured (native-column) collections, one
@@ -30,8 +50,17 @@ heavier capabilities as opt-in packages.
 
 ## Planned
 
+### Wave A — the local AI-agent harness (Redis's local roles)
+- **`@monlite/kv`** — Redis-like cache/KV: `get/set/del/incr/expire/ttl/mget`,
+  TTL with lazy expiry + sweep. Persistent or `:memory:`.
+- **`@monlite/queue`** — durable job queue: atomic claim (`UPDATE … RETURNING`
+  under WAL + busy_timeout), retries/backoff, delayed jobs, dead-letter,
+  concurrency, events. Multi-process safe.
+- **`@monlite/cron`** — cron-scheduled jobs that enqueue via `@monlite/queue`.
+
 ### Wave 3 — desktop production
-- **`@monlite/cipher`** — encryption at rest (SQLCipher).
+- **`@monlite/cipher`** / `encryption` option — encryption at rest (SQLCipher via
+  better-sqlite3-multiple-ciphers). *(In progress.)*
 - **Full migration runner** (rename/drop/rebuild) for structured collections.
 - **Electron/multi-window** helper (main-process DB + IPC bridge).
 - **`@monlite/devtools`** — inspector / query explorer ("Studio").
