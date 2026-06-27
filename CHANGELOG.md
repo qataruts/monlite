@@ -1,5 +1,29 @@
 # @monlite/core
 
+## 2.0.0 — typed queries & select-narrowed results
+
+Stronger TypeScript inference. **Untyped collections (`db.collection(name)`,
+i.e. `Doc`) are unchanged and fully schema-free** — the breaking changes apply
+only when you type a collection (`db.collection<User>(name)`).
+
+**Breaking (typed collections only):**
+
+- **`where` and `orderBy` reject unknown fields.** Keys are checked against your
+  type; a typo or a field not on `T` is a compile error. Dot-notation nested
+  paths (`"address.city"`) are still allowed.
+- **`select` narrows the return type.** `findMany`/`findFirst`/`findUnique`/
+  `findFirstOrThrow` now return only the selected fields, so code that read an
+  un-selected field off the result will no longer type-check.
+
+**Migration** — see [docs/guides/v2-migration.md](docs/guides/v2-migration.md).
+In short: add the field to your `<T>`, use a dot-path string, or use an untyped
+collection. Runtime behavior is **identical** to 1.x; only types changed.
+
+**Notes / limits:** per-field operator *value* types are hinted but not strictly
+enforced (operator objects are all-optional, so TS structurally accepts
+primitives); `select` keys narrow the result but aren't excess-checked. Write
+payloads (`create`/`update` data) remain open, preserving schema-free writes.
+
 ## 1.4.0 — joins ($lookup / $unwind)
 
 - **`lookup` on `findMany`** — left-join related documents from another

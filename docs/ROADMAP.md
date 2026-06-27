@@ -69,6 +69,8 @@ sync to them.
   data and indexes, with an unacknowledged-drop guard.
 - **Joins** — `lookup` on `findMany` ($lookup / $unwind), two-query left joins
   across collections in both storage modes.
+- **Typed queries (2.0)** — typed collections check `where`/`orderBy` fields and
+  `select` narrows the return type; untyped collections stay schema-free.
 
 ## Planned
 
@@ -79,8 +81,6 @@ sync to them.
 
 
 ### Wave 4 — DX depth
-- **Stronger TypeScript inference** — typed `where`/`orderBy`/`select` and
-  `select`-narrowed return types.
 - A **docs site** (the content exists across the READMEs + `docs/`; this is
   packaging + hosting).
 

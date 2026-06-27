@@ -19,6 +19,8 @@ import type {
   LiveEvent,
   LookupSpec,
   MigrateOptions,
+  Projected,
+  Select,
   UpdateArgs,
   UpdateData,
   UpsertArgs,
@@ -665,26 +667,31 @@ export class Collection<T = Doc> {
     );
   }
 
-  async findMany(args: FindManyArgs<T> = {}): Promise<WithId<T>[]> {
-    if (!args.lookup) return this.findManyCore(args);
+  async findMany<S extends Select<T> | undefined = undefined>(
+    args: Omit<FindManyArgs<T>, "select"> & { select?: S } = {},
+  ): Promise<Projected<T, S>[]> {
+    const a = args as FindManyArgs<T>;
+    if (!a.lookup) {
+      return this.findManyCore(a) as unknown as Projected<T, S>[];
+    }
 
-    const specs = Array.isArray(args.lookup) ? args.lookup : [args.lookup];
+    const specs = Array.isArray(a.lookup) ? a.lookup : [a.lookup];
     // Fetch full base docs (need localFields), join, then project.
     let rows: any[] = this.findManyCore({
-      ...args,
+      ...a,
       select: undefined,
       lookup: undefined,
     });
     for (const spec of specs) rows = await this.applyLookup(rows, spec);
 
-    if (args.select) {
+    if (a.select) {
       rows = rows.map((r) => {
-        const projected = project(r, args.select) as Record<string, any>;
+        const projected = project(r, a.select) as Record<string, any>;
         for (const spec of specs) projected[spec.as] = r[spec.as];
         return projected;
       });
     }
-    return rows as WithId<T>[];
+    return rows as unknown as Projected<T, S>[];
   }
 
   /** Resolve one `$lookup` spec against already-fetched rows (2 queries, no N+1). */
@@ -728,18 +735,27 @@ export class Collection<T = Doc> {
     }));
   }
 
-  async findFirst(args: FindFirstArgs<T> = {}): Promise<WithId<T> | null> {
-    const rows = await this.findMany({ ...args, take: 1 });
-    return rows[0] ?? null;
+  async findFirst<S extends Select<T> | undefined = undefined>(
+    args: Omit<FindFirstArgs<T>, "select"> & { select?: S } = {},
+  ): Promise<Projected<T, S> | null> {
+    const rows = await this.findMany({ ...(args as object), take: 1 } as Omit<
+      FindManyArgs<T>,
+      "select"
+    > & { select?: S });
+    return (rows[0] ?? null) as Projected<T, S> | null;
   }
 
   /** Alias of {@link findFirst} for Prisma familiarity. */
-  async findUnique(args: FindFirstArgs<T> = {}): Promise<WithId<T> | null> {
+  async findUnique<S extends Select<T> | undefined = undefined>(
+    args: Omit<FindFirstArgs<T>, "select"> & { select?: S } = {},
+  ): Promise<Projected<T, S> | null> {
     return this.findFirst(args);
   }
 
   /** Like {@link findFirst} but throws if no document matches. */
-  async findFirstOrThrow(args: FindFirstArgs<T> = {}): Promise<WithId<T>> {
+  async findFirstOrThrow<S extends Select<T> | undefined = undefined>(
+    args: Omit<FindFirstArgs<T>, "select"> & { select?: S } = {},
+  ): Promise<Projected<T, S>> {
     const doc = await this.findFirst(args);
     if (!doc) throw new MonliteError(`No document found in "${this.name}"`);
     return doc;

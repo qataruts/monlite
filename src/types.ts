@@ -141,9 +141,13 @@ export interface FieldFilter<V = any> {
 /** A value used directly as a filter is shorthand for `{ equals: value }`. */
 export type FilterInput<V> = V | FieldFilter<V>;
 
+/** A dot-notation nested path, e.g. `"address.city"`. */
+export type DotPath = `${string}.${string}`;
+
 /**
- * Where input. Known fields are typed from `T`; nested paths can also be
- * addressed with dot notation (e.g. `"address.city"`).
+ * Where input. For a **typed** collection, keys are checked against `T` (an
+ * unknown field is a type error); dot-notation nested paths are still allowed.
+ * For an **untyped** collection (`Doc`), any field is accepted (schema-free).
  */
 export type WhereInput<T = Doc> = {
   [K in keyof T]?: FilterInput<T[K]>;
@@ -155,8 +159,8 @@ export type WhereInput<T = Doc> = {
   OR?: WhereInput<T> | WhereInput<T>[];
   NOT?: WhereInput<T> | WhereInput<T>[];
 } & {
-  // Dot-notation nested paths and any other string key.
-  [path: string]: any;
+  // Nested dot-paths stay open; plain unknown fields are rejected (when typed).
+  [path: DotPath]: FilterInput<any>;
 };
 
 /* ------------------------------------------------------------------ *
@@ -187,12 +191,40 @@ export type UpdateData<T = Doc> =
 export type SortOrder = "asc" | "desc";
 
 export type OrderBy<T = Doc> =
-  | ({ [K in keyof T]?: SortOrder } & { [path: string]: SortOrder })
-  | Array<{ [path: string]: SortOrder }>;
+  | ({ [K in keyof WithId<T>]?: SortOrder } & { [path: DotPath]: SortOrder })
+  | Array<
+      { [K in keyof WithId<T>]?: SortOrder } & { [path: DotPath]: SortOrder }
+    >;
 
-export type Select<T = Doc> = { [K in keyof T]?: boolean } & {
-  [path: string]: boolean;
+export type Select<T = Doc> = { [K in keyof WithId<T>]?: boolean } & {
+  [path: DotPath]: boolean;
 };
+
+/* ------------------------------------------------------------------ *
+ * Select-narrowed result types
+ * ------------------------------------------------------------------ */
+
+/** True for the schema-free `Doc` (and `any`), so typed collections opt in only. */
+type IsLoose<T> = string extends keyof T ? true : false;
+
+/** Keys of a select set to a truthy value (a widened `boolean` counts as truthy). */
+type SelectedKeys<S> = keyof {
+  [K in keyof S as S[K] extends false ? never : K]: K;
+};
+
+/**
+ * The shape `findMany`/`findFirst` return for a given `select`. Untyped (`Doc`)
+ * collections and absent/empty selects return the full document; a typed select
+ * narrows to exactly the chosen fields.
+ */
+export type Projected<T, S> =
+  IsLoose<T> extends true
+    ? WithId<T>
+    : [S] extends [undefined]
+      ? WithId<T>
+      : keyof S extends never
+        ? WithId<T>
+        : Pick<WithId<T>, Extract<SelectedKeys<S>, keyof WithId<T>>>;
 
 /**
  * A `$lookup`-style left join: for each result, fetch matching documents from

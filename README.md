@@ -137,6 +137,17 @@ interface User {
 const users = db.collection<User>("users");
 ```
 
+When you type a collection, queries are **type-checked** (since 2.0): `where`/
+`orderBy` reject unknown fields, and `select` **narrows the return type** to the
+fields you ask for. Prefer schema-free? Use `db.collection("users")` (untyped) —
+it accepts any field, exactly as before.
+
+```ts
+const u = await users.findMany({ select: { name: true } });
+u[0].name; // string  ✅      u[0].age // ✗ not selected
+await users.findMany({ where: { naem: "x" } }); // ✗ 'naem' is not a field
+```
+
 Every stored document gains three system fields:
 
 | Field | Type | Notes |
@@ -722,6 +733,8 @@ browser backend. `cd examples && npm install && node notes.mjs`.
   `$migrate()` for drop/rename/type-change.
 - [Custom adapters & drivers](docs/guides/custom-adapter.md) — add a sync backend
   or a new SQLite binding/environment.
+- [Migrating to 2.0](docs/guides/v2-migration.md) — the typed-query / select
+  changes (types only; runtime unchanged).
 
 ## Studio (inspector)
 

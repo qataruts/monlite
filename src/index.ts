@@ -37,6 +37,8 @@ export type {
   FindManyArgs,
   FindFirstArgs,
   LookupSpec,
+  Projected,
+  DotPath,
   CreateArgs,
   CreateManyArgs,
   UpdateArgs,
