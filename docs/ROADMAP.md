@@ -56,6 +56,8 @@ sync to them.
   { key } })`) backed by `better-sqlite3-multiple-ciphers`, plus `db.rekey()`.
 - **Browser / WASM** — `@monlite/wasm` runs monlite in the browser on SQLite-WASM
   (sql.js) via a custom `Driver`; snapshot persistence to IndexedDB/OPFS today.
+- **On-disk format spec** — [`docs/FORMAT.md`](./FORMAT.md): monlite files are
+  plain SQLite + documented conventions, so any language can read/write them.
 - **Full migration runner** — `collection.$migrate({ rename, drop })` rebuilds a
   structured table to the declared schema (drop/rename/type-change), preserving
   data and indexes, with an unacknowledged-drop guard.
@@ -78,8 +80,8 @@ sync to them.
 - A **docs site** and migration/custom-adapter **guides**.
 
 ### Wave 5 — breadth (demand-driven)
-- A **monlite file-format spec** so other languages can read/write the same `.db`.
-- A **Python** binding (AI/DS workflows), then evaluate Dart/Flutter.
+- A **Python** binding (AI/DS workflows), then evaluate Dart/Flutter — thin
+  wrappers over the documented [format](./FORMAT.md), not query-engine ports.
 
 ---
 

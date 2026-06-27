@@ -719,6 +719,12 @@ ops/sec, roughly 2× the raw-driver overhead for the full document API, and it
 **stays flat on indexed reads where JSON-file stores degrade** (lowdb point reads
 are ~15× slower at 10k docs).
 
+## On-disk format (cross-language)
+
+A monlite database is **just a SQLite file** with documented conventions, so any
+language with a SQLite library can read/write it — no port required. The contract
+is in [`docs/FORMAT.md`](docs/FORMAT.md).
+
 ---
 
 ## License
