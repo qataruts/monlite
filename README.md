@@ -619,6 +619,10 @@ These target **local / edge / desktop** runtimes — not a distributed cloud-sca
 Redis/Mongo/Qdrant replacement. For scale, keep the real services and
 [`@monlite/sync`](https://www.npmjs.com/package/@monlite/sync) to them.
 
+**Building an Electron app?** [`@monlite/electron`](https://www.npmjs.com/package/@monlite/electron)
+keeps the database in the main process and shares it with renderer windows over
+IPC, with cross-window reactivity.
+
 ---
 
 ## Drivers & zero dependencies

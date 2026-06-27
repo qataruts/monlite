@@ -58,6 +58,8 @@ sync to them.
   (sql.js) via a custom `Driver`; snapshot persistence to IndexedDB/OPFS today.
 - **On-disk format spec** — [`docs/FORMAT.md`](./FORMAT.md): monlite files are
   plain SQLite + documented conventions, so any language can read/write them.
+- **Electron** — `@monlite/electron`: a main-process database shared with
+  renderer windows over IPC, with cross-window reactivity.
 - **Full migration runner** — `collection.$migrate({ rename, drop })` rebuilds a
   structured table to the declared schema (drop/rename/type-change), preserving
   data and indexes, with an unacknowledged-drop guard.
@@ -70,7 +72,6 @@ sync to them.
 - **Incremental OPFS persistence** for `@monlite/wasm` — a driver over the
   official `@sqlite.org/sqlite-wasm` + OPFS VFS (Web Worker, sync access handles),
   so large browser databases persist without full-file snapshots.
-- **Electron/multi-window** helper (main-process DB + IPC bridge).
 - **`@monlite/devtools`** — inspector / query explorer ("Studio").
 
 
