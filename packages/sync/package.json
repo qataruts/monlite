@@ -1,6 +1,6 @@
 {
   "name": "@monlite/sync",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Local-first sync for @monlite/core — replicate a local SQLite document database with MongoDB and other backends.",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -58,13 +58,17 @@
   },
   "peerDependencies": {
     "mongodb": ">=5",
-    "pg": ">=8"
+    "pg": ">=8",
+    "mysql2": ">=3"
   },
   "peerDependenciesMeta": {
     "mongodb": {
       "optional": true
     },
     "pg": {
+      "optional": true
+    },
+    "mysql2": {
       "optional": true
     }
   },
@@ -73,6 +77,7 @@
     "@types/pg": "^8.20.0",
     "better-sqlite3": "^11.8.0",
     "mongodb": "^6.12.0",
+    "mysql2": "^3.22.5",
     "pg": "^8.13.1",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",

@@ -59,6 +59,7 @@ echo back into an infinite loop.
 |---|---|
 | `MongoAdapter` | Sync against MongoDB. `bulkWrite` upserts + soft-deletes, `_monlite_v` cursor for polling, change streams for live (`watch`). |
 | `PostgresAdapter` | Sync against PostgreSQL. Each collection maps to a `jsonb` table; `INSERT … ON CONFLICT` upserts + soft-deletes, `_monlite_v` cursor for polling. Keep local monlite as the embedded runtime and Postgres as the cloud of record. |
+| `MySqlAdapter` | Sync against MySQL / MariaDB. Each collection maps to a `json` table; `INSERT … ON DUPLICATE KEY UPDATE` upserts + soft-deletes, `_monlite_v` cursor for polling. |
 | `MonliteAdapter` | Use another sync-enabled monlite database as the remote — monlite-to-monlite replication (e.g. multi-device via a shared hub). |
 | `MemoryAdapter` | In-memory remote for tests and as a reference implementation. |
 
@@ -73,8 +74,8 @@ sync(db, {
 });
 ```
 
-`mongodb` and `pg` are optional peer dependencies — install only the one your
-adapter needs.
+`mongodb`, `pg`, and `mysql2` are optional peer dependencies — install only the
+one your adapter needs.
 
 Write your own by implementing `SyncAdapter` (`pull` / `push` / optional `watch`).
 

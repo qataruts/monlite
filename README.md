@@ -460,8 +460,9 @@ await engine.start();
 
 Pull / push / two-way replication, last-write-wins (or custom) conflict
 resolution, and pluggable adapters (`MongoAdapter`, `PostgresAdapter`,
-`MonliteAdapter` for monlite-to-monlite, `MemoryAdapter` for tests) — keep local
-monlite as the embedded runtime and a server DB as the cloud of record. See the
+`MySqlAdapter`, `MonliteAdapter` for monlite-to-monlite, `MemoryAdapter` for
+tests) — keep local monlite as the embedded runtime and a server DB as the cloud
+of record. See the
 [`@monlite/sync` README](https://www.npmjs.com/package/@monlite/sync) for details.
 
 ---

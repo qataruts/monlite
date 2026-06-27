@@ -48,7 +48,7 @@ jobs:
 
   mongo:
     runs-on: ubuntu-latest
-    name: Integration (Mongo + Postgres)
+    name: Integration (Mongo + Postgres + MySQL)
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -75,10 +75,19 @@ jobs:
             sleep 1
           done
 
+      - name: Start MySQL
+        run: |
+          docker run -d --name mysql -e MYSQL_ALLOW_EMPTY_PASSWORD=yes -e MYSQL_DATABASE=monlite -p 3306:3306 mysql:8
+          for i in $(seq 1 60); do
+            docker exec mysql mysqladmin ping -h 127.0.0.1 --silent >/dev/null 2>&1 && break
+            sleep 1
+          done
+
       - run: pnpm install --frozen-lockfile
 
-      - name: Integration tests (live MongoDB + PostgreSQL)
+      - name: Integration tests (live MongoDB + PostgreSQL + MySQL)
         run: pnpm --filter @monlite/sync test
         env:
           MONGO_URL: mongodb://localhost:27017/?directConnection=true
           PG_URL: postgres://postgres:postgres@localhost:5432/postgres
+          MYSQL_URL: mysql://root@localhost:3306/monlite

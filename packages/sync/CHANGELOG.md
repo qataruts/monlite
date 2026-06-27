@@ -1,5 +1,13 @@
 # @monlite/sync
 
+## 1.2.0 — MySQL adapter
+
+- **`MySqlAdapter`** — replicate against MySQL (and MariaDB). Each collection
+  maps to a `json` table; push upserts via `INSERT … ON DUPLICATE KEY UPDATE`
+  with soft-deletes, pull reads rows past a `_monlite_v` cursor. `mysql2` is an
+  optional peer dependency. Covered by live integration tests (gated on
+  `MYSQL_URL`, run in CI).
+
 ## 1.1.0 — Postgres adapter
 
 - **`PostgresAdapter`** — replicate against PostgreSQL. Each collection maps to a
