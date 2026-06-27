@@ -1,6 +1,6 @@
 {
   "name": "@monlite/sync",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Local-first sync for @monlite/core — replicate a local SQLite document database with MongoDB and other backends.",
   "type": "module",
   "main": "./dist/index.cjs",

@@ -11,17 +11,21 @@ import type {
   CreateManyArgs,
   DeleteArgs,
   Doc,
+  ExplainResult,
   FindFirstArgs,
   FindManyArgs,
   GroupByArgs,
   GroupByResult,
+  LiveEvent,
   UpdateArgs,
   UpdateData,
   UpsertArgs,
+  WatchHandle,
   WhereInput,
   WithId,
 } from "./types.js";
 import { objectId } from "./id.js";
+import { LiveQuery } from "./reactive.js";
 import {
   MonliteError,
   MonliteQueryError,
@@ -113,6 +117,9 @@ export class Collection<T = Doc> {
         this.columns.add(field);
         if (normalized.type === "JSON") this.jsonColumns.add(field);
       }
+      // Structured collections ensure/migrate their table on declaration, so
+      // schema changes (added columns) take effect immediately, not lazily.
+      this.ensureTable();
     }
   }
 
@@ -152,20 +159,12 @@ export class Collection<T = Doc> {
         `created_at INTEGER NOT NULL`,
         `updated_at INTEGER NOT NULL`,
         `data       TEXT    NOT NULL DEFAULT '{}'`,
+        ...this.columnOrder.map((f) => this.columnDdl(f, false)),
       ];
-      for (const field of this.columnOrder) {
-        const def = this.columnDefs[field]!;
-        let line = `"${field}" ${sqliteType(def.type)}`;
-        if (def.notNull) line += " NOT NULL";
-        if (def.unique) line += " UNIQUE";
-        if (def.default !== undefined)
-          line += ` DEFAULT ${formatDefault(def.default)}`;
-        if (def.references) line += ` REFERENCES ${def.references}`;
-        lines.push(line);
-      }
       this.db.exec(
         `CREATE TABLE IF NOT EXISTS "${this.name}" (\n  ${lines.join(",\n  ")}\n)`,
       );
+      this.migrateColumns();
       for (const field of this.columnOrder) {
         if (this.columnDefs[field]!.index) {
           this.db.exec(
@@ -175,6 +174,47 @@ export class Collection<T = Doc> {
       }
     }
     this.initialized = true;
+  }
+
+  private columnDdl(field: string, forAlter: boolean): string {
+    const def = this.columnDefs[field]!;
+    let line = `"${field}" ${sqliteType(def.type)}`;
+    if (def.notNull) line += " NOT NULL";
+    // SQLite can't add a UNIQUE column via ALTER — enforce it with a unique index instead.
+    if (def.unique && !forAlter) line += " UNIQUE";
+    if (def.default !== undefined)
+      line += ` DEFAULT ${formatDefault(def.default)}`;
+    if (def.references) line += ` REFERENCES ${def.references}`;
+    return line;
+  }
+
+  /** Auto-additive migration: add declared columns missing from an existing table. */
+  private migrateColumns(): void {
+    const existing = new Set(
+      (
+        this.db.prepare(`PRAGMA table_info("${this.name}")`).all() as Array<{
+          name: string;
+        }>
+      ).map((r) => r.name),
+    );
+    for (const field of this.columnOrder) {
+      if (existing.has(field)) continue;
+      try {
+        this.db.exec(
+          `ALTER TABLE "${this.name}" ADD COLUMN ${this.columnDdl(field, true)}`,
+        );
+      } catch (err) {
+        throw new MonliteError(
+          `Failed to add column "${field}" to "${this.name}": ${(err as Error).message}. ` +
+            `NOT NULL columns need a default when added to an existing table.`,
+        );
+      }
+      if (this.columnDefs[field]!.unique) {
+        this.db.exec(
+          `CREATE UNIQUE INDEX IF NOT EXISTS "uq_${this.name}_${field}" ON "${this.name}"("${field}")`,
+        );
+      }
+    }
   }
 
   /* --------------------------- row <-> doc -------------------------- */
@@ -339,6 +379,7 @@ export class Collection<T = Doc> {
     this.ensureTable();
     if (op === "delete") {
       this.db.prepare(`DELETE FROM "${this.name}" WHERE _id = ?`).run(id);
+      this.afterWrite([id]);
       return;
     }
     const clean = stripSystem(doc ?? {});
@@ -354,6 +395,7 @@ export class Collection<T = Doc> {
            ON CONFLICT(_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
         )
         .run(id, JSON.stringify(clean), createdAt, ts);
+      this.afterWrite([id]);
       return;
     }
 
@@ -391,6 +433,12 @@ export class Collection<T = Doc> {
           `ON CONFLICT(_id) DO UPDATE SET ${updateSet}`,
       )
       .run(...values);
+    this.afterWrite([id]);
+  }
+
+  /** @internal Notify reactivity watchers that documents changed. */
+  private afterWrite(ids: string[]): void {
+    this.mon.reactor.emit(this.name, ids);
   }
 
   /* ----------------------------- create ----------------------------- */
@@ -404,6 +452,7 @@ export class Collection<T = Doc> {
       recorder?.recordLocal(this.name, row._id, "upsert", row.created_at);
     };
     this.guard(() => (recorder ? this.db.transaction(write) : write()));
+    this.afterWrite([row._id]);
     return row.returned;
   }
 
@@ -411,22 +460,24 @@ export class Collection<T = Doc> {
     this.ensureTable();
     const stmt = this.db.prepare(this.insertSql());
     const recorder = this.recorder;
+    const ids: string[] = [];
     this.guard(() =>
       this.db.transaction(() => {
         for (const item of args.data) {
           const row = this.buildInsert(item);
           stmt.run(...row.values);
           recorder?.recordLocal(this.name, row._id, "upsert", row.created_at);
+          ids.push(row._id);
         }
       }),
     );
+    this.afterWrite(ids);
     return { count: args.data.length };
   }
 
   /* ------------------------------ read ------------------------------ */
 
-  async findMany(args: FindManyArgs<T> = {}): Promise<WithId<T>[]> {
-    this.ensureTable();
+  private buildFindSql(args: FindManyArgs<T>): { sql: string; params: any[] } {
     const params: any[] = [];
     const where = buildWhere(args.where, {
       params,
@@ -434,10 +485,8 @@ export class Collection<T = Doc> {
       columns: this.columns,
     });
     let sql = `SELECT * FROM "${this.name}" WHERE ${where}`;
-
     const order = buildOrderBy(args.orderBy, this.trackPath, this.columns);
     if (order) sql += " " + order;
-
     if (args.take != null) {
       sql += " LIMIT ?";
       params.push(args.take);
@@ -446,9 +495,35 @@ export class Collection<T = Doc> {
       sql += (args.take != null ? "" : " LIMIT -1") + " OFFSET ?";
       params.push(args.skip);
     }
+    return { sql, params };
+  }
 
+  /** @internal Synchronous core of findMany (used by reactivity). */
+  findManyCore(args: FindManyArgs<T> = {}): WithId<T>[] {
+    this.ensureTable();
+    const { sql, params } = this.buildFindSql(args);
     const rows = this.db.prepare(sql).all(...params) as Row[];
     return rows.map((r) => project(this.rowToDoc(r), args.select) as WithId<T>);
+  }
+
+  /** @internal Synchronous core of exists (used by reactivity). */
+  existsCore(where: WhereInput<T> | undefined): boolean {
+    this.ensureTable();
+    const params: any[] = [];
+    const clause = buildWhere(where, {
+      params,
+      onPath: this.trackPath,
+      columns: this.columns,
+    });
+    return (
+      this.db
+        .prepare(`SELECT 1 FROM "${this.name}" WHERE ${clause} LIMIT 1`)
+        .get(...params) != null
+    );
+  }
+
+  async findMany(args: FindManyArgs<T> = {}): Promise<WithId<T>[]> {
+    return this.findManyCore(args);
   }
 
   async findFirst(args: FindFirstArgs<T> = {}): Promise<WithId<T> | null> {
@@ -470,17 +545,46 @@ export class Collection<T = Doc> {
 
   /** True if at least one document matches. */
   async exists(where?: WhereInput<T>): Promise<boolean> {
+    return this.existsCore(where);
+  }
+
+  /**
+   * Subscribe to a live query. The callback fires immediately with the current
+   * results (`type: "init"`) and again whenever a change affects the result set
+   * (row-level: only relevant changes trigger a recompute). Includes changes
+   * applied by `@monlite/sync`.
+   */
+  watch(
+    args: FindManyArgs<T> = {},
+    cb: (event: LiveEvent<T>) => void,
+  ): WatchHandle<T> {
     this.ensureTable();
-    const params: any[] = [];
-    const clause = buildWhere(where, {
-      params,
-      onPath: this.trackPath,
-      columns: this.columns,
-    });
-    const row = this.db
-      .prepare(`SELECT 1 FROM "${this.name}" WHERE ${clause} LIMIT 1`)
-      .get(...params);
-    return row != null;
+    const lq = new LiveQuery<T>(this, args, cb);
+    const reactor = this.mon.reactor;
+    const name = this.name;
+    reactor.register(name, lq);
+    return {
+      get results() {
+        return lq.results;
+      },
+      stop() {
+        lq.stopped = true;
+        reactor.unregister(name, lq);
+      },
+    };
+  }
+
+  /** Show SQLite's query plan for a `findMany`, and whether it uses an index. */
+  async explain(args: FindManyArgs<T> = {}): Promise<ExplainResult> {
+    this.ensureTable();
+    const { sql, params } = this.buildFindSql(args);
+    const plan = this.db
+      .prepare(`EXPLAIN QUERY PLAN ${sql}`)
+      .all(...params) as Array<{ id: number; parent: number; detail: string }>;
+    const usesIndex = plan.some((r) =>
+      /USING (COVERING )?INDEX/i.test(r.detail),
+    );
+    return { sql, usesIndex, plan };
   }
 
   async findById(id: string): Promise<WithId<T> | null> {
@@ -560,9 +664,9 @@ export class Collection<T = Doc> {
     const now = Date.now();
     const recorder = this.recorder;
 
-    return this.guard(() =>
+    const out = this.guard(() =>
       this.db.transaction(() => {
-        const out: WithId<T>[] = [];
+        const result: WithId<T>[] = [];
         for (const row of rows) {
           const current = stripSystem(this.rowToDoc(row));
           const updated = stripSystem(applyUpdate(current, data));
@@ -571,16 +675,18 @@ export class Collection<T = Doc> {
             .prepare(`UPDATE "${this.name}" SET ${setSql} WHERE _id = ?`)
             .run(...values, row._id);
           recorder?.recordLocal(this.name, row._id, "upsert", now);
-          out.push({
+          result.push({
             ...updated,
             _id: row._id,
             created_at: row.created_at,
             updated_at: now,
           } as WithId<T>);
         }
-        return out;
+        return result;
       }),
     );
+    this.afterWrite(out.map((d) => d._id));
+    return out;
   }
 
   async update(args: UpdateArgs<T>): Promise<WithId<T> | null> {
@@ -595,7 +701,7 @@ export class Collection<T = Doc> {
     this.ensureTable();
     // Find + create/update run inside ONE transaction so concurrent/interleaved
     // upserts can't both miss and double-insert.
-    return this.guard(() =>
+    const result = this.guard(() =>
       this.db.transaction(() => {
         const params: any[] = [];
         const clause = buildWhere(args.where, {
@@ -632,6 +738,8 @@ export class Collection<T = Doc> {
         return ins.returned;
       }),
     );
+    this.afterWrite([result._id]);
+    return result;
   }
 
   /* ----------------------------- delete ----------------------------- */
@@ -665,6 +773,7 @@ export class Collection<T = Doc> {
       }),
     );
 
+    this.afterWrite(rows.map((r) => r._id));
     return rows.map((r) => this.rowToDoc(r));
   }
 

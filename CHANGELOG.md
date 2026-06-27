@@ -1,5 +1,17 @@
 # @monlite/core
 
+## 0.8.0 — Wave 1: reactivity, migrations, explain, backup
+
+- **Reactivity** — `collection.watch(args, cb)` live queries with **row-level**
+  change matching (only relevant changes trigger a recompute). Fires `init` then
+  `change` events with `results`/`added`/`removed`/`changed`. Also fires for
+  changes applied by `@monlite/sync`.
+- **Auto-additive migrations** — declaring a structured collection now ensures
+  and migrates its table immediately; new declared columns are added via
+  `ALTER TABLE ADD COLUMN` (clear error if a `NOT NULL` column needs a default).
+- **`collection.explain(args)`** — EXPLAIN QUERY PLAN plus a `usesIndex` flag.
+- **`db.backup(path)`** — consistent on-disk snapshot via `VACUUM INTO`.
+
 ## 0.7.0 — structured sync + convergence
 
 - **Structured collections now sync.** Remote changes are applied through the

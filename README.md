@@ -319,6 +319,31 @@ await users.distinct("tags");                        // ["a", "b", "c"]
 
 ---
 
+## Live queries (reactivity)
+
+`collection.watch()` keeps a query result live. The callback fires once
+immediately (`type: "init"`) and again whenever a change **affects this query** —
+matching is **row-level**, so unrelated writes don't trigger a recompute. It also
+fires for changes applied by `@monlite/sync`, so the UI updates when cloud data
+arrives.
+
+```ts
+const handle = users.watch({ where: { role: "admin" } }, (event) => {
+  event.results; // full current result set
+  event.added;   // docs that just entered the set
+  event.removed; // docs that just left
+  event.changed; // docs still in the set whose contents changed
+});
+
+handle.results; // current results, kept up to date
+handle.stop();  // unsubscribe
+```
+
+Perfect for Electron/Tauri UIs: bind `handle.results` to your view and it stays
+in sync with every write (local or synced).
+
+---
+
 ## Structured collections (native SQL columns)
 
 By default a collection is **document mode** — schema-free, every field stored
@@ -361,6 +386,11 @@ await db.$queryRaw`
 
 Column types: `"TEXT" | "INTEGER" | "REAL" | "BLOB" | "JSON"`. A full column
 definition supports `index`, `unique`, `notNull`, `default`, and `references`.
+
+**Migrations are automatic for additive changes.** Re-opening a collection with a
+new declared column adds it (`ALTER TABLE ADD COLUMN`) on declaration — give
+`NOT NULL` columns a `default` so existing rows can be backfilled. Destructive
+changes (rename/drop/type-change) still need a manual migration.
 
 ### Do I have to care: JSON vs native columns?
 
@@ -472,6 +502,13 @@ ON users(json_extract(data, '$.address.city'));
 
 You never think about indexes. Disable with `createDb("./app.db", { autoIndex: false })`.
 
+Want to see whether a query uses an index? Ask:
+
+```ts
+await users.explain({ where: { "address.city": "Riyadh" } });
+// { sql, usesIndex: true, plan: [{ id, parent, detail }, …] }
+```
+
 ---
 
 ## Database management
@@ -480,6 +517,7 @@ You never think about indexes. Disable with `createDb("./app.db", { autoIndex: f
 await db.$collections();   // string[] of collection names
 await db.$drop("users");   // drop a collection and its data
 await db.$dropAll();       // drop everything
+await db.backup("./snapshot.db"); // consistent on-disk snapshot
 await db.$disconnect();    // close the connection
 db.sqlite;                 // the underlying native driver handle
 db.driverName;             // "better-sqlite3" | "node:sqlite"

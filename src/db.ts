@@ -11,6 +11,7 @@ import { bindable } from "./query/sql.js";
 import { createDriver } from "./driver/index.js";
 import type { Driver } from "./driver/types.js";
 import { SyncStore } from "./sync/store.js";
+import { Reactor } from "./reactive.js";
 
 function validateName(name: string): void {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
@@ -46,6 +47,8 @@ export class Monlite {
   readonly driver: Driver;
   /** @internal */
   readonly autoIndexer: AutoIndexer;
+  /** @internal Reactivity hub for `collection.watch()`. */
+  readonly reactor = new Reactor();
   /** @internal Sync metadata store; present only when `{ sync: true }`. */
   readonly $sync?: SyncStore;
 
@@ -222,6 +225,16 @@ export class Monlite {
   /** Drop every collection in the database. */
   async $dropAll(): Promise<void> {
     for (const name of await this.$collections()) await this.$drop(name);
+  }
+
+  /**
+   * Write a consistent on-disk snapshot of the database to `path` (via
+   * `VACUUM INTO`). The destination file must not already exist.
+   */
+  backup(path: string): Promise<void> {
+    this.assertOpen();
+    this.driver.exec(`VACUUM INTO '${path.replace(/'/g, "''")}'`);
+    return Promise.resolve();
   }
 
   /** Close the underlying SQLite connection. */

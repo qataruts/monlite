@@ -1,5 +1,9 @@
 # @monlite/sync
 
+## 0.3.1
+
+- Track `@monlite/core` ^0.8.0 (reactivity also fires for synced-in changes).
+
 ## 0.3.0 — structured sync + live MongoDB tests
 
 - **Structured collections sync** end to end (native columns preserved). Open

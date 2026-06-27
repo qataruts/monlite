@@ -64,6 +64,41 @@ export interface ColumnInfo {
 }
 
 /* ------------------------------------------------------------------ *
+ * Reactivity
+ * ------------------------------------------------------------------ */
+
+/** An update delivered to a `watch()` subscriber. */
+export interface LiveEvent<T = Doc> {
+  /** `"init"` is the first delivery; `"change"` for every update after. */
+  type: "init" | "change";
+  /** The full current result set. */
+  results: WithId<T>[];
+  /** Documents that entered the result set since the last event. */
+  added: WithId<T>[];
+  /** Documents that left the result set. */
+  removed: WithId<T>[];
+  /** Documents still in the set whose contents changed. */
+  changed: WithId<T>[];
+}
+
+/** Handle returned by `collection.watch()`. */
+export interface WatchHandle<T = Doc> {
+  /** The current result set (kept up to date). */
+  readonly results: WithId<T>[];
+  /** Stop receiving updates. */
+  stop(): void;
+}
+
+/** Result of `collection.explain()`. */
+export interface ExplainResult {
+  sql: string;
+  /** Whether SQLite's planner uses an index (vs a full scan). */
+  usesIndex: boolean;
+  /** Raw EXPLAIN QUERY PLAN rows. */
+  plan: Array<{ id: number; parent: number; detail: string }>;
+}
+
+/* ------------------------------------------------------------------ *
  * Where clause
  * ------------------------------------------------------------------ */
 
