@@ -84,6 +84,27 @@ jobs:
         env:
           MONLITE_DRIVER: node:sqlite
 
+  # The Python port (python/). Pure-stdlib core; the interop suite round-trips a .db
+  # between Node and Python, so we build the JS core first, then run all Python tests.
+  python:
+    runs-on: ubuntu-latest
+    name: Python (monlite)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build # build @monlite/core + @monlite/kv for the interop tests
+      - name: Python tests (core + kv + Node↔Python interop)
+        working-directory: python
+        run: PYTHONPATH=src python -m unittest discover -s tests -v
+
   mongo:
     runs-on: ubuntu-latest
     name: Integration (Mongo + Postgres + MySQL)
