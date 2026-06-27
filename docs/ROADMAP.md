@@ -62,6 +62,8 @@ sync to them.
   plain SQLite + documented conventions, so any language can read/write them.
 - **Electron** — `@monlite/electron`: a main-process database shared with
   renderer windows over IPC, with cross-window reactivity.
+- **Studio** — `@monlite/studio`: a local web inspector (`npx @monlite/studio
+  app.db`) to browse collections, filter documents, and delete records.
 - **Full migration runner** — `collection.$migrate({ rename, drop })` rebuilds a
   structured table to the declared schema (drop/rename/type-change), preserving
   data and indexes, with an unacknowledged-drop guard.
@@ -74,7 +76,6 @@ sync to them.
 - **Incremental OPFS persistence** for `@monlite/wasm` — a driver over the
   official `@sqlite.org/sqlite-wasm` + OPFS VFS (Web Worker, sync access handles),
   so large browser databases persist without full-file snapshots.
-- **`@monlite/devtools`** — inspector / query explorer ("Studio").
 
 
 ### Wave 4 — DX depth

@@ -723,6 +723,16 @@ browser backend. `cd examples && npm install && node notes.mjs`.
 - [Custom adapters & drivers](docs/guides/custom-adapter.md) — add a sync backend
   or a new SQLite binding/environment.
 
+## Studio (inspector)
+
+Browse a database in your browser — collections, documents, filter queries:
+
+```bash
+npx @monlite/studio app.db
+```
+
+See [`@monlite/studio`](https://www.npmjs.com/package/@monlite/studio).
+
 ## Benchmarks
 
 [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) compares monlite to the raw SQLite
