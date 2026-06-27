@@ -570,6 +570,22 @@ db.sqlite;                 // the underlying native driver handle
 db.driverName;             // "better-sqlite3" | "node:sqlite"
 ```
 
+### Durability & maintenance
+
+```ts
+db.checkIntegrity();        // true, or a list of problems (PRAGMA integrity_check)
+db.checkIntegrity(true);    // faster quick_check
+db.vacuum();                // reclaim space / defragment
+db.analyze();               // refresh the query-planner statistics
+db.checkpoint("TRUNCATE");  // flush the WAL into the main file
+
+// Tune durability vs. speed at open time:
+createDb("app.db", { synchronous: "FULL" }); // max power-loss safety
+```
+
+WAL defaults to `synchronous = NORMAL` (safe across app crashes). Auto-index
+learning persists across restarts, so cold-start query plans stay predictable.
+
 ---
 
 ## Plugins

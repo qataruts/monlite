@@ -36,6 +36,9 @@ export class NodeSqliteDriver implements Driver {
     if (!options.readonly && (options.wal ?? true)) {
       this.raw.exec("PRAGMA journal_mode = WAL");
     }
+    if (options.synchronous) {
+      this.raw.exec(`PRAGMA synchronous = ${options.synchronous}`);
+    }
   }
 
   exec(sql: string): void {

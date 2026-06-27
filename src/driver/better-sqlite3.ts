@@ -30,6 +30,9 @@ export class BetterSqlite3Driver implements Driver {
     if (!options.readonly && (options.wal ?? true)) {
       this.raw.pragma("journal_mode = WAL");
     }
+    if (options.synchronous) {
+      this.raw.pragma(`synchronous = ${options.synchronous}`);
+    }
   }
 
   exec(sql: string): void {

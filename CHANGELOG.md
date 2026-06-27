@@ -1,5 +1,20 @@
 # @monlite/core
 
+## 2.1.0 — durability & maintenance
+
+Hardening toward system-of-record use (see `plan/PRODUCTION-READINESS.md`).
+
+- **`db.checkIntegrity(quick?)`** — verify on-disk integrity
+  (`PRAGMA integrity_check` / `quick_check`); returns `true` or the problems.
+- **`db.vacuum()` / `db.analyze()` / `db.checkpoint(mode?)`** — reclaim space,
+  refresh the query planner's stats, and checkpoint the WAL.
+- **`synchronous` option** on `createDb` (`OFF` | `NORMAL` | `FULL` | `EXTRA`) —
+  tune durability vs. speed (WAL defaults to `NORMAL`; `FULL` for max power-loss
+  safety).
+- **Auto-index counters now persist** in `_monlite_autoindex` and re-hydrate on
+  open, so a restarted app resumes learning where it left off and already-indexed
+  paths aren't re-tracked — predictable cold start.
+
 ## 2.0.0 — typed queries & select-narrowed results
 
 Stronger TypeScript inference. **Untyped collections (`db.collection(name)`,

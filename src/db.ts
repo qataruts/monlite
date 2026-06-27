@@ -64,6 +64,7 @@ export class Monlite {
       readonly: options.readonly,
       wal: options.wal,
       busyTimeout: options.busyTimeout,
+      synchronous: options.synchronous,
       allowExtensions: options.allowExtensions,
       encryption: options.encryption,
       verbose: options.verbose,
@@ -260,6 +261,43 @@ export class Monlite {
     this.assertOpen();
     this.driver.exec(`VACUUM INTO '${path.replace(/'/g, "''")}'`);
     return Promise.resolve();
+  }
+
+  /**
+   * Verify on-disk integrity via SQLite's `integrity_check` (or the faster
+   * `quick_check`). Returns `true` when healthy, or the list of problems found.
+   */
+  checkIntegrity(quick = false): true | string[] {
+    this.assertOpen();
+    const pragma = quick ? "quick_check" : "integrity_check";
+    const rows = this.driver.prepare(`PRAGMA ${pragma}`).all() as Array<{
+      [k: string]: string;
+    }>;
+    const messages = rows.map((r) => Object.values(r)[0]);
+    return messages.length === 1 && messages[0] === "ok" ? true : messages;
+  }
+
+  /** Rebuild the database file to reclaim space and defragment (`VACUUM`). */
+  vacuum(): void {
+    this.assertOpen();
+    this.driver.exec("VACUUM");
+  }
+
+  /** Refresh the query planner's statistics (`ANALYZE`). */
+  analyze(): void {
+    this.assertOpen();
+    this.driver.exec("ANALYZE");
+  }
+
+  /**
+   * Checkpoint the WAL into the main database file. `mode` is one of
+   * `PASSIVE` (default), `FULL`, `RESTART`, or `TRUNCATE`.
+   */
+  checkpoint(
+    mode: "PASSIVE" | "FULL" | "RESTART" | "TRUNCATE" = "PASSIVE",
+  ): void {
+    this.assertOpen();
+    this.driver.exec(`PRAGMA wal_checkpoint(${mode})`);
   }
 
   /**

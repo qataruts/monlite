@@ -402,6 +402,12 @@ export interface MonliteOptions {
   wal?: boolean;
   /** Milliseconds to wait on a locked database before erroring. Default `5000`. */
   busyTimeout?: number;
+  /**
+   * SQLite `synchronous` mode — durability vs speed. WAL's default is `NORMAL`
+   * (safe from app crashes); use `FULL` for maximum power-loss durability, or
+   * `OFF` for speed at the risk of corruption on power loss.
+   */
+  synchronous?: "OFF" | "NORMAL" | "FULL" | "EXTRA";
   /** Allow loading SQLite extensions (required by `@monlite/vector`). Default `false`. */
   allowExtensions?: boolean;
   /** Verbose logger for executed SQL (debugging). */

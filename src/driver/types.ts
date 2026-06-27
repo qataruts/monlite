@@ -34,6 +34,8 @@ export interface DriverOpenOptions {
   wal?: boolean;
   /** Milliseconds to wait on a locked database before erroring. Default 5000. */
   busyTimeout?: number;
+  /** Durability vs speed: SQLite `synchronous` mode. WAL default is `NORMAL`. */
+  synchronous?: "OFF" | "NORMAL" | "FULL" | "EXTRA";
   /** Allow loading SQLite extensions (needed by `@monlite/vector`). Default false. */
   allowExtensions?: boolean;
   /** Encrypt the database at rest (better-sqlite3-multiple-ciphers only). */
