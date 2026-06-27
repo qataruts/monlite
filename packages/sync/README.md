@@ -22,6 +22,7 @@ const engine = sync(db, {
   mode: "two-way",                  // "pull" | "push" | "two-way"
   conflict: "lww",                  // or (ctx) => "local" | "remote"
   interval: 5000,                   // poll cadence (optional)
+  retries: 4,                       // retry a failed pull/push before the round fails
 });
 
 await engine.start();   // bootstrap + begin syncing
@@ -103,7 +104,22 @@ Every resolved conflict is recorded in the local conflict log
 ## Events
 
 `engine` is an `EventEmitter`: `start`, `sync` (round stats), `change`,
-`conflict`, `error`, `stop`.
+`conflict`, `retry` (`{ label, attempt, delayMs, error }`), `error`, `stop`.
+
+## Resilience
+
+A flaky network or a momentary remote outage shouldn't drop data:
+
+- **Per-operation retries.** A failed `pull`/`push` is retried with exponential
+  backoff + jitter (`retries`, default 4; `retryBaseMs`, default 200) before the
+  round fails — finer-grained than the poll-loop backoff, and it also protects
+  one-shot `engine.sync()` calls. Safe because `pull` is read-only and `push` is
+  idempotent (LWW by `_id`+version). Each attempt emits a `retry` event.
+- **No partial-failure data loss.** A change is marked pushed **only** once the
+  remote acks it; anything unacked (or lost when retries are finally exhausted)
+  stays queued and is re-sent on the next round. Re-sends are idempotent, so a
+  push that applied remotely but failed before acking is reconciled, not
+  duplicated. The pull cursor advances only after a batch is fully applied.
 
 ## Status & limitations
 

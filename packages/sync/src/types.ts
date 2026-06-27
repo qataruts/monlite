@@ -62,6 +62,13 @@ export interface SyncOptions {
   interval?: number;
   /** Max changes moved per pull/push round. Large backlogs drain over rounds. Default 500. */
   batchSize?: number;
+  /** Retry a failed pull/push this many times before the round fails, with
+   * exponential backoff + jitter. Safe because pull is read-only and push is
+   * idempotent (LWW by `_id`+version). Default 4; set 0 to disable. Each attempt
+   * emits a `retry` event. */
+  retries?: number;
+  /** Base backoff (ms) for retries — attempt N waits ~`retryBaseMs * 2^N`. Default 200. */
+  retryBaseMs?: number;
   /** Subscribe to live changes via `adapter.watch` if available. */
   live?: boolean;
   /** State key for cursors/pointers. Defaults to the adapter name. */

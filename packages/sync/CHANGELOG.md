@@ -1,5 +1,22 @@
 # @monlite/sync
 
+## 1.3.0 — resilient rounds (retry + partial-failure safety)
+
+Closes P1-2 from `plan/PRODUCTION-READINESS.md`.
+
+- **Per-operation retries** — a failed `pull`/`push` now retries with exponential
+  backoff + jitter (`retries`, default 4; `retryBaseMs`, default 200) before the
+  round fails, instead of waiting a full poll interval. Also makes one-shot
+  `engine.sync()` resilient. Safe because `pull` is read-only and `push` is
+  idempotent (LWW). Each attempt emits a **`retry`** event
+  (`{ label, attempt, delayMs, error }`).
+- **Partial-failure guarantee (now tested)** — a change is marked pushed only on
+  remote ack; unacked changes (including after exhausted retries) stay queued and
+  re-send next round. Re-sends are idempotent (a remote-applied-but-unacked push
+  reconciles, not duplicates); the pull cursor advances only after a batch fully
+  applies. New robustness suite covers transient pull/push recovery, exhausted
+  retries (no data loss), retry events, and partial acks.
+
 ## 1.2.1
 
 - Allow `@monlite/core` 2.0 (dependency range `^2.0.0`). No API changes.

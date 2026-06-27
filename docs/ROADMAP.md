@@ -36,7 +36,8 @@ sync to them.
   LWW + custom conflict resolution, change feed + tombstones, and adapters for
   **MongoDB** (live replica set, incl. change streams), **PostgreSQL** and
   **MySQL/MariaDB** (json tables, live-tested), monlite-to-monlite, and
-  in-memory. Document **and** structured collections sync.
+  in-memory. Document **and** structured collections sync. **Resilient rounds**:
+  per-operation retry with backoff + no partial-failure data loss (1.3.0).
 - **Wave 1** — `collection.watch()` reactivity (row-level), auto-additive
   migrations, `collection.explain()`, and `db.backup()`.
 - **Plugin system** — `createDb({ plugins })` with `init`/`afterWrite`/
