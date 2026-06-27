@@ -551,6 +551,40 @@ Write your own against the `MonlitePlugin` interface (`init` / `afterWrite` /
 
 ---
 
+## The local backend for AI agents
+
+monlite aims to be your **entire local data layer** — one embedded `.db`, one
+install — collapsing the services you'd otherwise run (Mongo, Qdrant, Redis) for
+a local/edge/desktop agent. Documents and vectors are core + a plugin; the
+Redis-style primitives are small companion packages:
+
+| Package | Replaces (locally) | Provides |
+|---|---|---|
+| [`@monlite/kv`](https://www.npmjs.com/package/@monlite/kv) | Redis cache | Synchronous `get/set/incr` KV with TTLs |
+| [`@monlite/queue`](https://www.npmjs.com/package/@monlite/queue) | Redis / BullMQ | Durable job queue — retries, backoff, delays, priorities, concurrency |
+| [`@monlite/cron`](https://www.npmjs.com/package/@monlite/cron) | cron / scheduler | Persisted cron schedules; composes with the queue |
+
+```ts
+import { kv } from "@monlite/kv";
+import { createQueue } from "@monlite/queue";
+import { createCron } from "@monlite/cron";
+
+const cache = kv(db);
+cache.set("session:42", { user: "ali" }, { ttl: 60_000 });
+
+const queue = createQueue(db, { maxAttempts: 3 });
+queue.process("email", async (job) => send(job.payload), { concurrency: 5 });
+queue.add("email", { to: "ali@example.com" });
+
+createCron(db).schedule("nightly", "0 0 * * *", () => queue.add("report", {}));
+```
+
+These target **local / edge / desktop** runtimes — not a distributed cloud-scale
+Redis/Mongo/Qdrant replacement. For scale, keep the real services and
+[`@monlite/sync`](https://www.npmjs.com/package/@monlite/sync) to them.
+
+---
+
 ## Drivers & zero dependencies
 
 monlite talks to SQLite through a tiny driver adapter, so it runs on two

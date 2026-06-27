@@ -17,9 +17,9 @@ tables + access patterns over SQLite, which is fast, durable, and transactional.
 |---|---|
 | MongoDB | `@monlite/core` (documents) ✅ |
 | Qdrant | `@monlite/vector` ✅ |
-| Redis (cache) | `@monlite/kv` 🔲 |
-| Redis / BullMQ (queue) | `@monlite/queue` 🔲 |
-| Redis / cron (scheduling) | `@monlite/cron` 🔲 |
+| Redis (cache) | `@monlite/kv` ✅ |
+| Redis / BullMQ (queue) | `@monlite/queue` ✅ |
+| Redis / cron (scheduling) | `@monlite/cron` ✅ |
 | cloud sync | `@monlite/sync` ✅ |
 
 Boundary: this targets **local / edge / desktop / single-machine** runtimes, not
@@ -47,16 +47,12 @@ sync to them.
 - **Stable 1.0** — `@monlite/core` and `@monlite/sync` are at `1.0.0` (semver-stable).
 - **Examples + benchmarks** — runnable demos in [`examples/`](../examples/) and a
   benchmark suite ([`docs/BENCHMARKS.md`](./BENCHMARKS.md)).
+- **The local AI-agent harness** — Redis's local roles as companion packages:
+  **`@monlite/kv`** (cache/KV with TTL), **`@monlite/queue`** (durable job queue —
+  retries, backoff, delays, priorities, concurrency, dead-letter, multi-process
+  safe), and **`@monlite/cron`** (persisted cron schedules). Both drivers.
 
 ## Planned
-
-### Wave A — the local AI-agent harness (Redis's local roles)
-- **`@monlite/kv`** — Redis-like cache/KV: `get/set/del/incr/expire/ttl/mget`,
-  TTL with lazy expiry + sweep. Persistent or `:memory:`.
-- **`@monlite/queue`** — durable job queue: atomic claim (`UPDATE … RETURNING`
-  under WAL + busy_timeout), retries/backoff, delayed jobs, dead-letter,
-  concurrency, events. Multi-process safe.
-- **`@monlite/cron`** — cron-scheduled jobs that enqueue via `@monlite/queue`.
 
 ### Wave 3 — desktop production
 - **`@monlite/cipher`** / `encryption` option — encryption at rest (SQLCipher via
