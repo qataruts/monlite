@@ -1,5 +1,11 @@
 # @monlite/queue
 
+## 0.3.4 — repackage (dependency fix)
+
+- Republished because 0.3.3 (and 0.3.2) shipped with an unresolved `@monlite/core: "workspace:^"` dependency
+  (published via npm instead of pnpm), which cannot install outside the monorepo. No code
+  change from 0.3.3 (and 0.3.2); the `@monlite/core` range now correctly resolves to `^2.6.x`.
+
 ## 0.3.3 — completion fencing
 
 - **A reclaimed job rejects its original worker's stale write.** After a job is

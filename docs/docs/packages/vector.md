@@ -27,7 +27,10 @@ await db.collection("docs").findSimilar({ vector: queryEmbedding, topK: 5, where
 
 With a `where`, `findSimilar()` over-fetches nearest neighbours before filtering, so a
 selective filter doesn't drop matches that exist further out; tune the pool with
-`{ candidates }` (default `max(topK * 10, 200)`). Indexing is linear at scale (vec0 keyed
+`{ candidates }` (default `max(topK * 10, 200)`). The vec0 neighbour count is **capped at
+4096** (sqlite-vec's hard limit), so a `topK` or `candidates` above that silently returns at
+most 4096 — for exact recall over a larger pre-filtered set, use the dynamic store (below).
+Indexing is linear at scale (vec0 keyed
 on `doc_id`) — 50K vectors index in ~8s, KNN in ~14ms. For **exact** pre-filtered recall
 over a large corpus, use the dynamic store below (the filter runs **inside** the KNN).
 

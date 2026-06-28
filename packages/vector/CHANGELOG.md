@@ -1,5 +1,11 @@
 # @monlite/vector
 
+## 0.5.5 — repackage (dependency fix)
+
+- Republished because 0.5.4 shipped with an unresolved `@monlite/core: "workspace:^"` dependency
+  (published via npm instead of pnpm), which cannot install outside the monorepo. No code
+  change from 0.5.4; the `@monlite/core` range now correctly resolves to `^2.6.x`.
+
 ## 0.5.4 — clamp k to sqlite-vec's limit
 
 - **`findSimilar()` no longer throws on a large `topK`/`candidates`.** The vec0 `k` is

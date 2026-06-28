@@ -28,7 +28,8 @@ separate ingest process, call `collection.catchUp()` to pick up its writes.
 `AND`/`*`, or column filter falls back to a literal-phrase match. With a `where`,
 it over-fetches ranked matches before filtering so a selective filter doesn't drop
 hits that exist further down the ranking; tune the pool with `{ candidates }` (default
-`max(limit * 10, 200)`). For **exact** pre-filtered recall over a large corpus, use the
+`max(limit * 10, 200)`, **capped at 10,000** to stay under SQLite's bound-variable limit).
+For **exact** pre-filtered recall over a large corpus, use the
 dynamic index below (the `where` scopes the MATCH itself).
 
 ## Dynamic index — `createSearchIndex(db)`

@@ -1,5 +1,16 @@
 # @monlite/core
 
+## 2.6.8 — atomic indexing across the full write surface + sync-ingest guard
+
+- **Every mutation and delete now indexes inside its write transaction.** 2.6.7 made
+  `create`/`createMany` atomic with plugin indexing; this extends it to `update` /
+  `updateMany` / `upsert` / `findOneAndUpdate` / `bulkWrite` / `delete` / `deleteMany` /
+  `purgeExpired`, so a failing plugin index (e.g. a wrong-dimension vector) rolls the
+  mutation back instead of leaving a committed-but-unindexed row.
+- **The sync ingest path (`applyRemoteWrite`) honours the write guard.** A remote change
+  can no longer silently fold into — and be lost by — an unrelated in-flight
+  `transactionAsync`; it is rejected and retried on the next pull.
+
 ## 2.6.7 — atomic indexing
 
 - **Plugin index writes now share the triggering write's transaction.** A failing

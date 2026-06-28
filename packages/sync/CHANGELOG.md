@@ -1,5 +1,11 @@
 # @monlite/sync
 
+## 1.3.4 — repackage (dependency fix)
+
+- Republished because 1.3.3 shipped with an unresolved `@monlite/core: "workspace:^"` dependency
+  (published via npm instead of pnpm), which cannot install outside the monorepo. No code
+  change from 1.3.3; the `@monlite/core` range now correctly resolves to `^2.6.x`.
+
 ## 1.3.3 — cursor decode hardening
 
 - **A corrupt/truncated per-collection cursor now restarts cleanly.** A `{`-led cursor that

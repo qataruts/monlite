@@ -1,5 +1,11 @@
 # @monlite/fts
 
+## 0.5.4 — repackage (dependency fix)
+
+- Republished because 0.5.3 shipped with an unresolved `@monlite/core: "workspace:^"` dependency
+  (published via npm instead of pnpm), which cannot install outside the monorepo. No code
+  change from 0.5.3; the `@monlite/core` range now correctly resolves to `^2.6.x`.
+
 ## 0.5.3 — bounded candidate pool
 
 - **`search()` no longer throws on a huge `candidates` value.** With a `where` filter the
