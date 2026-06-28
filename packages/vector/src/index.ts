@@ -379,8 +379,11 @@ export function vector(spec: VectorSpec): MonlitePlugin {
           const metric =
             def.distance === "cosine" ? " distance_metric=cosine" : "";
           db.sqlite.exec(
+            // `doc_id text primary key` makes the per-doc re-index DELETE O(log n)
+            // instead of a full scan of the vector table — keeps bulk ingestion
+            // linear at 10K–100K+ vectors (otherwise it's O(n²)).
             `CREATE VIRTUAL TABLE IF NOT EXISTS "${vecTable(coll)}" ` +
-              `USING vec0(doc_id text, embedding float[${def.dimensions}]${metric})`,
+              `USING vec0(doc_id text primary key, embedding float[${def.dimensions}]${metric})`,
           );
         }
         const count = db.sqlite
