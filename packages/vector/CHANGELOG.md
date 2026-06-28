@@ -1,5 +1,18 @@
 # @monlite/vector
 
+## 0.5.4 — clamp k to sqlite-vec's limit
+
+- **`findSimilar()` no longer throws on a large `topK`/`candidates`.** The vec0 `k` is
+  clamped to sqlite-vec's hard maximum (4096), so a big top-K (or over-fetch under a `where`
+  filter) returns up to 4096 neighbours instead of erroring.
+
+## 0.5.2–0.5.3 — vector hardening (assessment P0/P1)
+
+- **`where`-filtered `findSimilar()` over-fetches then filters + trims to `topK`**, so a
+  selective filter no longer drops nearby matches (tune with `candidates`).
+- **vec0 identifier re-validation** on every dynamic-store call.
+- Brute-force JS KNN fallback when the `vec0` extension isn't available.
+
 ## 0.4.0 — dynamic vector store
 
 - **`createVectorStore(db)`** — a programmatic, **dynamic** vector store (collections

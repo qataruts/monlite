@@ -1,5 +1,20 @@
 # @monlite/sync
 
+## 1.3.3 — cursor decode hardening
+
+- **A corrupt/truncated per-collection cursor now restarts cleanly.** A `{`-led cursor that
+  failed to parse previously fell through to the legacy branch and became a high scalar floor
+  (`"{…"` sorts above any digit-led version) that silently stalled the sync forever. It now
+  starts fresh — re-pulling is safe under last-write-wins.
+
+## 1.3.1–1.3.2 — multi-collection correctness (assessment P0/P2)
+
+- **Per-collection cursors** for the version-cursor adapters (Postgres/MySQL/Mongo): a single
+  global cursor could permanently skip a lagging collection's rows. Each collection now only
+  advances past what it returned (legacy scalar cursors upgrade transparently).
+- **Byte-order collation** pinned on `_monlite_v` comparisons so version paging is consistent
+  regardless of the column's default collation.
+
 ## 1.3.0 — resilient rounds (retry + partial-failure safety)
 
 - **Per-operation retries** — a failed `pull`/`push` now retries with exponential

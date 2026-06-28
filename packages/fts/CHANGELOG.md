@@ -1,5 +1,19 @@
 # @monlite/fts
 
+## 0.5.3 — bounded candidate pool
+
+- **`search()` no longer throws on a huge `candidates` value.** With a `where` filter the
+  candidate pool feeds an `_id IN (…)` filter; it's now capped (≤10,000) so it can't exceed
+  SQLite's bound-variable limit.
+
+## 0.5.1–0.5.2 — search hardening (assessment P0/P1)
+
+- **`where`-filtered `search()` over-fetches then filters**, so a selective filter no longer
+  drops matches that exist further down the rank (tune with `candidates`).
+- **Crash-safe matching** — a malformed FTS5 `MATCH` query is retried as a quoted phrase
+  instead of throwing.
+- **Linear bulk indexing** — deletes go through a `doc_id → rowid` map (was O(n²)).
+
 ## 0.4.0 — dynamic search index
 
 - **`createSearchIndex(db)`** — a programmatic, **dynamic** full-text index (collections
