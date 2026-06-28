@@ -63,6 +63,42 @@ export class Monlite {
   readonly maxRows?: number;
   /** Serializes async transactions so their await points never interleave. */
   private txTail: Promise<unknown> = Promise.resolve();
+  /** Depth of in-flight async transactions, and an async-context store to tell a
+   *  transaction's OWN writes apart from foreign ones during its await window. */
+  private asyncTxDepth = 0;
+  private als: any;
+  private alsLoaded = false;
+
+  private getAls(): any {
+    if (!this.alsLoaded) {
+      this.alsLoaded = true;
+      try {
+        const proc: any = typeof process !== "undefined" ? process : undefined;
+        const mod = proc?.getBuiltinModule?.("async_hooks");
+        this.als = mod ? new mod.AsyncLocalStorage() : null;
+      } catch {
+        this.als = null;
+      }
+    }
+    return this.als;
+  }
+
+  /**
+   * @internal Throw if a plain write is issued from OUTSIDE an in-flight
+   * `transactionAsync` callback — on a single connection it would silently fold
+   * into that transaction (committing/rolling back with it). Writes from within
+   * the transaction's own callback are allowed.
+   */
+  assertWriteAllowed(): void {
+    if (this.asyncTxDepth === 0) return;
+    const als = this.getAls();
+    if (als && als.getStore() !== undefined) return; // inside the active tx
+    throw new MonliteError(
+      "A write was issued from outside an in-flight transactionAsync. Await the " +
+        "transaction before writing, or perform the write inside its callback — " +
+        "plain writes can't be safely interleaved with an async transaction on one connection.",
+    );
+  }
 
   constructor(filename: string, options: MonliteOptions = {}) {
     this.driver = createDriver(filename, {
@@ -249,7 +285,9 @@ export class Monlite {
    * Calls are **serialized** so two concurrent async transactions can't
    * interleave on the shared connection — the right primitive for things like a
    * double-entry posting (`read balances → compute → write debit + credit`).
-   * Avoid issuing unrelated writes from outside while one is in flight.
+   * Unrelated writes issued from OUTSIDE the callback while one is in flight are
+   * rejected (they'd otherwise silently fold into this transaction on the shared
+   * connection) — await it first, or do the write inside the callback.
    */
   async transactionAsync<R>(fn: (db: this) => Promise<R> | R): Promise<R> {
     this.assertOpen();
@@ -259,9 +297,17 @@ export class Monlite {
           "driver (better-sqlite3 / node:sqlite) or update @monlite/wasm.",
       );
     }
-    const run = this.txTail.then(() =>
-      this.driver.transactionAsync!(async () => fn(this)),
-    );
+    const als = this.getAls();
+    const token = {};
+    const run = this.txTail.then(() => {
+      this.asyncTxDepth++;
+      const exec = () => this.driver.transactionAsync!(async () => fn(this));
+      // Run inside an async-context scope so the transaction's own writes are
+      // recognised (and foreign writes during its awaits are rejected).
+      return Promise.resolve(als ? als.run(token, exec) : exec()).finally(() => {
+        this.asyncTxDepth--;
+      });
+    });
     // Keep the queue alive even if this run rejects.
     this.txTail = run.then(
       () => undefined,

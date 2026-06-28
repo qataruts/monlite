@@ -646,6 +646,7 @@ export class Collection<T = Doc> {
 
   async create(args: CreateArgs<T>): Promise<WithId<T>> {
     this.ensureTable();
+    this.mon.assertWriteAllowed();
     const row = this.buildInsert(args.data);
     const recorder = this.recorder;
     const write = () => {
@@ -659,6 +660,7 @@ export class Collection<T = Doc> {
 
   async createMany(args: CreateManyArgs<T>): Promise<{ count: number }> {
     this.ensureTable();
+    this.mon.assertWriteAllowed();
     const stmt = this.db.prepare(this.insertSql());
     const recorder = this.recorder;
     const ids: string[] = [];
@@ -937,6 +939,7 @@ export class Collection<T = Doc> {
     single: boolean,
   ): WithId<T>[] {
     this.ensureTable();
+    this.mon.assertWriteAllowed();
     const params: any[] = [];
     const clause = buildWhere(where, {
       params,
@@ -987,6 +990,7 @@ export class Collection<T = Doc> {
 
   async upsert(args: UpsertArgs<T>): Promise<WithId<T>> {
     this.ensureTable();
+    this.mon.assertWriteAllowed();
     // Find + create/update run inside ONE transaction so concurrent/interleaved
     // upserts can't both miss and double-insert.
     const result = this.guard(() =>
@@ -1218,6 +1222,7 @@ export class Collection<T = Doc> {
     single: boolean,
   ): WithId<T>[] {
     this.ensureTable();
+    this.mon.assertWriteAllowed();
     const params: any[] = [];
     const clause = buildWhere(where, {
       params,
