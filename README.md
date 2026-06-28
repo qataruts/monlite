@@ -259,9 +259,9 @@ Runnable demos are in [`examples/`](examples/).
 
 ## Status
 
-Production-ready and published. Current versions: `@monlite/core` **2.6.1**, `@monlite/sync`
+Production-ready and published. Current versions: `@monlite/core` **2.6.2**, `@monlite/sync`
 1.3.0, `@monlite/vector` & `@monlite/fts` 0.4.0, `@monlite/kv` & `@monlite/queue` 0.2.0,
-`@monlite/cron` 0.1.1, `@monlite/wasm` 0.2.0. The 2.x API is frozen.
+`@monlite/cron` 0.1.1, `@monlite/wasm` **0.2.1**. The 2.x API is frozen.
 
 The Python port (`pip install monlite`) currently ships documents + kv, with the rest of the
 package family in progress.
