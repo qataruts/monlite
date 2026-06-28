@@ -44,8 +44,8 @@
   racing writer (e.g. a separate jobs worker on the same `.db`) blocks, re-reads the
   already-bumped row, and cleanly returns `null` (lost CAS) instead of erroring on a
   stale WAL snapshot. Single-connection callers are unaffected (they serialize
-  anyway). This is the load-bearing primitive for the platform-ai durable tier
-  (`plan/PLATFORM-AI-ADOPTION.md`). Proven by a cross-process test: 8 separate
+  anyway). This is the load-bearing primitive for durable cross-process job
+  workloads. Proven by a cross-process test: 8 separate
   worker processes race to claim one job — exactly one wins, the rest return `null`,
   zero `SQLITE_BUSY` errors, version bumped exactly once.
 
@@ -68,8 +68,8 @@
 
 ## 2.4.0 — AI-agent harness primitives
 
-Unblocks the local-agent-backend track (`plan/PLATFORM-AI-ADOPTION.md`). All
-SQLite-native; pairs with `@monlite/kv` `setNX` and `@monlite/queue` dedupe.
+SQLite-native primitives for a local agent/job backend; pair with `@monlite/kv`
+`setNX` and `@monlite/queue` dedupe.
 
 - **Compound unique indexes** — `collection(name, { uniqueIndexes: [["tenantId",
   "jobId", "key"]] })`. A duplicate throws `MonliteUniqueConstraintError` (the
@@ -82,8 +82,6 @@ SQLite-native; pairs with `@monlite/kv` `setNX` and `@monlite/queue` dedupe.
 
 ## 2.3.0 — observability
 
-Closes P1-3 from `plan/PRODUCTION-READINESS.md`.
-
 - **`db.stats()`** — `{ sizeBytes, pageSize, pageCount, collections, indexes }`
   for monitoring/diagnostics.
 - **`onQuery` option** on `createDb` — a hook called after each statement with
@@ -93,8 +91,6 @@ Closes P1-3 from `plan/PRODUCTION-READINESS.md`.
   backup/recovery, concurrency, money-precision, and the error reference.
 
 ## 2.2.0 — async transactions & Mongo-API completeness
-
-Closes P0-1 and a chunk of P1-1 from `plan/PRODUCTION-READINESS.md`.
 
 - **`db.transactionAsync(async (tx) => …)`** — an atomic unit of work whose
   callback **may `await`** (read → compute → write), all inside one
@@ -113,7 +109,7 @@ Closes P0-1 and a chunk of P1-1 from `plan/PRODUCTION-READINESS.md`.
 
 ## 2.1.0 — durability & maintenance
 
-Hardening toward system-of-record use (see `plan/PRODUCTION-READINESS.md`).
+Hardening toward system-of-record use.
 
 - **`db.checkIntegrity(quick?)`** — verify on-disk integrity
   (`PRAGMA integrity_check` / `quick_check`); returns `true` or the problems.

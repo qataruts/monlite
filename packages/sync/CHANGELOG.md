@@ -2,8 +2,6 @@
 
 ## 1.3.0 — resilient rounds (retry + partial-failure safety)
 
-Closes P1-2 from `plan/PRODUCTION-READINESS.md`.
-
 - **Per-operation retries** — a failed `pull`/`push` now retries with exponential
   backoff + jitter (`retries`, default 4; `retryBaseMs`, default 200) before the
   round fails, instead of waiting a full poll interval. Also makes one-shot

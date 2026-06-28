@@ -34,9 +34,8 @@ const job = await jobs.findOneAndUpdate({
 
 Pair it with [`@monlite/queue`](/packages/queue) for the work queue,
 [`@monlite/kv`](/packages/kv) `setNX` for single-flight locks/nonces, and
-compound-unique indexes for idempotency. This is exactly how
-[platform-ai](https://github.com/qataruts) runs its durable job/mission/approval
-engine on a single file — no Mongo or Redis.
+compound-unique indexes for idempotency — a durable job/mission/approval engine
+on a single file, no Mongo or Redis.
 
 ## RAG in one file
 
