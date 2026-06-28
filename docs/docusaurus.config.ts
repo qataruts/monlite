@@ -7,8 +7,8 @@ const config: Config = {
   tagline: "The local-first database for TypeScript — documents, vectors, cache, queue, cron, in one .db",
   favicon: "img/favicon.svg",
 
-  url: "https://monlite.dev",
-  baseUrl: "/",
+  url: "https://qataruts.github.io",
+  baseUrl: "/monlite/",
   organizationName: "qataruts",
   projectName: "monlite",
 

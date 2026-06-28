@@ -11,7 +11,7 @@ const db = createDb("./app.db");
 
 That's it. No server. No migrations. No configuration. Everything below lives in `app.db`.
 
-📖 [Docs](https://monlite.dev) · 🎮 [Live demo](https://monlite.dev/demo) — monlite running in your browser · 💻 [GitHub](https://github.com/qataruts/monlite)
+📖 [Docs](https://qataruts.github.io/monlite) · 🎮 [Live demo](https://qataruts.github.io/monlite/demo) — monlite running in your browser · 💻 [GitHub](https://github.com/qataruts/monlite)
 
 ---
 
@@ -246,7 +246,7 @@ offline, ship a CLI tool, build a desktop app, or keep data on-device. monlite i
 
 ## Documentation
 
-Full guide at [monlite.dev](https://monlite.dev):
+Full guide at the [documentation site](https://qataruts.github.io/monlite):
 
 - [Getting started](docs/docs/getting-started.md) · [Core API](docs/docs/core/documents.md)
 - Packages: [vector](docs/docs/packages/vector.md) · [fts](docs/docs/packages/fts.md) · [kv](docs/docs/packages/kv.md) · [queue](docs/docs/packages/queue.md) · [cron](docs/docs/packages/cron.md) · [sync](docs/docs/packages/sync.md) · [wasm](docs/docs/packages/wasm.md)

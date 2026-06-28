@@ -39,7 +39,7 @@ install only what you need.
 | [`@monlite/cron`](/packages/cron) | Cron servers | Persisted scheduled jobs (5-field syntax) |
 | [`@monlite/sync`](/packages/sync) | Cloud sync | Local-first replication to MongoDB / PostgreSQL / MySQL |
 | [`@monlite/wasm`](/packages/wasm) | — | Run monlite in the **browser** on SQLite-WASM |
-| [`@monlite/electron`](/packages/electron) | — | Share one database across Electron windows over IPC |
+| [`@monlite/electron`](https://github.com/qataruts/monlite/tree/main/packages/electron) | — | Share one database across Electron windows over IPC |
 
 ## Why monlite
 

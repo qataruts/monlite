@@ -3,7 +3,7 @@
 The local-first database for Python — documents and a cache over **one SQLite file**, with a
 pure-standard-library core. No dependencies required.
 
-`monlite` is the Python port of [monlite](https://monlite.dev). It reads and writes the **same
+`monlite` is the Python port of [monlite](https://qataruts.github.io/monlite). It reads and writes the **same
 `.db` file** as the TypeScript `@monlite/*` packages, so Python and Node can share one database.
 Python ingests or embeds; Node serves — or any split you like.
 
@@ -61,7 +61,7 @@ for doc in db.collection("docs").find_many(where={"tenantId": "t1"}):
 ```
 
 The two runtimes are fully independent — each is a complete library. The shared-file interop
-is a bonus you opt into. See the [file format spec](https://monlite.dev/reference/file-format)
+is a bonus you opt into. See the [file format spec](https://qataruts.github.io/monlite/reference/file-format)
 for the conventions both sides follow.
 
 ## Optional extras
@@ -79,7 +79,7 @@ pip install "monlite[mongo]"     # sync to MongoDB
 
 **Documents and kv are implemented** and covered by tests — including an interop suite that
 round-trips a `.db` file between Node and Python. Queue, cron, FTS, the `[vector]` extra, and
-sync adapters are in progress. The [file format](https://monlite.dev/reference/file-format) is
+sync adapters are in progress. The [file format](https://qataruts.github.io/monlite/reference/file-format) is
 the contract they all share.
 
 MIT

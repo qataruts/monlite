@@ -2,8 +2,8 @@ import { defineConfig } from "vite";
 import { resolve } from "path";
 
 export default defineConfig({
-  // Served under /demo on the docs site (monlite.dev/demo) via GitHub Pages.
-  base: "/demo/",
+  // Served under /demo on the docs site (qataruts.github.io/monlite/demo) via GitHub Pages.
+  base: "/monlite/demo/",
   resolve: {
     alias: {
       // Polyfill Node built-ins so @monlite/core (built for Node) runs in the browser.
