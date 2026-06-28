@@ -60,6 +60,7 @@ function stripSystem(obj: Record<string, any>): Record<string, any> {
 }
 
 const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const UTF8 = new TextEncoder();
 
 function sqliteType(type: ColumnType): string {
   return type === "JSON" ? "TEXT" : type;
@@ -160,6 +161,18 @@ export class Collection<T = Doc> {
       return fn();
     } catch (err) {
       throw normalizeDriverError(err, this.name);
+    }
+  }
+
+  /** Enforce `maxDocumentBytes` (a guard against unbounded/untrusted input). */
+  private assertDocSize(doc: Record<string, any>): void {
+    const max = this.mon.maxDocumentBytes;
+    if (!max) return;
+    const bytes = UTF8.encode(JSON.stringify(doc)).length;
+    if (bytes > max) {
+      throw new MonliteQueryError(
+        `Document exceeds maxDocumentBytes for "${this.name}" (${bytes} > ${max} bytes)`,
+      );
     }
   }
 
@@ -470,6 +483,7 @@ export class Collection<T = Doc> {
     const now = Date.now();
     const id = input._id != null ? String(input._id) : objectId();
     const doc = stripSystem(input);
+    this.assertDocSize(doc);
     const returned = {
       ...doc,
       _id: id,
@@ -510,6 +524,7 @@ export class Collection<T = Doc> {
     updatedDoc: Record<string, any>,
     now: number,
   ): { setSql: string; values: any[] } {
+    this.assertDocSize(updatedDoc);
     if (this.mode === "document") {
       return {
         setSql: `data = ?, updated_at = ?`,
@@ -712,17 +727,31 @@ export class Collection<T = Doc> {
     args: Omit<FindManyArgs<T>, "select"> & { select?: S } = {},
   ): Promise<Projected<T, S>[]> {
     const a = args as FindManyArgs<T>;
+    // maxRows: cap unbounded reads. Probe one past the cap; throw if exceeded so
+    // a missing `take` can't materialize an unbounded result set.
+    const cap = this.mon.maxRows;
+    const probe = cap && a.take == null ? { ...a, take: cap + 1 } : a;
+    const checkCap = (n: number) => {
+      if (cap && a.take == null && n > cap) {
+        throw new MonliteQueryError(
+          `findMany on "${this.name}" would return more than maxRows (${cap}) — add a take/limit or a tighter where`,
+        );
+      }
+    };
     if (!a.lookup) {
-      return this.findManyCore(a) as unknown as Projected<T, S>[];
+      const rows = this.findManyCore(probe);
+      checkCap(rows.length);
+      return rows as unknown as Projected<T, S>[];
     }
 
     const specs = Array.isArray(a.lookup) ? a.lookup : [a.lookup];
     // Fetch full base docs (need localFields), join, then project.
     let rows: any[] = this.findManyCore({
-      ...a,
+      ...probe,
       select: undefined,
       lookup: undefined,
     });
+    checkCap(rows.length);
     for (const spec of specs) rows = await this.applyLookup(rows, spec);
 
     if (a.select) {

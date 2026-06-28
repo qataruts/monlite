@@ -23,6 +23,20 @@ operations playbook.
   queue's atomic claim are cross-process safe (core ≥ 2.6.1).
 - `busyTimeout` (default 5000 ms) controls how long a writer waits for the lock.
 
+## Resource limits (untrusted / multi-tenant input)
+
+Off by default; enable as guards when accepting untrusted input:
+
+- `maxDocumentBytes` — reject any write whose serialized document exceeds this
+  size, so a single request can't store an unbounded blob.
+- `maxRows` — cap an **unbounded** `findMany` (no `take`): it throws past the cap
+  instead of materializing a huge result set. Internal queries (indexing,
+  reactivity) and `count()` are never capped; an explicit `take` bypasses it.
+
+```ts
+const db = createDb("app.db", { maxDocumentBytes: 256 * 1024, maxRows: 10_000 });
+```
+
 ## Money & precision
 
 Store money as integer minor units (cents), not floats. `$inc` on integers is

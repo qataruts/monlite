@@ -461,6 +461,18 @@ export interface MonliteOptions {
    * overhead when provided.
    */
   onQuery?: (event: { sql: string; durationMs: number }) => void;
+  /**
+   * Reject writes whose serialized document exceeds this many bytes. A guard
+   * against unbounded/untrusted input (multi-tenant or public-facing use).
+   * Off by default.
+   */
+  maxDocumentBytes?: number;
+  /**
+   * Cap the rows an unbounded `findMany` (no `take`) may return — it throws past
+   * this instead of materializing an unbounded result set. Off by default;
+   * internal queries (indexing/reactivity) are never capped.
+   */
+  maxRows?: number;
 }
 
 /** Database statistics from {@link Monlite.stats}. */

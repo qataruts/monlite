@@ -58,6 +58,9 @@ export class Monlite {
   private readonly plugins: MonlitePlugin[];
   private readonly encrypted: boolean;
   private closed = false;
+  /** @internal Resource limits (0/undefined = off). */
+  readonly maxDocumentBytes?: number;
+  readonly maxRows?: number;
   /** Serializes async transactions so their await points never interleave. */
   private txTail: Promise<unknown> = Promise.resolve();
 
@@ -74,6 +77,8 @@ export class Monlite {
       onQuery: options.onQuery,
     });
     this.encrypted = options.encryption !== undefined;
+    this.maxDocumentBytes = options.maxDocumentBytes;
+    this.maxRows = options.maxRows;
 
     this.autoIndexer = new AutoIndexer(
       this.driver,
