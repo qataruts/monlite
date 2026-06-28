@@ -20,8 +20,13 @@ export interface Driver {
   readonly name: string;
   exec(sql: string): void;
   prepare(sql: string): PreparedStatement;
-  /** Run `fn` inside a transaction; rolls back and rethrows if it throws. */
-  transaction<T>(fn: () => T): T;
+  /**
+   * Run `fn` inside a transaction; rolls back and rethrows if it throws.
+   * `immediate` acquires the write lock up front (BEGIN IMMEDIATE) so two
+   * processes doing read-then-write don't deadlock on lock upgrade — use it for
+   * compare-and-set patterns (kv setNX/incr).
+   */
+  transaction<T>(fn: () => T, immediate?: boolean): T;
   /**
    * Like {@link transaction} but `fn` may be async — the transaction stays open
    * across `await`s (BEGIN IMMEDIATE … COMMIT). Optional: custom drivers that

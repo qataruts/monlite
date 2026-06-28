@@ -147,9 +147,9 @@ export class WasmDriver implements Driver {
     return wrapped;
   }
 
-  transaction<T>(fn: () => T): T {
+  transaction<T>(fn: () => T, immediate = false): T {
     const savepoint = `monlite_sp_${this.depth}`;
-    if (this.depth === 0) this.raw.run("BEGIN");
+    if (this.depth === 0) this.raw.run(immediate ? "BEGIN IMMEDIATE" : "BEGIN");
     else this.raw.run(`SAVEPOINT ${savepoint}`);
     this.depth++;
     try {

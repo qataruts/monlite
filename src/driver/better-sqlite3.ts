@@ -80,9 +80,10 @@ export class BetterSqlite3Driver implements Driver {
     this.cache.set(sql, stmt);
   }
 
-  transaction<T>(fn: () => T): T {
+  transaction<T>(fn: () => T, immediate = false): T {
     // Nested calls automatically use SAVEPOINTs in better-sqlite3.
-    return this.raw.transaction(fn)();
+    const tx = this.raw.transaction(fn);
+    return immediate ? tx.immediate() : tx();
   }
 
   private asyncSp = 0;

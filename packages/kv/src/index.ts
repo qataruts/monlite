@@ -102,13 +102,15 @@ export function kv(db: Monlite, options: KVOptions = {}): KV {
       setRaw(key, JSON.stringify(value), expires);
     },
     setNX(key, value, opts) {
+      // IMMEDIATE: take the write lock up front so two processes racing the same
+      // key can't deadlock on lock upgrade — the loser cleanly gets `false`.
       return driver.transaction(() => {
         const row = getRow(key);
         if (fresh(row)) return false; // a live key already exists
         const expires = opts?.ttl != null ? now() + opts.ttl : null;
         setRaw(key, JSON.stringify(value), expires);
         return true;
-      });
+      }, true);
     },
     has(key) {
       return api.get(key) !== undefined;
@@ -117,7 +119,7 @@ export function kv(db: Monlite, options: KVOptions = {}): KV {
       return del(key);
     },
     incr(key, by = 1) {
-      return driver.transaction(() => {
+      return driver.transaction(() => {  // IMMEDIATE: read-modify-write needs the write lock up front
         const row = getRow(key);
         let n = 0;
         let expires: number | null = null;
@@ -132,7 +134,7 @@ export function kv(db: Monlite, options: KVOptions = {}): KV {
         const next = n + by;
         setRaw(key, JSON.stringify(next), expires);
         return next;
-      });
+      }, true);
     },
     decr(key, by = 1) {
       return api.incr(key, -by);
