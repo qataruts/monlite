@@ -1,5 +1,12 @@
 # @monlite/core
 
+## 2.6.5 — sync version-counter recovery
+
+- **The per-node sync version counter resumes across restarts.** It reset to 0 on
+  startup, so a write within the same millisecond as a pre-restart write could reuse
+  a `seq` — colliding or mis-ordering under last-write-wins. The counter now resumes
+  past the highest version recorded for this node.
+
 ## 2.6.4 — write isolation + resource limits
 
 - **Foreign writes during an in-flight `transactionAsync` are now rejected.** A plain write
