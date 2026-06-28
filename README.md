@@ -260,8 +260,12 @@ Runnable demos are in [`examples/`](examples/).
 ## Status
 
 Production-ready and published. Current versions: `@monlite/core` **2.6.2**, `@monlite/sync`
-1.3.0, `@monlite/vector` & `@monlite/fts` 0.4.0, `@monlite/kv` & `@monlite/queue` 0.2.0,
-`@monlite/cron` 0.1.1, `@monlite/wasm` **0.2.1**. The 2.x API is frozen.
+1.3.0, `@monlite/vector` **0.5.0**, `@monlite/fts` 0.4.0, `@monlite/kv` 0.2.0,
+`@monlite/queue` **0.3.0**, `@monlite/cron` 0.1.1, `@monlite/wasm` **0.2.2**. The 2.x API is frozen.
+
+The [live demo](https://qataruts.github.io/monlite/demo) showcases every package — documents,
+full-text (FTS5), **vector/semantic search**, cache, queue, and cron — running 100% in the
+browser on SQLite-WASM, with semantic embeddings computed on-device via Transformers.js.
 
 The Python port (`pip install monlite`) currently ships documents + kv, with the rest of the
 package family in progress.

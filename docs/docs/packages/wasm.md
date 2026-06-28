@@ -55,7 +55,28 @@ await db.collection("docs").search("hello world"); // FTS5, in the browser
 The live [demo](https://qataruts.github.io/monlite/demo) runs exactly this — an
 in-browser document store with FTS5 search, no server.
 
-**Vector search** (`@monlite/vector`) needs the `vec0` extension (sqlite-vec),
-which isn't in these WASM builds yet, so it remains server-side for now.
+## Vector search in the browser
+
+`@monlite/vector` (0.5.0+) also works in the browser. When the native `vec0`
+extension (sqlite-vec) can't be loaded — as in SQLite-WASM — `findSimilar()`
+transparently falls back to an exact brute-force JS implementation (cosine/L2
+over a plain table). No config needed; it's the same API:
+
+```ts
+import { vector } from "@monlite/vector";
+
+const db = createDb(":memory:", {
+  driver: wasmDriver(SQL),
+  plugins: [vector({ docs: { field: "embedding", dimensions: 384, distance: "cosine" } })],
+});
+await db.collection("docs").findSimilar({ vector: queryEmbedding, topK: 5 });
+```
+
+It's O(n) per query (exact, not approximate) — ideal for the thousands-of-vectors
+scale a local/edge store holds. The demo computes embeddings on-device with
+Transformers.js, so semantic search runs end-to-end with no server.
+
+> In a browser bundle, alias the native `sqlite-vec` module to a stub (it's only
+> used on the native path); see the demo's `vite.config.ts`.
 
 Use this for offline-first web apps, local-first PWAs, and in-browser demos.
