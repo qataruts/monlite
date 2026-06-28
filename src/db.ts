@@ -92,9 +92,16 @@ export class Monlite {
   /** @internal Notify plugins that documents changed (post-commit). */
   firePluginAfterWrite(collection: string, ids: string[]): void {
     if (this.plugins.length === 0 || ids.length === 0) return;
-    for (const plugin of this.plugins) {
-      plugin.afterWrite?.(this, { collection, ids });
-    }
+    const fire = () => {
+      for (const plugin of this.plugins) {
+        plugin.afterWrite?.(this, { collection, ids });
+      }
+    };
+    // Batch all plugin index writes (fts/vector) into a single transaction, so a
+    // bulk write does ONE commit/fsync instead of one per indexed row (N+1). When
+    // already inside a transaction this nests as a SAVEPOINT.
+    if (ids.length > 1) this.driver.transaction(fire);
+    else fire();
   }
 
   /** Stable node id for LWW tie-breaking (only when sync is enabled). */
