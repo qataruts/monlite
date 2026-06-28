@@ -71,6 +71,25 @@ export class WasmDriver implements Driver {
     this.raw.run(sql);
   }
 
+  /**
+   * Better-sqlite3-compatible escape hatch surfaced as `db.sqlite`. sql.js's own
+   * `Statement.get()` returns column-value arrays, not row objects, which breaks
+   * plugins (fts, vector, kv) that expect `prepare().get()/.all()` to return
+   * objects. Route those through the driver's normalized statements; pass the
+   * remaining native methods straight to the sql.js handle.
+   */
+  get sqlite(): any {
+    return {
+      prepare: (sql: string) => this.prepare(sql),
+      exec: (sql: string) => this.exec(sql),
+      run: (sql: string, params: any[] = []) => this.raw.run(sql, params),
+      export: () => this.raw.export(),
+      create_function: (name: string, fn: (...a: any[]) => any) =>
+        this.raw.create_function(name, fn),
+      raw: this.raw,
+    };
+  }
+
   private lastInsertRowid(): number {
     const res = this.raw.exec("SELECT last_insert_rowid() AS id");
     return (res[0]?.values?.[0]?.[0] as number) ?? 0;

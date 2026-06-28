@@ -1,8 +1,8 @@
-import initSqlJs from "sql.js";
-// Bundle the WASM with the demo (Vite emits it + rewrites the URL for the base
-// path). This keeps the binary version-matched to the sql.js glue above and
-// avoids any CDN/version-mismatch failures.
-import sqlWasmUrl from "sql.js/dist/sql-wasm.wasm?url";
+// sql.js's default build lacks FTS5 (the demo's search uses it); fts5-sql-bundle
+// is sql.js compiled WITH FTS5, same initSqlJs API. Vite bundles the WASM (?url)
+// so it's version-matched and correctly prefixed under /monlite/demo/.
+import initSqlJs from "fts5-sql-bundle/dist/sql-wasm.js";
+import sqlWasmUrl from "fts5-sql-bundle/dist/sql-wasm.wasm?url";
 import { createDb } from "@monlite/core";
 import { wasmDriver, exportDatabase } from "@monlite/wasm";
 import { fts } from "@monlite/fts";

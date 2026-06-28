@@ -13,6 +13,7 @@
     "@monlite/kv": "workspace:*",
     "@monlite/wasm": "workspace:*",
     "buffer": "^6.0.3",
+    "fts5-sql-bundle": "^1.0.2",
     "sql.js": "^1.12.0"
   },
   "devDependencies": {

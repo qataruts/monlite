@@ -33,6 +33,14 @@ export interface Driver {
   rekey?(key: string, cipher?: string): void;
   /** The underlying native handle (better-sqlite3 Database / node:sqlite DatabaseSync). */
   readonly raw: any;
+  /**
+   * Optional escape-hatch handle exposed as `db.sqlite`, with a
+   * better-sqlite3-compatible `prepare().get()/.all()/.run()` + `exec()`. Drivers
+   * whose `raw` already has that shape (better-sqlite3, node:sqlite) omit it and
+   * `db.sqlite` falls back to `raw`. The wasm driver provides it so plugins
+   * (fts, vector, kv) work in the browser where `raw` is the sql.js handle.
+   */
+  readonly sqlite?: any;
 }
 
 export interface DriverOpenOptions {

@@ -68,6 +68,9 @@ importers:
       buffer:
         specifier: ^6.0.3
         version: 6.0.3
+      fts5-sql-bundle:
+        specifier: ^1.0.2
+        version: 1.0.2
       sql.js:
         specifier: ^1.12.0
         version: 1.14.1
@@ -1245,6 +1248,10 @@ packages:
     resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
     os: [darwin]
+
+  fts5-sql-bundle@1.0.2:
+    resolution: {integrity: sha512-C7gsO0ZCej7mdjSlV1Nku0L44cg26t1XMCIqSdLrPvWjznMgIOa1lkWgSeOp+g1qeNDF7Gldm6gyAlheykVLkQ==}
+    engines: {node: '>=14.0.0'}
 
   function-bind@1.1.2:
     resolution: {integrity: sha512-7XHNxH7qX9xG5mIwxkhumTox/MIRNcOgDrxWsMt2pAr23WHp6MrRlN7FBSFpCpr+oVO0F744iUgR82nJMfG2SA==}
@@ -2851,6 +2858,8 @@ snapshots:
 
   fsevents@2.3.3:
     optional: true
+
+  fts5-sql-bundle@1.0.2: {}
 
   function-bind@1.1.2: {}
 

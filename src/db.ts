@@ -104,7 +104,9 @@ export class Monlite {
 
   /** The underlying native database handle (escape hatch). */
   get sqlite(): any {
-    return this.driver.raw;
+    // Prefer a driver-provided, better-sqlite3-compatible facade (the wasm
+    // driver supplies one so plugins work in the browser); else the raw handle.
+    return this.driver.sqlite ?? this.driver.raw;
   }
 
   /** Name of the active backend: `"better-sqlite3"` or `"node:sqlite"`. */
