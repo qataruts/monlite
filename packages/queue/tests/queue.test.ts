@@ -199,3 +199,26 @@ describe("reaper is scoped to its own queue", () => {
     expect(q.getJob(jobB.id)?.status).toBe("active"); // untouched
   }, 10_000);
 });
+
+describe("fencing: a reclaimed job rejects the original worker's stale write", () => {
+  it("completeInternal/failInternal no-op once attempts bumped by a reclaim", async () => {
+    const db = open();
+    const q = createQueue(db);
+    queues.push(q);
+    const added = q.add("x", { n: 1 });
+    const a = (q as any).claimInternal("x"); // worker A claims (attempts=1)
+    expect(a.attempts).toBe(1);
+    // reaper resets A's stuck job; worker B reclaims it (attempts=2)
+    db.sqlite.prepare("UPDATE _jobs SET status='pending', locked_by=NULL WHERE id=?").run(added.id);
+    const b = (q as any).claimInternal("x");
+    expect(b.attempts).toBe(2);
+    // A revives → its stale completion is fenced out, B's lands
+    expect((q as any).completeInternal(a, "A")).toBe(false);
+    expect(q.getJob(added.id)?.status).toBe("active");
+    expect((q as any).heartbeatInternal(added.id, a.attempts)).toBeUndefined(); // stale hb: no-op
+    expect((q as any).completeInternal(b, "B")).toBe(true);
+    const done = q.getJob(added.id);
+    expect(done?.status).toBe("done");
+    expect(done?.result).toBe("B");
+  });
+});

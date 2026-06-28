@@ -149,7 +149,7 @@ class WorkerImpl implements Worker {
       let hb: ReturnType<typeof setInterval> | undefined;
       if (this.visibilityTimeout > 0) {
         hb = setInterval(
-          () => this.q.heartbeatInternal(job.id),
+          () => this.q.heartbeatInternal(job.id, job.attempts),
           Math.max(1000, Math.floor(this.visibilityTimeout / 2)),
         );
         hb.unref?.();
@@ -158,12 +158,13 @@ class WorkerImpl implements Worker {
         .then(() => this.handler(job))
         .then(
           (result) => {
-            this.q.completeInternal(job, result);
-            this.q.emit("completed", job, result);
+            // Only emit if the write landed — a fenced-out (reclaimed) job is now
+            // owned by another worker, which will emit its own result.
+            if (this.q.completeInternal(job, result))
+              this.q.emit("completed", job, result);
           },
           (err) => {
-            this.q.failInternal(job, err);
-            this.q.emit("failed", job, err);
+            if (this.q.failInternal(job, err)) this.q.emit("failed", job, err);
           },
         )
         .finally(() => {
@@ -344,10 +345,14 @@ export class Queue extends EventEmitter {
   }
 
   /** @internal Extend a running job's visibility timeout (worker heartbeat). */
-  heartbeatInternal(id: number): void {
+  heartbeatInternal(id: number, attempts: number): void {
+    // Fence on the claim-time attempt: don't heartbeat a job that was already
+    // reclaimed (attempts bumped) by another worker.
     this.driver
-      .prepare(`UPDATE _jobs SET updated_at=? WHERE id=? AND status='active'`)
-      .run(now(), id);
+      .prepare(
+        `UPDATE _jobs SET updated_at=? WHERE id=? AND status='active' AND attempts=?`,
+      )
+      .run(now(), id, attempts);
   }
 
   /** Stop all workers and wait for in-flight jobs to finish. */
@@ -372,36 +377,52 @@ export class Queue extends EventEmitter {
     return row ? deserialize(row) : null;
   }
 
-  /** @internal */
-  completeInternal(job: Job, result: unknown): void {
+  /**
+   * @internal Mark a job done. Returns false if the job was reclaimed by another
+   * worker since this one claimed it (fenced on the claim-time attempt) — the
+   * caller then skips emitting "completed" so a revived stale worker can't clobber
+   * the new run or fire a duplicate event.
+   */
+  completeInternal(job: Job, result: unknown): boolean {
     if (this.removeOnComplete) {
-      this.driver.prepare(`DELETE FROM _jobs WHERE id = ?`).run(job.id);
-    } else {
+      return (
+        this.driver
+          .prepare(`DELETE FROM _jobs WHERE id=? AND attempts=?`)
+          .run(job.id, job.attempts).changes > 0
+      );
+    }
+    return (
       this.driver
         .prepare(
-          `UPDATE _jobs SET status='done', result=?, error=NULL, updated_at=? WHERE id=?`,
+          `UPDATE _jobs SET status='done', result=?, error=NULL, updated_at=? WHERE id=? AND attempts=?`,
         )
-        .run(JSON.stringify(result ?? null), now(), job.id);
-    }
+        .run(JSON.stringify(result ?? null), now(), job.id, job.attempts).changes >
+      0
+    );
   }
 
-  /** @internal */
-  failInternal(job: Job, err: unknown): void {
-    // `job.attempts` was already incremented at claim time.
+  /** @internal Record a failure (retry or dead-letter). Returns false if fenced out (see completeInternal). */
+  failInternal(job: Job, err: unknown): boolean {
+    // `job.attempts` was already incremented at claim time; it also fences this
+    // write against a job another worker has since reclaimed.
     const message = err instanceof Error ? err.message : String(err);
     if (job.attempts < job.maxAttempts) {
-      this.driver
-        .prepare(
-          `UPDATE _jobs SET status='pending', run_at=?, error=?, locked_by=NULL, updated_at=? WHERE id=?`,
-        )
-        .run(now() + this.backoff(job.attempts), message, now(), job.id);
-    } else {
-      this.driver
-        .prepare(
-          `UPDATE _jobs SET status='failed', error=?, updated_at=? WHERE id=?`,
-        )
-        .run(message, now(), job.id);
+      return (
+        this.driver
+          .prepare(
+            `UPDATE _jobs SET status='pending', run_at=?, error=?, locked_by=NULL, updated_at=? WHERE id=? AND attempts=?`,
+          )
+          .run(now() + this.backoff(job.attempts), message, now(), job.id, job.attempts)
+          .changes > 0
+      );
     }
+    return (
+      this.driver
+        .prepare(
+          `UPDATE _jobs SET status='failed', error=?, updated_at=? WHERE id=? AND attempts=?`,
+        )
+        .run(message, now(), job.id, job.attempts).changes > 0
+    );
   }
 }
 
