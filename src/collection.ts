@@ -652,9 +652,12 @@ export class Collection<T = Doc> {
     const write = () => {
       this.db.prepare(this.insertSql()).run(...row.values);
       recorder?.recordLocal(this.name, row._id, "upsert", row.created_at);
+      // Index inside the same transaction so the row + plugin index commit
+      // atomically: a failing afterWrite (e.g. a wrong-dimension vector) rolls
+      // the row back too, instead of leaving it committed but unindexed.
+      this.afterWrite([row._id]);
     };
-    this.guard(() => (recorder ? this.db.transaction(write) : write()));
-    this.afterWrite([row._id]);
+    this.guard(() => this.db.transaction(write));
     return row.returned;
   }
 
@@ -672,9 +675,11 @@ export class Collection<T = Doc> {
           recorder?.recordLocal(this.name, row._id, "upsert", row.created_at);
           ids.push(row._id);
         }
+        // Index inside the same transaction (see create) — a mid-batch indexing
+        // failure rolls the whole batch back, never leaving rows unindexed.
+        this.afterWrite(ids);
       }),
     );
-    this.afterWrite(ids);
     return { count: args.data.length };
   }
 
