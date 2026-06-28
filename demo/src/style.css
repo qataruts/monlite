@@ -204,6 +204,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 3;
+  line-clamp: 3;
   -webkit-box-orient: vertical;
 }
 .memory-footer {
@@ -366,7 +367,9 @@ mark {
   padding: 2px 7px;
   border-radius: 20px;
   text-transform: uppercase;
+  animation: blink 1.4s ease-in-out infinite;
 }
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
 .sql-log {
   font-family: var(--mono);
   font-size: 11px;
