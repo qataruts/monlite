@@ -1,8 +1,9 @@
 # 🌙 monlite
 
-> **The local-first data platform for TypeScript.** Documents, vectors, full-text
-> search, cache, queue, cron — and reactive live queries — in **one SQLite file**,
-> with a **zero-dependency core**. The complete local backend for AI agents.
+> **A local-first database for TypeScript** — a MongoDB-style document database in a
+> single SQLite file, with vectors, full-text search, cache, queue, and cron built in.
+> Zero config, zero server, zero-dependency core. The complete local data layer for
+> apps and AI agents.
 
 ```ts
 import { createDb } from "@monlite/core";
@@ -78,7 +79,7 @@ const claimed = await jobs.findOneAndUpdate({
 
 This is exactly how a real durable job/mission/approval engine + RAG can run on a
 **single file** — proven in production integration. See the
-[AI-agent backend guide](https://monlite.dev/guides/ai-agent-backend).
+[AI-agent backend guide](docs/docs/guides/ai-agent-backend.md).
 
 ---
 
@@ -97,7 +98,7 @@ This is exactly how a real durable job/mission/approval engine + RAG can run on 
 
 **Boundary:** monlite targets **local / edge / desktop / single-machine**. For
 multi-site shared state, very high write volume, or strict HA, keep the managed
-services and [sync](https://monlite.dev/packages/sync) to them — same code, flip the
+services and [sync](docs/docs/packages/sync.md) to them — same code, flip the
 backend.
 
 ---
@@ -139,11 +140,11 @@ await db.transactionAsync(async (tx) => { /* read → compute → write, all-or-
 const handle = users.watch({ where: { roles: { has: "admin" } } }, (u) => render(u.results));
 ```
 
-→ Full reference: **[Documents](https://monlite.dev/core/documents)** ·
-[Queries](https://monlite.dev/core/queries) ·
-[Transactions & CAS](https://monlite.dev/core/transactions) ·
-[Structured collections](https://monlite.dev/core/structured) ·
-[Aggregation](https://monlite.dev/core/aggregation).
+→ Full reference: **[Documents](docs/docs/core/documents.md)** ·
+[Queries](docs/docs/core/queries.md) ·
+[Transactions & CAS](docs/docs/core/transactions.md) ·
+[Structured collections](docs/docs/core/structured.md) ·
+[Aggregation](docs/docs/core/aggregation.md).
 
 ---
 
@@ -174,8 +175,8 @@ kv(db).set("session:42", {"user": "ali"}, ttl=60_000)
 ```
 
 The classic split is first-class: **Python ingests/embeds, Node serves**, over one
-file. See [Python / interop](https://monlite.dev/reference/python) and the
-[file format](https://monlite.dev/reference/file-format).
+file. See [Python / interop](docs/docs/reference/python.md) and the
+[file format](docs/docs/reference/file-format.md).
 
 ---
 
@@ -183,10 +184,10 @@ file. See [Python / interop](https://monlite.dev/reference/python) and the
 
 The full guide lives at **[monlite.dev](https://monlite.dev)**:
 
-- [Getting started](https://monlite.dev/getting-started) · [Core API](https://monlite.dev/core/documents)
-- Packages: [sync](https://monlite.dev/packages/sync) · [vector](https://monlite.dev/packages/vector) · [fts](https://monlite.dev/packages/fts) · [kv](https://monlite.dev/packages/kv) · [queue](https://monlite.dev/packages/queue) · [cron](https://monlite.dev/packages/cron) · [wasm](https://monlite.dev/packages/wasm)
-- Guides: [production](https://monlite.dev/guides/production) · [migrations](https://monlite.dev/guides/migrations) · [the AI-agent backend](https://monlite.dev/guides/ai-agent-backend) · [custom adapters](https://monlite.dev/guides/custom-adapter)
-- Reference: [file format](https://monlite.dev/reference/file-format) · [Python](https://monlite.dev/reference/python) · [benchmarks](https://monlite.dev/reference/benchmarks)
+- [Getting started](docs/docs/getting-started.md) · [Core API](docs/docs/core/documents.md)
+- Packages: [sync](docs/docs/packages/sync.md) · [vector](docs/docs/packages/vector.md) · [fts](docs/docs/packages/fts.md) · [kv](docs/docs/packages/kv.md) · [queue](docs/docs/packages/queue.md) · [cron](docs/docs/packages/cron.md) · [wasm](docs/docs/packages/wasm.md)
+- Guides: [production](docs/docs/guides/production.md) · [migrations](docs/docs/guides/migrations.md) · [the AI-agent backend](docs/docs/guides/ai-agent-backend.md) · [custom adapters](docs/docs/guides/custom-adapter.md)
+- Reference: [file format](docs/docs/reference/file-format.md) · [Python](docs/docs/reference/python.md) · [benchmarks](docs/docs/reference/benchmarks.md)
 
 Runnable demos are in [`examples/`](examples/); the docs site source is in [`docs/`](docs/).
 
