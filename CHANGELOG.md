@@ -1,5 +1,17 @@
 # @monlite/core
 
+## 2.6.4 — write isolation + resource limits
+
+- **Foreign writes during an in-flight `transactionAsync` are now rejected.** A plain write
+  issued from outside the transaction's callback during its await window used to silently
+  fold into the transaction on the shared connection (committing/rolling back with it). It
+  now throws a clear error — tracked via an `AsyncLocalStorage` write-context loaded lazily
+  (so the browser bundle stays clean); writes inside the callback are unaffected.
+- **Opt-in resource limits for untrusted/multi-tenant input.** `maxDocumentBytes` rejects a
+  write whose serialized document exceeds the limit; `maxRows` caps an unbounded `findMany`
+  (no `take`) — it throws past the cap instead of materializing a huge result set. Both off
+  by default; internal queries (indexing/reactivity) and `count()` are never capped.
+
 ## 2.6.3 — browser-clean bundle + batched plugin indexing
 
 - **The ESM bundle no longer statically imports `node:module`.** That single line broke
