@@ -283,3 +283,18 @@ describe("findSimilar where recall (over-fetch then filter)", () => {
     expect((hits[0] as any).flag).toBe(true);
   });
 });
+
+describe("findSimilar clamps k to sqlite-vec's limit", () => {
+  it("a large topK + where does not throw (k capped at 4096)", async () => {
+    const c = open({ d: { field: "e", dimensions: 4, distance: "cosine" } }).collection("d");
+    await c.createMany({
+      data: Array.from({ length: 20 }, (_, i) => ({
+        e: [Math.random(), Math.random(), Math.random(), Math.random()],
+        live: i % 2 === 0,
+      })),
+    });
+    await expect(
+      c.findSimilar({ vector: [1, 0, 0, 0], topK: 500, where: { live: true } }),
+    ).resolves.toBeDefined();
+  });
+});

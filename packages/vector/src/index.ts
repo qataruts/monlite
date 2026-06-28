@@ -172,7 +172,12 @@ function findSimilar<T = Doc>(
   const topK = opts.topK ?? 10;
   // With a where filter, over-fetch nearest neighbours then filter + trim to
   // topK, so a selective filter doesn't drop results that exist further out.
-  const k = opts.where ? Math.max(opts.candidates ?? topK * 10, 200) : topK;
+  // Clamp to sqlite-vec's hard k limit (4096) so a large topK/candidates can't
+  // throw "k value too large".
+  const k = Math.min(
+    4096,
+    opts.where ? Math.max(opts.candidates ?? topK * 10, 200) : topK,
+  );
   const rows = db.sqlite
     .prepare(
       `SELECT doc_id, distance FROM "${vecTable(coll.name)}" ` +

@@ -210,7 +210,10 @@ function search<T = Doc>(
   const limit = opts?.limit ?? 50;
   // With a where filter, over-fetch ranked matches then filter + trim to limit,
   // so a selective filter doesn't drop results that exist further down the rank.
-  const fetch = opts?.where ? Math.max(opts.candidates ?? limit * 10, 200) : limit;
+  // Cap the pool so the `_id IN (...)` filter can't exceed SQLite's variable limit.
+  const fetch = opts?.where
+    ? Math.min(Math.max(opts.candidates ?? limit * 10, 200), 10_000)
+    : limit;
   const rows = ftsMatch(db, coll.name, query, fetch);
 
   let allowed: Set<string> | null = null;
