@@ -576,6 +576,10 @@ export class Collection<T = Doc> {
     ts: number,
   ): void {
     this.ensureTable();
+    // Reject remote ingest issued while an unrelated transactionAsync is in flight
+    // — otherwise it nests into that tx and is lost if the tx rolls back. No-ops in
+    // normal sync (asyncTxDepth === 0); the sync round retries on the next pull.
+    this.mon.assertWriteAllowed();
     if (op === "delete") {
       this.db.prepare(`DELETE FROM "${this.name}" WHERE _id = ?`).run(id);
       this.afterWrite([id]);
@@ -980,10 +984,12 @@ export class Collection<T = Doc> {
             updated_at: now,
           } as WithId<T>);
         }
+        // Index inside the transaction so a failing afterWrite rolls the update
+        // back too (atomic with plugin indexing, as create/createMany).
+        this.afterWrite(result.map((d) => d._id));
         return result;
       }),
     );
-    this.afterWrite(out.map((d) => d._id));
     return out;
   }
 
@@ -1015,6 +1021,7 @@ export class Collection<T = Doc> {
         const now = Date.now();
         const recorder = this.recorder;
 
+        let res: WithId<T>;
         if (row) {
           const current = stripSystem(this.rowToDoc(row));
           const updated = stripSystem(applyUpdate(current, args.update));
@@ -1023,21 +1030,23 @@ export class Collection<T = Doc> {
             .prepare(`UPDATE "${this.name}" SET ${setSql} WHERE _id = ?`)
             .run(...values, row._id);
           recorder?.recordLocal(this.name, row._id, "upsert", now);
-          return {
+          res = {
             ...updated,
             _id: row._id,
             created_at: row.created_at,
             updated_at: now,
           } as WithId<T>;
+        } else {
+          const ins = this.buildInsert(args.create);
+          this.db.prepare(this.insertSql()).run(...ins.values);
+          recorder?.recordLocal(this.name, ins._id, "upsert", ins.created_at);
+          res = ins.returned;
         }
-
-        const ins = this.buildInsert(args.create);
-        this.db.prepare(this.insertSql()).run(...ins.values);
-        recorder?.recordLocal(this.name, ins._id, "upsert", ins.created_at);
-        return ins.returned;
+        // Index inside the transaction (atomic with the write, as create).
+        this.afterWrite([res._id]);
+        return res;
       }),
     );
-    this.afterWrite([result._id]);
     return result;
   }
 
@@ -1082,6 +1091,10 @@ export class Collection<T = Doc> {
         created_at: row.created_at,
         updated_at: now,
       } as WithId<T>;
+      // Index inside the (sync or async) transaction so a failing afterWrite rolls
+      // the CAS back too. Plugin index writes are raw driver writes, so they don't
+      // re-enter assertWriteAllowed under transactionAsync.
+      this.afterWrite([row._id]);
       return {
         id: row._id,
         doc: args.returnDocument === "before" ? before : after,
@@ -1097,7 +1110,6 @@ export class Collection<T = Doc> {
       throw normalizeDriverError(err, this.name);
     }
     if (!result) return null;
-    this.afterWrite([result.id]);
     return result.doc;
   }
 
@@ -1184,10 +1196,12 @@ export class Collection<T = Doc> {
             }
           }
         }
+        // Index inside the transaction so a failing afterWrite rolls the whole
+        // batch back (atomic with plugin indexing).
+        this.afterWrite(ids);
       }),
     );
 
-    this.afterWrite(ids);
     return result;
   }
 
@@ -1219,9 +1233,10 @@ export class Collection<T = Doc> {
           del.run(_id);
           recorder?.recordLocal(this.name, _id, "delete", now);
         }
+        // Index inside the transaction (atomic with the delete, as create).
+        this.afterWrite(rows.map((r) => r._id));
       }),
     );
-    this.afterWrite(rows.map((r) => r._id));
     return { count: rows.length };
   }
 
@@ -1254,10 +1269,10 @@ export class Collection<T = Doc> {
           stmt.run(row._id);
           recorder?.recordLocal(this.name, row._id, "delete", now);
         }
+        // Index inside the transaction (atomic with the delete, as create).
+        this.afterWrite(rows.map((r) => r._id));
       }),
     );
-
-    this.afterWrite(rows.map((r) => r._id));
     return rows.map((r) => this.rowToDoc(r));
   }
 
