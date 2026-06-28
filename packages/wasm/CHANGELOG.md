@@ -1,5 +1,17 @@
 # @monlite/wasm
 
+## 0.2.2 — query hook
+
+- **`onQuery` hook** — the wasm driver surfaces executed SQL + duration (parity with
+  the native drivers), so a browser app can show a live query log.
+
+## 0.2.1 — browser-safe
+
+- Pairs with `@monlite/core` 2.6.2: the core bundle and the wasm driver are fully
+  browser-safe (Web Crypto id generation, guarded `Buffer`, statement-cache clear on
+  `export`). Run monlite entirely in the browser with no Node polyfills beyond the
+  bundler aliases.
+
 ## 0.2.0
 
 - Register the `monlite_regexp` SQL function via sql.js `create_function`, so the

@@ -1,5 +1,11 @@
 # @monlite/kv
 
+## 0.2.1 — cross-process atomicity
+
+- **`setNX` / `incr` run under an IMMEDIATE transaction**, so the check-and-set is
+  atomic even across processes sharing one `.db` (the lock/counter primitives can't
+  race). No API change.
+
 ## 0.2.0
 
 - `setNX(key, value, { ttl? })` — atomic set-if-absent (Redis `SET NX`), the lock/nonce primitive. Treats an expired key as absent.
