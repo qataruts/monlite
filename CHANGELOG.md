@@ -1,5 +1,14 @@
 # @monlite/core
 
+## 2.6.9 — atomic sync ingest
+
+- **`applyRemoteWrite` (the `@monlite/sync` ingest path) now indexes inside a
+  transaction**, completing the "every write indexes atomically" invariant from 2.6.8.
+  Real sync was already atomic — the sync round wraps the apply in a transaction — so
+  this is defense-in-depth that also covers a direct call and makes the guarantee
+  unconditional (it nests as a cheap SAVEPOINT under the sync round). Found by a focused
+  re-verification swarm; no behavior change for normal sync.
+
 ## 2.6.8 — atomic indexing across the full write surface + sync-ingest guard
 
 - **Every mutation and delete now indexes inside its write transaction.** 2.6.7 made

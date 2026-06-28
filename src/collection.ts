@@ -580,63 +580,69 @@ export class Collection<T = Doc> {
     // — otherwise it nests into that tx and is lost if the tx rolls back. No-ops in
     // normal sync (asyncTxDepth === 0); the sync round retries on the next pull.
     this.mon.assertWriteAllowed();
-    if (op === "delete") {
-      this.db.prepare(`DELETE FROM "${this.name}" WHERE _id = ?`).run(id);
-      this.afterWrite([id]);
-      return;
-    }
-    const clean = stripSystem(doc ?? {});
-    const createdAt =
-      typeof (doc as any)?.created_at === "number"
-        ? (doc as any).created_at
-        : ts;
+    // Apply + index atomically, like local writes: a throwing plugin afterWrite
+    // rolls the storage change back too (no committed-but-unindexed divergence).
+    // Nests as a SAVEPOINT inside the sync round's transaction; stands alone if
+    // applyRemoteWrite is ever called directly.
+    this.db.transaction(() => {
+      if (op === "delete") {
+        this.db.prepare(`DELETE FROM "${this.name}" WHERE _id = ?`).run(id);
+        this.afterWrite([id]);
+        return;
+      }
+      const clean = stripSystem(doc ?? {});
+      const createdAt =
+        typeof (doc as any)?.created_at === "number"
+          ? (doc as any).created_at
+          : ts;
 
-    if (this.mode === "document") {
+      if (this.mode === "document") {
+        this.db
+          .prepare(
+            `INSERT INTO "${this.name}" (_id, data, created_at, updated_at) VALUES (?, ?, ?, ?)
+             ON CONFLICT(_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
+          )
+          .run(id, JSON.stringify(clean), createdAt, ts);
+        this.afterWrite([id]);
+        return;
+      }
+
+      const overflow: Record<string, any> = {};
+      const colValues: Record<string, any> = {};
+      for (const [k, v] of Object.entries(clean)) {
+        if (this.columns.has(k)) colValues[k] = v;
+        else overflow[k] = v;
+      }
+      const cols = [
+        "_id",
+        "created_at",
+        "updated_at",
+        "data",
+        ...this.columnOrder,
+      ];
+      const values = [
+        id,
+        createdAt,
+        ts,
+        JSON.stringify(overflow),
+        ...this.columnOrder.map((c) =>
+          c in colValues ? this.encodeColumn(c, colValues[c]) : null,
+        ),
+      ];
+      const colList = cols.map((c) => `"${c}"`).join(", ");
+      const placeholders = cols.map(() => "?").join(", ");
+      const updateSet = cols
+        .filter((c) => c !== "_id" && c !== "created_at")
+        .map((c) => `"${c}" = excluded."${c}"`)
+        .join(", ");
       this.db
         .prepare(
-          `INSERT INTO "${this.name}" (_id, data, created_at, updated_at) VALUES (?, ?, ?, ?)
-           ON CONFLICT(_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
+          `INSERT INTO "${this.name}" (${colList}) VALUES (${placeholders}) ` +
+            `ON CONFLICT(_id) DO UPDATE SET ${updateSet}`,
         )
-        .run(id, JSON.stringify(clean), createdAt, ts);
+        .run(...values);
       this.afterWrite([id]);
-      return;
-    }
-
-    const overflow: Record<string, any> = {};
-    const colValues: Record<string, any> = {};
-    for (const [k, v] of Object.entries(clean)) {
-      if (this.columns.has(k)) colValues[k] = v;
-      else overflow[k] = v;
-    }
-    const cols = [
-      "_id",
-      "created_at",
-      "updated_at",
-      "data",
-      ...this.columnOrder,
-    ];
-    const values = [
-      id,
-      createdAt,
-      ts,
-      JSON.stringify(overflow),
-      ...this.columnOrder.map((c) =>
-        c in colValues ? this.encodeColumn(c, colValues[c]) : null,
-      ),
-    ];
-    const colList = cols.map((c) => `"${c}"`).join(", ");
-    const placeholders = cols.map(() => "?").join(", ");
-    const updateSet = cols
-      .filter((c) => c !== "_id" && c !== "created_at")
-      .map((c) => `"${c}" = excluded."${c}"`)
-      .join(", ");
-    this.db
-      .prepare(
-        `INSERT INTO "${this.name}" (${colList}) VALUES (${placeholders}) ` +
-          `ON CONFLICT(_id) DO UPDATE SET ${updateSet}`,
-      )
-      .run(...values);
-    this.afterWrite([id]);
+    });
   }
 
   /** @internal Notify reactivity watchers and plugins that documents changed. */

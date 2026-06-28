@@ -115,3 +115,20 @@ describe("applyRemoteWrite (sync ingest) respects the write guard", () => {
     expect(await c.findById("r1")).toBeNull(); // not applied
   });
 });
+
+describe("sync ingest indexes atomically too", () => {
+  it("applyRemoteWrite upsert + delete roll back when afterWrite throws", async () => {
+    const { plugin, state } = armable();
+    const db = createDb(":memory:", { plugins: [plugin] });
+    dbs.push(db);
+    const c = db.collection("t");
+    await c.create({ data: { _id: "x", v: 0 } });
+    state.armed = true;
+    // a remote upsert that fails to index must NOT change the row
+    expect(() => (c as any).applyRemoteWrite("upsert", "x", { v: 99 }, Date.now())).toThrow(/index fail/);
+    expect((await c.findById("x"))?.v).toBe(0);
+    // a remote delete that fails to index must NOT delete
+    expect(() => (c as any).applyRemoteWrite("delete", "x", undefined, Date.now())).toThrow(/index fail/);
+    expect(await c.count()).toBe(1);
+  });
+});
