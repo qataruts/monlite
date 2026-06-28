@@ -9,8 +9,11 @@
   },
   "dependencies": {
     "@monlite/core": "workspace:*",
+    "@monlite/cron": "workspace:*",
     "@monlite/fts": "workspace:*",
     "@monlite/kv": "workspace:*",
+    "@monlite/queue": "workspace:*",
+    "@monlite/vector": "workspace:*",
     "@monlite/wasm": "workspace:*",
     "buffer": "^6.0.3",
     "fts5-sql-bundle": "^1.0.2",

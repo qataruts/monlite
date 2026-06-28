@@ -56,12 +56,21 @@ importers:
       '@monlite/core':
         specifier: workspace:*
         version: link:..
+      '@monlite/cron':
+        specifier: workspace:*
+        version: link:../packages/cron
       '@monlite/fts':
         specifier: workspace:*
         version: link:../packages/fts
       '@monlite/kv':
         specifier: workspace:*
         version: link:../packages/kv
+      '@monlite/queue':
+        specifier: workspace:*
+        version: link:../packages/queue
+      '@monlite/vector':
+        specifier: workspace:*
+        version: link:../packages/vector
       '@monlite/wasm':
         specifier: workspace:*
         version: link:../packages/wasm

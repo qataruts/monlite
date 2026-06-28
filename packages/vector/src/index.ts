@@ -192,6 +192,84 @@ function findSimilar<T = Doc>(
   return Promise.resolve(out);
 }
 
+// ── Brute-force fallback (no sqlite-vec / browser) ──────────────────────────
+// When the native sqlite-vec extension can't be loaded (e.g. the SQLite-WASM
+// build in the browser), embeddings are stored as JSON in a plain table and the
+// nearest neighbours are computed in JS. Exact (not approximate), O(n) per query
+// — fine for the thousands-of-vectors scale a local/edge store typically holds.
+
+function l2Distance(a: number[], b: number[]): number {
+  let s = 0;
+  for (let i = 0; i < a.length; i++) {
+    const d = a[i] - b[i];
+    s += d * d;
+  }
+  return Math.sqrt(s);
+}
+
+function cosineDistance(a: number[], b: number[]): number {
+  let dot = 0,
+    na = 0,
+    nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
+  }
+  const denom = Math.sqrt(na) * Math.sqrt(nb);
+  return denom === 0 ? 1 : 1 - dot / denom;
+}
+
+function findSimilarBrute<T = Doc>(
+  db: Monlite,
+  coll: Collection<T>,
+  spec: VectorSpec,
+  opts: FindSimilarOptions<T>,
+): Promise<SimilarResult<T>[]> {
+  const def = spec[coll.name];
+  if (!def) {
+    return Promise.reject(
+      new Error(`Collection "${coll.name}" is not configured for vector search`),
+    );
+  }
+  if (!Array.isArray(opts.vector) || opts.vector.length !== def.dimensions) {
+    return Promise.reject(
+      new Error(
+        `findSimilar expects a ${def.dimensions}-dimension vector for "${coll.name}"`,
+      ),
+    );
+  }
+  const topK = opts.topK ?? 10;
+  const dist = def.distance === "cosine" ? cosineDistance : l2Distance;
+
+  let allowed: Set<string> | null = null;
+  if (opts.where) {
+    const matching = coll.findManyCore({ where: opts.where });
+    allowed = new Set(matching.map((d) => d._id));
+  }
+
+  const rows = db.sqlite
+    .prepare(`SELECT doc_id, embedding FROM "${vecTable(coll.name)}"`)
+    .all() as Array<{ doc_id: string; embedding: string }>;
+
+  const scored: Array<{ doc_id: string; distance: number }> = [];
+  for (const r of rows) {
+    if (allowed && !allowed.has(r.doc_id)) continue;
+    scored.push({
+      doc_id: r.doc_id,
+      distance: dist(opts.vector, JSON.parse(r.embedding) as number[]),
+    });
+  }
+  scored.sort((a, b) => a.distance - b.distance);
+
+  const out: SimilarResult<T>[] = [];
+  for (const r of scored.slice(0, topK)) {
+    const doc = coll.getRaw(r.doc_id);
+    if (doc) out.push({ ...doc, _distance: r.distance } as SimilarResult<T>);
+  }
+  return Promise.resolve(out);
+}
+
 /**
  * Vector / semantic search plugin (sqlite-vec). Open the database with
  * `{ allowExtensions: true }` and pass this plugin with a map of collection →
@@ -278,26 +356,33 @@ export async function hybridSearch<T = Doc>(
 
 export function vector(spec: VectorSpec): MonlitePlugin {
   let database: Monlite;
+  // When sqlite-vec can't be loaded (browser / SQLite-WASM), fall back to a
+  // brute-force JS implementation over a plain table.
+  let bruteForce = false;
   return {
     name: "vector",
     init(db) {
       database = db;
       try {
         db.sqlite.loadExtension(sqliteVec.getLoadablePath());
-      } catch (err) {
-        throw new Error(
-          `@monlite/vector: failed to load sqlite-vec. Open the database with ` +
-            `{ allowExtensions: true }. (${(err as Error).message})`,
-        );
+      } catch {
+        bruteForce = true;
       }
       ensureState(db);
       for (const [coll, def] of Object.entries(spec)) {
-        const metric =
-          def.distance === "cosine" ? " distance_metric=cosine" : "";
-        db.sqlite.exec(
-          `CREATE VIRTUAL TABLE IF NOT EXISTS "${vecTable(coll)}" ` +
-            `USING vec0(doc_id text, embedding float[${def.dimensions}]${metric})`,
-        );
+        if (bruteForce) {
+          db.sqlite.exec(
+            `CREATE TABLE IF NOT EXISTS "${vecTable(coll)}" ` +
+              `(doc_id TEXT PRIMARY KEY, embedding TEXT NOT NULL)`,
+          );
+        } else {
+          const metric =
+            def.distance === "cosine" ? " distance_metric=cosine" : "";
+          db.sqlite.exec(
+            `CREATE VIRTUAL TABLE IF NOT EXISTS "${vecTable(coll)}" ` +
+              `USING vec0(doc_id text, embedding float[${def.dimensions}]${metric})`,
+          );
+        }
         const count = db.sqlite
           .prepare(`SELECT count(*) AS n FROM "${vecTable(coll)}"`)
           .get() as { n: number };
@@ -313,7 +398,9 @@ export function vector(spec: VectorSpec): MonlitePlugin {
     },
     collectionMethods: {
       findSimilar: (coll, opts: FindSimilarOptions) =>
-        findSimilar(database, coll, spec, opts),
+        bruteForce
+          ? findSimilarBrute(database, coll, spec, opts)
+          : findSimilar(database, coll, spec, opts),
       catchUp: (coll) =>
         spec[coll.name]
           ? catchUp(database, coll.name, spec[coll.name])

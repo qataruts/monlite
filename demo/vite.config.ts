@@ -14,6 +14,12 @@ export default defineConfig({
       crypto: resolve("./src/mocks/crypto.js"),
       // Route `buffer` imports to the npm `buffer` polyfill package.
       "node:buffer": "buffer",
+      // @monlite/vector imports sqlite-vec (native); stub it so it falls back to
+      // its brute-force JS path in the browser.
+      "sqlite-vec": resolve("./src/mocks/sqlite-vec.js"),
+      // @monlite/queue & cron extend Node's EventEmitter; shim it for the browser.
+      events: resolve("./src/mocks/events.js"),
+      "node:events": resolve("./src/mocks/events.js"),
     },
   },
   define: {

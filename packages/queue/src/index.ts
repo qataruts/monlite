@@ -188,7 +188,10 @@ export class Queue extends EventEmitter {
     this.maxAttempts = opts.maxAttempts ?? 1;
     this.backoff = opts.backoff ?? defaultBackoff;
     this.removeOnComplete = opts.removeOnComplete ?? false;
-    this.workerId = opts.workerId ?? `w-${process.pid}`;
+    // `process` is absent in the browser — fall back to a random id there.
+    this.workerId =
+      opts.workerId ??
+      `w-${typeof process !== "undefined" && process.pid ? process.pid : Math.floor(Math.random() * 1e6)}`;
 
     if (!ensured.has(db)) {
       this.driver.exec(
