@@ -58,3 +58,11 @@ if (claimed) {
 
 This is the load-bearing primitive for durable job queues and multi-process
 workers. See the [AI-agent backend guide](/guides/ai-agent-backend).
+
+## Writes index atomically
+
+Plugin index maintenance (FTS, vector, …) runs **inside the same transaction** as
+the write that triggered it. If indexing fails — e.g. `@monlite/vector` rejecting a
+wrong-dimension vector partway through a `createMany` — the whole write rolls back,
+so you never end up with a base row that isn't in the index. The call throws; fix
+the data and retry. (Across processes, indexes still reconcile via `catchUp()`.)

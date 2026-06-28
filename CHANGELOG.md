@@ -1,5 +1,13 @@
 # @monlite/core
 
+## 2.6.7 — atomic indexing
+
+- **Plugin index writes now share the triggering write's transaction.** A failing
+  `afterWrite` (e.g. `@monlite/vector` rejecting a wrong-dimension vector partway
+  through a `createMany`) previously left the base rows committed but unindexed; the
+  write now rolls back as a unit, so a row is never left out of its index. The call
+  throws — fix the data and retry. (Drivers nest via `SAVEPOINT`.)
+
 ## 2.6.6 — verification follow-up: correctness fixes
 
 A second adversarial verification pass found real holes in the 2.6.3–2.6.5 hardening;

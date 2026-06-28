@@ -1,5 +1,14 @@
 # @monlite/queue
 
+## 0.3.3 — completion fencing
+
+- **A reclaimed job rejects its original worker's stale write.** After a job is
+  recovered (`visibilityTimeout`/`recover()`) and re-claimed by another worker, a
+  revived slow/crashed worker could still mark it done/failed — clobbering the new run
+  and firing a duplicate event. Completion, failure, and heartbeat are now **fenced on
+  the claim-time attempt**; a worker emits `completed`/`failed` only when its write
+  lands. Works cross-process and same-process.
+
 ## 0.3.2 — per-queue reaper scope
 
 - **The visibility-timeout reaper is scoped to its own queue.** `recover()` reset stale
