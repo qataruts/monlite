@@ -35,6 +35,8 @@ queue.add("digest", { day: "mon" }, { delay: 60_000, priority: 10, jobId: "diges
 - **Dedupe** — a second `add` with the same `jobId` while pending/active returns
   the existing job.
 - **Crash recovery** — `queue.recover(olderThanMs)` requeues jobs left `active` by
-  a dead worker.
+  a dead worker. Or set `process(..., { visibilityTimeout })` for an automatic
+  reaper: a job that runs longer than the timeout without a heartbeat is reclaimed,
+  while a running job is heartbeated so a legitimately long job isn't requeued.
 
 `queue.counts(name?)` → `{ pending, active, done, failed }`.
