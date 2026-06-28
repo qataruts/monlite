@@ -367,9 +367,9 @@ mark {
   padding: 2px 7px;
   border-radius: 20px;
   text-transform: uppercase;
-  animation: blink 2.6s ease-in-out infinite;
+  animation: blink 2.4s ease-in-out infinite;
 }
-@keyframes blink { 0%, 70%, 100% { opacity: 1; } 85% { opacity: .35; } }
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
 .sql-log {
   font-family: var(--mono);
   font-size: 11px;
@@ -389,7 +389,6 @@ mark {
   border-radius: 6px;
   background: var(--bg-soft);
   border: 1px solid var(--border);
-  animation: fadeIn .15s ease;
   align-items: start;
 }
 .sql-text {
@@ -480,14 +479,16 @@ mark {
 
 /* ── Queue ── */
 .queue-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
-.counts { display: flex; gap: 6px; margin-left: auto; flex-wrap: wrap; }
-.count { font-family: var(--mono); font-size: 11px; padding: 3px 9px; border-radius: 20px; border: 1px solid var(--border-strong); color: var(--text-muted); }
+.counts { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+.count { font-family: var(--mono); font-size: 11px; padding: 3px 10px; border-radius: 20px; border: 1px solid var(--border-strong); color: var(--text-muted); background: var(--bg-card); cursor: pointer; transition: border-color .12s, box-shadow .12s; }
+.count:hover { border-color: var(--accent); }
+.count.on { box-shadow: 0 0 0 2px var(--accent-glow); border-color: var(--accent); font-weight: 600; }
 .count-pending { color: #b45309; background: #fffbeb; border-color: #fde68a; }
 .count-active  { color: var(--accent-h); background: var(--tag-bg); border-color: rgba(99,102,241,.3); }
 .count-done    { color: var(--success); background: #ecfdf5; border-color: #a7f3d0; }
 .count-failed  { color: var(--error); background: #fef2f2; border-color: #fecaca; }
 .job-list { display: flex; flex-direction: column; gap: 6px; }
-.job { display: flex; align-items: center; gap: 10px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px; box-shadow: var(--shadow); animation: fadeIn .15s ease; }
+.job { display: flex; align-items: center; gap: 10px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px; box-shadow: var(--shadow); }
 .job-status { font-family: var(--mono); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .4px; padding: 2px 8px; border-radius: 20px; min-width: 64px; text-align: center; }
 .status-pending { color: #b45309; background: #fffbeb; }
 .status-active  { color: var(--accent-h); background: var(--tag-bg); }
@@ -506,3 +507,8 @@ mark {
 .cron-runs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
 .cron-pill { font-family: var(--mono); font-size: 11px; color: var(--accent); background: var(--tag-bg); border: 1px solid rgba(99,102,241,.2); border-radius: 5px; padding: 2px 8px; }
 .cron-err { color: var(--error); font-size: 13px; font-family: var(--mono); }
+
+/* ── Cron list (multiple schedules) ── */
+.cron-list { display: flex; flex-direction: column; gap: 10px; }
+.cron-list .cron-card { max-width: 520px; }
+.cron-card b { color: var(--text); }

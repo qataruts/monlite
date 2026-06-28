@@ -125,10 +125,12 @@
         <section class="tab-panel" id="panel-queue">
           <p class="tab-desc"><span class="pkg">@monlite/queue</span> Durable job queue — jobs persist in the DB, a worker claims &amp; runs them, with retries &amp; backoff (~30% of demo jobs fail once to show a retry).</p>
           <div class="queue-toolbar">
-            <button id="btn-add-job" class="btn btn-primary" style="width:auto">+ Enqueue a job</button>
-            <button id="btn-add-5" class="btn btn-sm" style="flex:0 0 auto">+ Enqueue 5</button>
-            <div class="counts" id="job-counts"></div>
+            <button id="btn-add-job" class="btn btn-primary" style="width:auto">+ Enqueue job</button>
+            <button id="btn-add-5" class="btn btn-sm" style="flex:0 0 auto">+ 5 jobs</button>
+            <button id="btn-clear-done" class="btn btn-sm btn-ghost" style="flex:0 0 auto">Clear completed</button>
+            <button id="btn-clear-all" class="btn btn-sm btn-ghost" style="flex:0 0 auto">Clear all</button>
           </div>
+          <div class="counts" id="job-counts"></div>
           <div id="job-list" class="job-list"></div>
         </section>
 
@@ -136,11 +138,13 @@
         <section class="tab-panel" id="panel-cron">
           <p class="tab-desc"><span class="pkg">@monlite/cron</span> Persisted scheduled jobs from cron expressions. We compute the next runs instantly; a live job ticks on the schedule.</p>
           <div class="row-form">
-            <input id="cron-expr" class="input" placeholder="* * * * *" value="* * * * *" style="font-family:var(--mono)" />
-            <button id="btn-cron" class="btn btn-primary" style="width:auto">Schedule</button>
+            <input id="cron-name" class="input" placeholder="name (e.g. cleanup)" style="max-width:220px" />
+            <input id="cron-expr" class="input" placeholder="* * * * *" value="* * * * *" style="font-family:var(--mono);max-width:170px" />
+            <button id="btn-cron" class="btn btn-primary" style="width:auto">+ Schedule</button>
           </div>
           <div class="cron-hint">5 fields: minute hour day-of-month month day-of-week. <code>* * * * *</code> = every minute · <code>*/5 * * * *</code> = every 5 min · <code>0 9 * * 1</code> = 9am Mondays</div>
-          <div id="cron-out" class="cron-out"></div>
+          <div id="cron-err" class="cron-err"></div>
+          <div id="cron-list" class="cron-list"></div>
         </section>
       </div>
 

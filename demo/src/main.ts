@@ -83,6 +83,8 @@ function setupTabs() {
       tab.classList.add("active");
       document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
       $(`panel-${tab.dataset.tab}`).classList.add("active");
+      if (tab.dataset.tab === "queue") renderJobs();
+      if (tab.dataset.tab === "cron") renderCrons();
     });
   });
 }
@@ -199,11 +201,14 @@ async function runVector(q: string) {
   q = q.trim();
   if (!q || !embedder) return;
   const v = await embed(q);
-  const hits = await memories.findSimilar({ vector: v, topK: 5 });
-  $("vec-count").textContent = `${hits.length} by meaning`;
-  $("vector-grid").innerHTML = hits
-    .map((d: any) => card(d, "", `${((1 - d._distance) * 100).toFixed(0)}% match`))
-    .join("");
+  // findSimilar ranks ALL docs by similarity; keep only the relevant ones so it
+  // reads as search, not a re-sorted list (there are only a handful of docs).
+  const all = await memories.findSimilar({ vector: v, topK: 5 });
+  const hits = all.filter((d: any) => 1 - d._distance >= 0.12);
+  $("vec-count").textContent = hits.length ? `${hits.length} by meaning` : "no close matches";
+  $("vector-grid").innerHTML = hits.length
+    ? hits.map((d: any) => card(d, "", `${((1 - d._distance) * 100).toFixed(0)}% match`)).join("")
+    : `<div class="empty">Nothing semantically close to "${escapeHtml(q)}". Try another phrasing.</div>`;
 }
 
 // ── Cache (kv) ───────────────────────────────────────────────────────────────
@@ -241,67 +246,115 @@ function setupKv() {
 function setKv(msg: string, type: "success" | "error") { const el = $("kv-result"); el.textContent = msg; el.className = `kv-result ${type}`; }
 
 // ── Queue (queue) ────────────────────────────────────────────────────────────
-let jobIds: number[] = [];
 let jobSeq = 0;
-function setupQueue() {
-  queue.process("tasks", async (job: any) => {
-    await sleep(500 + Math.random() * 500);
-    if (job.attempts < 2 && Math.random() < 0.33) throw new Error("transient failure");
-    return "ok";
-  }, { concurrency: 2, pollInterval: 300 });
-  queue.on("completed", renderJobs);
-  queue.on("failed", renderJobs);
-  $("btn-add-job").addEventListener("click", () => addJob());
-  $("btn-add-5").addEventListener("click", () => { for (let i = 0; i < 5; i++) addJob(); });
-  setInterval(() => { if ($("panel-queue").classList.contains("active")) renderJobs(); }, 500);
+let jobFilter = "all";
+// The worker runs ONLY while there are pending/active jobs, then stops — so it
+// never idle-polls or re-renders in a loop (which looked like the app hung).
+let worker: { stop(): Promise<void> } | null = null;
+let renderTimer: any = null;
+function startWorker() {
+  if (!worker) {
+    worker = queue.process("tasks", async (job: any) => {
+      await sleep(500 + Math.random() * 500);
+      if (job.attempts < 2 && Math.random() < 0.33) throw new Error("transient failure");
+      return "ok";
+    }, { concurrency: 2, pollInterval: 500 });
+  }
+  if (!renderTimer) renderTimer = setInterval(renderJobs, 350); // show active states
+}
+function stopWorker() {
+  if (worker) { worker.stop(); worker = null; }
+  if (renderTimer) { clearInterval(renderTimer); renderTimer = null; }
   renderJobs();
 }
-function addJob() {
-  const job = queue.add("tasks", { label: `task #${++jobSeq}` });
-  jobIds.unshift(job.id); jobIds = jobIds.slice(0, 12); renderJobs();
+function onJobSettled() {
+  const c = queue.counts("tasks");
+  if (c.pending === 0 && c.active === 0) stopWorker(); // queue drained → idle
+  else renderJobs();
+}
+function setupQueue() {
+  queue.on("completed", onJobSettled);
+  queue.on("failed", onJobSettled);
+  $("btn-add-job").addEventListener("click", () => addJob(1));
+  $("btn-add-5").addEventListener("click", () => addJob(5));
+  $("btn-clear-done").addEventListener("click", () => {
+    db.sqlite.prepare("DELETE FROM _jobs WHERE queue='tasks' AND status IN ('done','failed')").run();
+    renderJobs();
+  });
+  $("btn-clear-all").addEventListener("click", () => {
+    db.sqlite.prepare("DELETE FROM _jobs WHERE queue='tasks'").run();
+    renderJobs();
+  });
+  renderJobs();
+}
+function addJob(n: number) {
+  for (let i = 0; i < n; i++) queue.add("tasks", { label: `task #${++jobSeq}` });
+  startWorker(); // process now, auto-stops when the queue drains
+  renderJobs();
 }
 function renderJobs() {
   const c = queue.counts("tasks");
-  $("job-counts").innerHTML = (["pending", "active", "done", "failed"] as const)
-    .map((s) => `<span class="count count-${s}">${c[s] || 0} ${s}</span>`).join("");
-  $("job-list").innerHTML = jobIds.length
-    ? jobIds.map((id) => {
-        const j: any = queue.getJob(id); if (!j) return "";
-        const label = j.payload?.label ?? `job ${id}`;
-        return `<div class="job"><span class="job-status status-${j.status}">${j.status}</span><span class="job-label">${escapeHtml(label)}</span><span class="job-meta">attempt ${j.attempts}/${j.maxAttempts ?? 3}</span></div>`;
+  const total = c.pending + c.active + c.done + c.failed;
+  const chips: [string, number][] = [["all", total], ["pending", c.pending], ["active", c.active], ["done", c.done], ["failed", c.failed]];
+  $("job-counts").innerHTML = chips
+    .map(([f, n]) => `<button class="count count-${f} ${jobFilter === f ? "on" : ""}" data-f="${f}">${n} ${f}</button>`)
+    .join("");
+  $("job-counts").querySelectorAll<HTMLElement>(".count").forEach((el) =>
+    el.addEventListener("click", () => { jobFilter = el.dataset.f!; renderJobs(); }),
+  );
+  const where = jobFilter === "all" ? "" : ` AND status='${jobFilter}'`;
+  const rows = db.sqlite
+    .prepare(`SELECT id, status, attempts, max_attempts, payload FROM _jobs WHERE queue='tasks'${where} ORDER BY id DESC LIMIT 40`)
+    .all() as any[];
+  $("job-list").innerHTML = rows.length
+    ? rows.map((j) => {
+        const label = JSON.parse(j.payload || "{}")?.label ?? `job ${j.id}`;
+        return `<div class="job"><span class="job-status status-${j.status}">${j.status}</span><span class="job-label">${escapeHtml(label)}</span><span class="job-meta">attempt ${j.attempts}/${j.max_attempts}</span><button class="btn-delete" title="delete" onclick="window.__delJob(${j.id})">×</button></div>`;
       }).join("")
-    : `<div class="empty">No jobs yet — enqueue one.</div>`;
+    : `<div class="empty">${jobFilter === "all" ? "No jobs yet — enqueue one." : `No ${jobFilter} jobs.`}</div>`;
 }
+(window as any).__delJob = (id: number) => { db.sqlite.prepare("DELETE FROM _jobs WHERE id=?").run(id); renderJobs(); };
 
 // ── Cron (cron) ──────────────────────────────────────────────────────────────
-let cronFires = 0;
-let lastFire: number | null = null;
+let cronSeq = 0;
+const cronFires: Record<string, number> = {};
 function setupCron() {
-  $("btn-cron").addEventListener("click", scheduleCron);
-  setInterval(() => { if ($("panel-cron").classList.contains("active")) renderCron(); }, 1000);
+  $("btn-cron").addEventListener("click", addCron);
+  setInterval(() => { if ($("panel-cron").classList.contains("active")) renderCrons(); }, 1000);
+  renderCrons();
 }
-function scheduleCron() {
+function addCron() {
+  const nameRaw = ($("cron-name") as HTMLInputElement).value.trim();
+  const name = (nameRaw || `job-${++cronSeq}`).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 24) || `job-${++cronSeq}`;
   const expr = ($("cron-expr") as HTMLInputElement).value.trim();
-  try { parseCron(expr); } catch (e: any) { $("cron-out").innerHTML = `<div class="cron-err">Invalid: ${escapeHtml(e.message)}</div>`; return; }
-  cronFires = 0; lastFire = null;
-  try { cron.unschedule("demo"); } catch {}
-  cron.schedule("demo", expr, () => { cronFires++; lastFire = Date.now(); renderCron(); });
-  renderCron();
+  let parsed; try { parsed = parseCron(expr); } catch (e: any) { return flashCronErr(`Invalid "${expr}": ${e.message}`); }
+  void parsed;
+  cronFires[name] = cronFires[name] ?? 0;
+  cron.schedule(name, expr, () => { cronFires[name] = (cronFires[name] ?? 0) + 1; renderCrons(); });
+  ($("cron-name") as HTMLInputElement).value = "";
+  renderCrons();
 }
-function renderCron() {
-  const expr = ($("cron-expr") as HTMLInputElement).value.trim();
-  let parsed; try { parsed = parseCron(expr); } catch { return; }
-  const runs: Date[] = []; let from = new Date();
-  for (let i = 0; i < 3; i++) { const n = nextCronRun(parsed, from); runs.push(n); from = new Date(n.getTime() + 1000); }
-  const next = runs[0]; const inS = Math.max(0, Math.round((next.getTime() - Date.now()) / 1000));
-  $("cron-out").innerHTML = `
-    <div class="cron-card">
-      <div class="cron-row"><span class="cron-k">scheduled</span><code>${escapeHtml(expr)}</code></div>
-      <div class="cron-row"><span class="cron-k">fired</span><b>${cronFires}×</b>${lastFire ? ` · last ${new Date(lastFire).toLocaleTimeString()}` : ""}</div>
-      <div class="cron-row"><span class="cron-k">next run</span><b>in ${inS}s</b> · ${next.toLocaleTimeString()}</div>
-      <div class="cron-runs">${runs.map((r) => `<span class="cron-pill">${r.toLocaleTimeString()}</span>`).join("")}</div>
-    </div>`;
+function flashCronErr(msg: string) {
+  const el = $("cron-err"); el.textContent = msg;
+  setTimeout(() => { if (el.textContent === msg) el.textContent = ""; }, 4000);
 }
+function renderCrons() {
+  const rows = db.sqlite.prepare("SELECT name, cron, next_run, last_run FROM _schedules ORDER BY name").all() as any[];
+  $("cron-list").innerHTML = rows.length
+    ? rows.map((r) => {
+        let next3 = ""; try { const p = parseCron(r.cron); let f = new Date(); const out: Date[] = []; for (let i = 0; i < 3; i++) { const n = nextCronRun(p, f); out.push(n); f = new Date(n.getTime() + 1000); } next3 = out.map((d) => `<span class="cron-pill">${d.toLocaleTimeString()}</span>`).join(""); } catch {}
+        const inS = Math.max(0, Math.round((r.next_run - Date.now()) / 1000));
+        const fired = cronFires[r.name] ?? 0;
+        return `<div class="cron-card">
+          <div class="cron-row"><b>${escapeHtml(r.name)}</b><code>${escapeHtml(r.cron)}</code><button class="btn-delete" title="remove" style="margin-left:auto" onclick="window.__delCron('${escapeHtml(r.name)}')">×</button></div>
+          <div class="cron-row"><span class="cron-k">next run</span><b>in ${inS}s</b> · ${new Date(r.next_run).toLocaleTimeString()}</div>
+          <div class="cron-row"><span class="cron-k">fired</span><b>${fired}×</b>${r.last_run ? ` · last ${new Date(r.last_run).toLocaleTimeString()}` : ""}</div>
+          <div class="cron-runs">${next3}</div>
+        </div>`;
+      }).join("")
+    : `<div class="empty">No schedules yet — add one above.</div>`;
+}
+(window as any).__delCron = (name: string) => { try { cron.unschedule(name); } catch {} delete cronFires[name]; renderCrons(); };
 
 // ── Shared rendering ─────────────────────────────────────────────────────────
 function card(d: any, q: string, badge?: string): string {
