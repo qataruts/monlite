@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>monlite playground</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <div id="app">
+
+    <header class="header">
+      <div class="header-left">
+        <div class="logo">
+          <svg width="28" height="28" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <radialGradient id="mg" cx="30%" cy="30%" r="70%">
+                <stop offset="0%" stop-color="#f0f4ff"/>
+                <stop offset="100%" stop-color="#818cf8"/>
+              </radialGradient>
+              <mask id="cm">
+                <rect width="100" height="100" fill="black"/>
+                <circle cx="46" cy="52" r="30" fill="white"/>
+                <circle cx="58" cy="43" r="24" fill="black"/>
+              </mask>
+            </defs>
+            <circle cx="46" cy="52" r="30" fill="#4f46e5" opacity="0.25" style="filter:blur(8px)"/>
+            <circle cx="46" cy="52" r="30" fill="url(#mg)" mask="url(#cm)"/>
+            <circle cx="76" cy="27" r="3.5" fill="#c7d2fe" opacity="0.9"/>
+            <circle cx="83" cy="40" r="2" fill="#a5b4fc" opacity="0.7"/>
+          </svg>
+          <span class="logo-text">monlite</span>
+        </div>
+        <span class="header-sub">documents · full-text search · cache &mdash; in your browser via SQLite WASM</span>
+      </div>
+      <div class="header-right">
+        <div class="stats">
+          <span class="stat" id="stat-docs">—</span>
+          <span class="stat-sep">·</span>
+          <span class="stat" id="stat-size">—</span>
+          <span class="stat-sep">·</span>
+          <span class="badge">● SQLite WASM</span>
+        </div>
+        <a class="gh-link" href="https://github.com/qataruts/monlite" target="_blank">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12c0-5.523-4.477-10-10-10z"/></svg>
+          GitHub
+        </a>
+      </div>
+    </header>
+
+    <div class="layout">
+
+      <!-- ── Left panel: memories ── -->
+      <div class="panel panel-main">
+        <div class="search-wrap">
+          <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input id="search" type="text" class="search-input" placeholder="Search memories with FTS5…" autocomplete="off" spellcheck="false" />
+          <span class="search-clear" id="search-clear" style="display:none">×</span>
+        </div>
+
+        <div class="panel-meta">
+          <span id="result-count" class="result-count"></span>
+          <span class="fts-hint" id="fts-hint"></span>
+        </div>
+
+        <div id="memory-grid" class="memory-grid"></div>
+      </div>
+
+      <!-- ── Right panel: add + cache ── -->
+      <div class="panel panel-side">
+
+        <div class="card">
+          <div class="card-title">Add Memory</div>
+          <input id="mem-title" type="text" class="input" placeholder="Title" />
+          <textarea id="mem-content" class="input textarea" placeholder="Content…" rows="4"></textarea>
+          <input id="mem-tags" type="text" class="input" placeholder="tags space separated (optional)" />
+          <button id="btn-add" class="btn btn-primary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+            Add Memory
+          </button>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Cache (KV)</div>
+          <div class="kv-row">
+            <input id="kv-key" type="text" class="input input-sm" placeholder="key" />
+            <input id="kv-value" type="text" class="input input-sm" placeholder="value" />
+          </div>
+          <div class="kv-row">
+            <input id="kv-ttl" type="number" class="input input-sm" placeholder="TTL ms (optional)" value="5000" />
+          </div>
+          <div class="kv-actions">
+            <button id="btn-set" class="btn btn-sm">Set</button>
+            <button id="btn-get" class="btn btn-sm">Get</button>
+            <button id="btn-del" class="btn btn-sm btn-ghost">Delete</button>
+          </div>
+          <div id="kv-result" class="kv-result"></div>
+        </div>
+
+        <div class="sql-log-card card">
+          <div class="card-title">
+            SQL log
+            <span class="log-live">live</span>
+          </div>
+          <div id="sql-log" class="sql-log"></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Loading overlay -->
+  <div id="loading" class="loading-overlay">
+    <div class="loading-box">
+      <div class="moon-spin">◐</div>
+      <div id="loading-text" class="loading-text">Loading SQLite WASM…</div>
+      <div class="loading-sub">~1.2 MB, one-time download</div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
