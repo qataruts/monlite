@@ -1,4 +1,8 @@
 import initSqlJs from "sql.js";
+// Bundle the WASM with the demo (Vite emits it + rewrites the URL for the base
+// path). This keeps the binary version-matched to the sql.js glue above and
+// avoids any CDN/version-mismatch failures.
+import sqlWasmUrl from "sql.js/dist/sql-wasm.wasm?url";
 import { createDb } from "@monlite/core";
 import { wasmDriver, exportDatabase } from "@monlite/wasm";
 import { fts } from "@monlite/fts";
@@ -25,9 +29,8 @@ async function init() {
   setLoadingText("Loading SQLite WASM (~1.2 MB)…");
 
   const SQL = await initSqlJs({
-    // Load the WASM binary from the official CDN — no local copy needed.
-    locateFile: (file: string) =>
-      `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.12.0/${file}`,
+    // Self-hosted, version-matched WASM bundled by Vite (correct under /monlite/demo/).
+    locateFile: () => sqlWasmUrl,
   });
 
   setLoadingText("Starting database…");
