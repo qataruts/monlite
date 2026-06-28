@@ -183,3 +183,19 @@ describe("visibility timeout (reaper + heartbeat)", () => {
     expect(q.getJob(job.id)?.status).toBe("done");
   }, 10_000);
 });
+
+describe("reaper is scoped to its own queue", () => {
+  it("a queue-A reaper does not reclaim queue-B's in-flight job", async () => {
+    const db = open();
+    const q = createQueue(db);
+    queues.push(q);
+    const jobB = q.add("B", { x: 1 });
+    const claimed = (q as any).claimInternal("B"); // B has a stale active job
+    expect(claimed?.id).toBe(jobB.id);
+    db.sqlite.prepare("UPDATE _jobs SET updated_at = ? WHERE id = ?").run(Date.now() - 30_000, jobB.id);
+    const w = q.process("A", async () => {}, { visibilityTimeout: 2000, pollInterval: 100 });
+    await sleep(1500); // A's reaper fires (~1000ms)
+    await w.stop();
+    expect(q.getJob(jobB.id)?.status).toBe("active"); // untouched
+  }, 10_000);
+});

@@ -126,7 +126,7 @@ class WorkerImpl implements Worker {
     this.visibilityTimeout = Math.max(0, opts.visibilityTimeout ?? 0);
     if (this.visibilityTimeout > 0) {
       this.reaper = setInterval(() => {
-        if (this.running) this.q.recover(this.visibilityTimeout);
+        if (this.running) this.q.recover(this.visibilityTimeout, this.name);
       }, Math.max(1000, Math.floor(this.visibilityTimeout / 2)));
       this.reaper.unref?.();
     }
@@ -327,14 +327,20 @@ export class Queue extends EventEmitter {
   /**
    * Reset jobs stuck in `active` (e.g. from a crashed worker) back to `pending`
    * if they haven't been touched in `olderThanMs`. Returns the count recovered.
+   * Pass `name` to scope it to one queue — the per-worker reaper does this so a
+   * fast queue's reaper can't reclaim a slow queue's still-running jobs.
    */
-  recover(olderThanMs = 60_000): number {
+  recover(olderThanMs = 60_000, name?: string): number {
+    const filter = name ? " AND queue = ?" : "";
+    const params: any[] = name
+      ? [now(), now() - olderThanMs, name]
+      : [now(), now() - olderThanMs];
     return this.driver
       .prepare(
         `UPDATE _jobs SET status='pending', locked_by=NULL, updated_at=?
-         WHERE status='active' AND updated_at < ?`,
+         WHERE status='active' AND updated_at < ?${filter}`,
       )
-      .run(now(), now() - olderThanMs).changes;
+      .run(...params).changes;
   }
 
   /** @internal Extend a running job's visibility timeout (worker heartbeat). */
