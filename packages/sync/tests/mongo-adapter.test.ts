@@ -109,7 +109,8 @@ describe("MongoAdapter translation", () => {
     expect(res.changes[0].doc).toMatchObject({ name: "Ali", _id: HEX1 });
     expect(res.changes[0].doc).not.toHaveProperty("_monlite_v");
     expect(res.changes[1]).toMatchObject({ op: "delete", _id: HEX2 });
-    expect(res.cursor).toBe("v6");
+    // Cursor is now a per-collection map (was a global scalar).
+    expect(JSON.parse(res.cursor!).users).toBe("v6");
   });
 
   it("pull: cursor filters already-seen versions", async () => {
@@ -132,9 +133,10 @@ describe("MongoAdapter translation", () => {
       db: "app",
     });
 
+    // Legacy scalar cursor "v5" is honoured as the per-collection floor.
     const res = await adapter.pull("v5", { collections: ["users"] });
     expect(res.changes).toHaveLength(1);
     expect(res.changes[0]._id).toBe(HEX2);
-    expect(res.cursor).toBe("v9");
+    expect(JSON.parse(res.cursor!).users).toBe("v9");
   });
 });

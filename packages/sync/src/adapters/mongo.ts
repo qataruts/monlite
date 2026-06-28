@@ -8,6 +8,12 @@ import type {
   PushResult,
   Unsubscribe,
 } from "../types.js";
+import {
+  decodeCursor,
+  cursorFor,
+  encodeCursor,
+  type PerCollectionCursor,
+} from "../cursor.js";
 
 const VERSION_FIELD = "_monlite_v";
 const DELETED_FIELD = "_monlite_deleted";
@@ -134,11 +140,15 @@ export class MongoAdapter implements SyncAdapter {
 
   async pull(cursor: Cursor, opts: PullOptions): Promise<PullResult> {
     const collections = opts.collections ?? [];
-    const filter = cursor ? { [VERSION_FIELD]: { $gt: cursor } } : {};
     const changes: RemoteChange[] = [];
-    let maxVersion = cursor ?? "";
+    // Per-collection cursors (see cursor.ts) — a global filter+max skips lagging collections.
+    const dec = decodeCursor(cursor);
+    const next: PerCollectionCursor = { ...dec.perColl };
 
     for (const collName of collections) {
+      const since = cursorFor(dec, collName);
+      let maxVersion = since;
+      const filter = since ? { [VERSION_FIELD]: { $gt: since } } : {};
       let query = this.coll(collName)
         .find(filter)
         .sort({ [VERSION_FIELD]: 1 });
@@ -166,8 +176,9 @@ export class MongoAdapter implements SyncAdapter {
         }
         if (version > maxVersion) maxVersion = version;
       }
+      next[collName] = maxVersion;
     }
-    return { changes, cursor: maxVersion || null };
+    return { changes, cursor: encodeCursor(next) };
   }
 
   watch(

@@ -6,6 +6,12 @@ import type {
   PullResult,
   PushResult,
 } from "../types.js";
+import {
+  decodeCursor,
+  cursorFor,
+  encodeCursor,
+  type PerCollectionCursor,
+} from "../cursor.js";
 
 const VERSION = "_monlite_v";
 const DELETED = "_monlite_deleted";
@@ -115,11 +121,17 @@ export class PostgresAdapter implements SyncAdapter {
   async pull(cursor: Cursor, opts: PullOptions): Promise<PullResult> {
     const collections = opts.collections ?? [];
     const changes: RemoteChange[] = [];
-    let maxVersion = cursor ?? "";
+    // Per-collection cursors: a single global max would permanently skip rows in
+    // a lagging collection once another collection's versions run ahead and the
+    // LIMIT cuts the lagging one short (see cursor.ts).
+    const dec = decodeCursor(cursor);
+    const next: PerCollectionCursor = { ...dec.perColl };
 
     for (const collName of collections) {
       const q = await this.ensure(collName);
-      const params: any[] = [cursor ?? ""];
+      const since = cursorFor(dec, collName);
+      let maxVersion = since;
+      const params: any[] = [since];
       let sql = `SELECT _id, doc, ${VERSION} AS v, ${DELETED} AS deleted FROM ${q} WHERE ${VERSION} > $1 ORDER BY ${VERSION} ASC`;
       if (opts.limit != null && opts.limit > 0) {
         sql += ` LIMIT $2`;
@@ -146,7 +158,8 @@ export class PostgresAdapter implements SyncAdapter {
         }
         if (version > maxVersion) maxVersion = version;
       }
+      next[collName] = maxVersion;
     }
-    return { changes, cursor: maxVersion || null };
+    return { changes, cursor: encodeCursor(next) };
   }
 }

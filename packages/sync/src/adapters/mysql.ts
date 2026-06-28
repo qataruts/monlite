@@ -6,6 +6,12 @@ import type {
   PullResult,
   PushResult,
 } from "../types.js";
+import {
+  decodeCursor,
+  cursorFor,
+  encodeCursor,
+  type PerCollectionCursor,
+} from "../cursor.js";
 
 const VERSION = "_monlite_v";
 const DELETED = "_monlite_deleted";
@@ -108,11 +114,15 @@ export class MySqlAdapter implements SyncAdapter {
   async pull(cursor: Cursor, opts: PullOptions): Promise<PullResult> {
     const collections = opts.collections ?? [];
     const changes: RemoteChange[] = [];
-    let maxVersion = cursor ?? "";
+    // Per-collection cursors (see cursor.ts) — a global max skips lagging collections.
+    const dec = decodeCursor(cursor);
+    const next: PerCollectionCursor = { ...dec.perColl };
 
     for (const collName of collections) {
       const t = await this.ensure(collName);
-      const params: any[] = [cursor ?? ""];
+      const since = cursorFor(dec, collName);
+      let maxVersion = since;
+      const params: any[] = [since];
       let sql = `SELECT _id, doc, ${VERSION} AS v, ${DELETED} AS deleted FROM ${t} WHERE ${VERSION} > ? ORDER BY ${VERSION} ASC`;
       if (opts.limit != null && opts.limit > 0) {
         sql += ` LIMIT ?`;
@@ -141,7 +151,8 @@ export class MySqlAdapter implements SyncAdapter {
         }
         if (version > maxVersion) maxVersion = version;
       }
+      next[collName] = maxVersion;
     }
-    return { changes, cursor: maxVersion || null };
+    return { changes, cursor: encodeCursor(next) };
   }
 }
