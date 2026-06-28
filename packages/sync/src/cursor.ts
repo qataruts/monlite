@@ -20,12 +20,17 @@ export interface DecodedCursor {
 export function decodeCursor(cursor: string | null | undefined): DecodedCursor {
   if (!cursor) return { perColl: {}, legacy: "" };
   if (cursor[0] === "{") {
+    // Intended as the per-collection JSON map. If it's corrupt/truncated, start
+    // FRESH — do NOT fall through to the legacy branch, where a "{…" string would
+    // become a high scalar floor that silently stalls the sync forever (versions
+    // are digit-led, always < "{"). Re-pulling from 0 is safe (LWW is idempotent).
     try {
       const obj = JSON.parse(cursor) as PerCollectionCursor;
       if (obj && typeof obj === "object") return { perColl: obj, legacy: "" };
     } catch {
-      /* fall through to legacy */
+      /* corrupt map */
     }
+    return { perColl: {}, legacy: "" };
   }
   return { perColl: {}, legacy: cursor };
 }

@@ -105,20 +105,21 @@ export class SyncStore {
 
   /**
    * Resume the per-node version counter past the highest seq already recorded,
-   * so a restart within the same millisecond as a prior write can't reuse a seq
-   * (which would collide or mis-order under last-write-wins). Versions are
-   * `<ts>:<nodeId>:<seq>` with fixed widths, so the lexicographic max for this
-   * node carries the max seq.
+   * so a restart can't reuse a seq (which would collide / mis-order under LWW).
+   * Order by the change-log `seq` column (autoincrement = the exact order
+   * versions were minted), NOT the version STRING — the string is timestamp-led,
+   * so a backward clock jump would otherwise pick a lower-seq row. `source='local'`
+   * is precise (no LIKE wildcard pitfalls) since local writes are this node's.
    */
   private initialVersionSeq(): number {
     const row = this.db
       .prepare(
-        `SELECT version FROM _monlite_changes WHERE version LIKE ? ORDER BY version DESC LIMIT 1`,
+        `SELECT version FROM _monlite_changes WHERE source = 'local' ORDER BY seq DESC LIMIT 1`,
       )
-      .get(`%:${this.nodeId}:%`) as { version: string } | undefined;
+      .get() as { version: string } | undefined;
     if (!row) return 0;
-    const seq = parseInt(row.version.slice(row.version.lastIndexOf(":") + 1), 10);
-    return Number.isFinite(seq) ? seq + 1 : 0;
+    const parsed = parseInt(row.version.slice(row.version.lastIndexOf(":") + 1), 10);
+    return Number.isFinite(parsed) ? parsed + 1 : 0;
   }
 
   private init(): void {
