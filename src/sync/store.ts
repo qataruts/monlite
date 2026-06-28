@@ -100,6 +100,25 @@ export class SyncStore {
   ) {
     this.init();
     this.nodeId = this.resolveNodeId(nodeId);
+    this.versionSeq = this.initialVersionSeq();
+  }
+
+  /**
+   * Resume the per-node version counter past the highest seq already recorded,
+   * so a restart within the same millisecond as a prior write can't reuse a seq
+   * (which would collide or mis-order under last-write-wins). Versions are
+   * `<ts>:<nodeId>:<seq>` with fixed widths, so the lexicographic max for this
+   * node carries the max seq.
+   */
+  private initialVersionSeq(): number {
+    const row = this.db
+      .prepare(
+        `SELECT version FROM _monlite_changes WHERE version LIKE ? ORDER BY version DESC LIMIT 1`,
+      )
+      .get(`%:${this.nodeId}:%`) as { version: string } | undefined;
+    if (!row) return 0;
+    const seq = parseInt(row.version.slice(row.version.lastIndexOf(":") + 1), 10);
+    return Number.isFinite(seq) ? seq + 1 : 0;
   }
 
   private init(): void {
