@@ -25,6 +25,12 @@ const db = createDb("app.db", {
 await db.collection("docs").findSimilar({ vector: queryEmbedding, topK: 5, where: { status: "live" } });
 ```
 
+With a `where`, `findSimilar()` over-fetches nearest neighbours before filtering, so a
+selective filter doesn't drop matches that exist further out; tune the pool with
+`{ candidates }` (default `max(topK * 10, 200)`). Indexing is linear at scale (vec0 keyed
+on `doc_id`) — 50K vectors index in ~8s, KNN in ~14ms. For **exact** pre-filtered recall
+over a large corpus, use the dynamic store below (the filter runs **inside** the KNN).
+
 ## Dynamic store — `createVectorStore(db)`
 
 For collections created at runtime (RAG corpora, per-tenant indexes) — `where` on

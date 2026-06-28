@@ -24,6 +24,13 @@ await db.collection("posts").search("hello world", { where: { status: "published
 The plugin keeps the index current on every write and backfills on open. For a
 separate ingest process, call `collection.catchUp()` to pick up its writes.
 
+`search()` never throws on malformed/untrusted query text — a stray `"`, bare
+`AND`/`*`, or column filter falls back to a literal-phrase match. With a `where`,
+it over-fetches ranked matches before filtering so a selective filter doesn't drop
+hits that exist further down the ranking; tune the pool with `{ candidates }` (default
+`max(limit * 10, 200)`). For **exact** pre-filtered recall over a large corpus, use the
+dynamic index below (the `where` scopes the MATCH itself).
+
 ## Dynamic index — `createSearchIndex(db)`
 
 When collections are created at runtime (RAG, per-tenant), use the programmatic

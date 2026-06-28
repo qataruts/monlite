@@ -38,5 +38,9 @@ if (cache.setNX("lock:sweeper", 1, { ttl: 5_000 })) {
 | `has` / `delete` / `expire` / `ttl` | existence / removal / TTL |
 | `mget` / `keys(prefix?)` / `size` / `flush` | bulk / introspection |
 
+`setNX` and `incr` run under `BEGIN IMMEDIATE`, so they're **cross-process safe**:
+multiple processes (or workers) sharing the same `.db` can race the same key and
+exactly one acquires the lock — the losers cleanly get `false` rather than erroring.
+
 Use a separate `:memory:` db for a purely ephemeral cache, or `{ namespace }` to
 isolate multiple caches in one file.

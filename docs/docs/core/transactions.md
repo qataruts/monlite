@@ -29,6 +29,13 @@ await db.transactionAsync(async (tx) => {
 });
 ```
 
+:::warning Do all writes inside the callback
+A write issued from **outside** the callback while a `transactionAsync` is in flight
+(e.g. from another async task during an `await`) is **rejected with an error** — on a
+single connection it would otherwise silently fold into the transaction. Await the
+transaction first, or move the write into the callback.
+:::
+
 ## Compare-and-swap (findOneAndUpdate)
 
 The atomic read-modify-return primitive — match on a guard (`version`/`status`),

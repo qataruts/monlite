@@ -33,6 +33,20 @@ isn't a comparable measurement.
 ² lowdb/NeDB queries return references to the in-memory objects with no
 materialization, which is why broad scans look fast (see below).
 
+## Scale (RAG-sized corpora)
+
+Verified on a file database (run the suite with `MONLITE_SCALE=1`):
+
+| Workload | Result |
+|---|---|
+| Ingest 100K documents | ~0.8s (~0.008 ms/doc), indexed query ~9ms |
+| Index 50K vectors (`@monlite/vector`, vec0) | ~8s (~0.16 ms/doc), `findSimilar` ~14ms |
+| Index FTS5 documents (`@monlite/fts`) | linear — flat ~0.12 ms/doc to 30K+ |
+
+FTS5 and vector indexing are **linear** at scale (keyed `doc_id`, no O(n²) re-index),
+and plugin indexing batches into one transaction — so bulk RAG ingestion of 10K–100K
+documents stays fast.
+
 ## Takeaways
 
 - **Low overhead for the ergonomics.** monlite is roughly **2× the raw driver**
