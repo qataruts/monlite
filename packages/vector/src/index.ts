@@ -612,7 +612,8 @@ export function createVectorStore(db: Monlite): VectorStore {
       const sqlF = pairs.filter((p) => meta.has(p.key));
       const postF = pairs.filter((p) => !meta.has(p.key));
       const k = Math.max(1, postF.length ? Math.max(topK * 8, 64) : topK);
-      const clause = sqlF.map((p) => ` AND ${p.key} = ?`).join("");
+      // Re-validate the metadata column name at query time (defense in depth).
+      const clause = sqlF.map((p) => ` AND ${vecIdent(p.key)} = ?`).join("");
       const sql =
         `SELECT doc_id, distance, payload FROM "${name}" ` +
         `WHERE embedding MATCH ? AND k = ?${clause} ORDER BY distance`;
@@ -646,7 +647,7 @@ export function createVectorStore(db: Monlite): VectorStore {
       if (!pairs.length) return;
       const meta = new Set(cfg.metaFields);
       if (pairs.every((p) => meta.has(p.key))) {
-        const clause = pairs.map((p) => `${p.key} = ?`).join(" AND ");
+        const clause = pairs.map((p) => `${vecIdent(p.key)} = ?`).join(" AND ");
         db.sqlite
           .prepare(`DELETE FROM "${name}" WHERE ${clause}`)
           .run(...pairs.map((p) => p.value));
