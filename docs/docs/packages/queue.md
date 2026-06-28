@@ -38,5 +38,8 @@ queue.add("digest", { day: "mon" }, { delay: 60_000, priority: 10, jobId: "diges
   a dead worker. Or set `process(..., { visibilityTimeout })` for an automatic
   reaper: a job that runs longer than the timeout without a heartbeat is reclaimed,
   while a running job is heartbeated so a legitimately long job isn't requeued.
+- **Execution is at-least-once.** The atomic claim is exactly-once, but recovery
+  (manual or `visibilityTimeout`) can re-run a crashed/slow worker's job — make
+  handlers **idempotent** (key external side-effects on `job.id`).
 
 `queue.counts(name?)` → `{ pending, active, done, failed }`.

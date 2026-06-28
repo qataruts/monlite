@@ -1,5 +1,25 @@
 # @monlite/core
 
+## 2.6.6 — verification follow-up: correctness fixes
+
+A second adversarial verification pass found real holes in the 2.6.3–2.6.5 hardening;
+this release closes them.
+
+- **Foreign-write rejection now covers every mutating path.** `findOneAndUpdate` (the
+  cross-process CAS!), `bulkWrite`, and `purgeExpired` were missing the in-flight
+  `transactionAsync` guard, so a foreign call during an async transaction's await window
+  could still silently fold into it (data loss on rollback). All three now throw.
+- **`$lookup` no longer throws under `maxRows`.** Joins used the public `findMany`, so a
+  large join inherited the row cap; they now use the internal uncapped read (already
+  bounded by the join keys).
+- **Native driver loads on all Node versions again.** The 2.6.3 lazy `require`
+  (`getBuiltinModule` + probe) broke native-driver loading on Node 18.x / 20.0–20.15 /
+  22.0–22.2 ESM. Reverted to a static `createRequire` (correct on all Node, ESM + CJS).
+  For a **browser** bundle, alias/stub `node:module` (the demo's `vite.config` does).
+- **Sync version-counter resume is clock-jump safe.** It ordered by the version *string*
+  (timestamp-led), so a backward clock jump could resume below an already-used `seq`; it
+  now orders by the change-log insertion `seq` and drops an unescaped `LIKE`.
+
 ## 2.6.5 — sync version-counter recovery
 
 - **The per-node sync version counter resumes across restarts.** It reset to 0 on
@@ -26,8 +46,8 @@
   runs in the browser (a driver like `@monlite/wasm`'s `wasmDriver` is passed explicitly).
   A CommonJS `require` is now resolved lazily — `process.getBuiltinModule` (Node 20.16+ /
   22.3+, ESM and CJS) then a probed global `require`. Added a `browser` export condition.
-  Verified: an esbuild browser bundle succeeds with zero `node:module` references, the
-  native driver still loads in standalone ESM, and all 141 tests pass.
+  **Superseded in 2.6.6:** this lazy approach broke native loading on older Node ESM and
+  was reverted to a static `createRequire`; browser bundles now alias `node:module`.
 - **Plugin `afterWrite` indexing is batched into one transaction.** `fts`/`vector` indexing
   ran one INSERT per row with no enclosing transaction, so a bulk write did one commit/fsync
   *per indexed row* (the N+1 dominating RAG ingestion on a file DB). All plugin `afterWrite`

@@ -30,6 +30,19 @@ const db2 = createDb(":memory:", { driver: wasmDriver(SQL, { data: bytes }) });
 The whole document/query/structured/transaction API works in the browser, as do
 `@monlite/kv`, `@monlite/queue`, and `@monlite/cron`.
 
+### Bundling for the browser
+
+`@monlite/core` loads the native drivers via `node:module`, which only runs on the
+native (Node) path — but bundlers still need it stubbed for a browser build. Alias
+these in your bundler (see the demo's `vite.config.ts`):
+
+```ts
+// vite.config.ts → resolve.alias
+"node:module": "/path/to/empty-stub.js",   // @monlite/core native-driver loader
+"sqlite-vec":  "/path/to/empty-stub.js",   // @monlite/vector (uses its JS fallback)
+"events":      "/path/to/events-shim.js",  // @monlite/queue & cron (Node EventEmitter)
+```
+
 ## Full-text search (FTS5) in the browser
 
 `@monlite/fts` works in the browser too — **but the default `sql.js` build ships

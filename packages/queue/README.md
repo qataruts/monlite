@@ -36,7 +36,10 @@ queue.add("digest", { day: "monday" }, { delay: 60_000, priority: 10 });
 to requeue any jobs that were `active` when the process died.
 
 **Multi-process safe.** Workers claim jobs with a single `UPDATE … RETURNING`. Run the same
-queue in multiple processes against the same `.db`; each job is claimed exactly once.
+queue in multiple processes against the same `.db`; each pending job is claimed by exactly
+one worker. **Execution is at-least-once**, though: once a stuck job is recovered (via
+`recover()` or `visibilityTimeout`), a crashed/slow worker's job can run again — so make
+handlers **idempotent** (e.g. key external side-effects on `job.id`).
 
 **Retries with backoff.** Failed jobs retry up to `maxAttempts`; backoff is exponential by
 default (capped at 30s). Exhausted jobs become `status: "failed"` and are kept for inspection.
