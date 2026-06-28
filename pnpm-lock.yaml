@@ -51,6 +51,31 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.20.0)
 
+  demo:
+    dependencies:
+      '@monlite/core':
+        specifier: workspace:*
+        version: link:..
+      '@monlite/fts':
+        specifier: workspace:*
+        version: link:../packages/fts
+      '@monlite/kv':
+        specifier: workspace:*
+        version: link:../packages/kv
+      '@monlite/wasm':
+        specifier: workspace:*
+        version: link:../packages/wasm
+      buffer:
+        specifier: ^6.0.3
+        version: 6.0.3
+      sql.js:
+        specifier: ^1.12.0
+        version: 1.14.1
+    devDependencies:
+      vite:
+        specifier: ^5.4.0
+        version: 5.4.21(@types/node@22.20.0)
+
   packages/cron:
     dependencies:
       '@monlite/core':
@@ -967,6 +992,9 @@ packages:
 
   buffer@5.7.1:
     resolution: {integrity: sha512-EHcyIPBQ4BSGlvjB16k5KgAJ27CIsHY/2JBmCRReo48y9rQ3MaUzWX3KVlBa4U7MyX02HdVj0K7C3WaB3ju7FQ==}
+
+  buffer@6.0.3:
+    resolution: {integrity: sha512-FTiCpNxtwiZZHEZbcbTIcZjERVICn9yq/pDFkTl95/AxzD1naBctN7YO68riM/gLSDY7sdrMby8hofADYuuqOA==}
 
   bundle-require@5.1.0:
     resolution: {integrity: sha512-3WrrOuZiyaaZPWiEt4G3+IffISVC9HYlWueJEBWED4ZH4aIAC2PnkdnuRrR94M+w6yGWn4AglWtJtBI8YqvgoA==}
@@ -2528,6 +2556,11 @@ snapshots:
   bson@6.10.4: {}
 
   buffer@5.7.1:
+    dependencies:
+      base64-js: 1.5.1
+      ieee754: 1.2.1
+
+  buffer@6.0.3:
     dependencies:
       base64-js: 1.5.1
       ieee754: 1.2.1

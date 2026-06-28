@@ -10,6 +10,7 @@ on:
       - "demo/**"
       - "packages/**"
       - "pnpm-workspace.yaml"
+      - "pnpm-lock.yaml"
       - ".github/workflows/deploy-docs.yml"
   workflow_dispatch:
 
