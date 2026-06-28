@@ -367,9 +367,9 @@ mark {
   padding: 2px 7px;
   border-radius: 20px;
   text-transform: uppercase;
-  animation: blink 1.4s ease-in-out infinite;
+  animation: blink 2.6s ease-in-out infinite;
 }
-@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+@keyframes blink { 0%, 70%, 100% { opacity: 1; } 85% { opacity: .35; } }
 .sql-log {
   font-family: var(--mono);
   font-size: 11px;
