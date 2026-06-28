@@ -39,6 +39,13 @@ export interface ProcessOptions {
   concurrency?: number;
   /** How often to poll for due jobs when idle (ms). Default 500. */
   pollInterval?: number;
+  /**
+   * Visibility timeout (ms). If set, a crashed worker's job is automatically
+   * reclaimed: a job that stays `active` without a heartbeat for this long is
+   * returned to `pending`. While a handler runs, its job is heartbeated so a
+   * legitimately long job isn't reaped. Off by default (jobs are never reaped).
+   */
+  visibilityTimeout?: number;
 }
 
 export interface QueueOptions {
@@ -105,6 +112,8 @@ class WorkerImpl implements Worker {
   private drainResolve: (() => void) | undefined;
   private readonly concurrency: number;
   private readonly pollInterval: number;
+  private readonly visibilityTimeout: number;
+  private reaper: ReturnType<typeof setInterval> | undefined;
 
   constructor(
     private readonly q: Queue,
@@ -114,6 +123,13 @@ class WorkerImpl implements Worker {
   ) {
     this.concurrency = Math.max(1, opts.concurrency ?? 1);
     this.pollInterval = opts.pollInterval ?? 500;
+    this.visibilityTimeout = Math.max(0, opts.visibilityTimeout ?? 0);
+    if (this.visibilityTimeout > 0) {
+      this.reaper = setInterval(() => {
+        if (this.running) this.q.recover(this.visibilityTimeout);
+      }, Math.max(1000, Math.floor(this.visibilityTimeout / 2)));
+      this.reaper.unref?.();
+    }
     this.kick();
   }
 
@@ -128,6 +144,16 @@ class WorkerImpl implements Worker {
       const job = this.q.claimInternal(this.name);
       if (!job) break;
       this.inFlight++;
+      // Heartbeat the job while it runs so the reaper's visibility timeout won't
+      // reclaim a legitimately long-running job.
+      let hb: ReturnType<typeof setInterval> | undefined;
+      if (this.visibilityTimeout > 0) {
+        hb = setInterval(
+          () => this.q.heartbeatInternal(job.id),
+          Math.max(1000, Math.floor(this.visibilityTimeout / 2)),
+        );
+        hb.unref?.();
+      }
       Promise.resolve()
         .then(() => this.handler(job))
         .then(
@@ -141,6 +167,7 @@ class WorkerImpl implements Worker {
           },
         )
         .finally(() => {
+          if (hb) clearInterval(hb);
           this.inFlight--;
           if (this.running) this.kick();
           else this.checkDrained();
@@ -162,6 +189,7 @@ class WorkerImpl implements Worker {
   async stop(): Promise<void> {
     this.running = false;
     if (this.timer) clearTimeout(this.timer);
+    if (this.reaper) clearInterval(this.reaper);
     if (this.inFlight === 0) return;
     await new Promise<void>((resolve) => {
       this.drainResolve = resolve;
@@ -307,6 +335,13 @@ export class Queue extends EventEmitter {
          WHERE status='active' AND updated_at < ?`,
       )
       .run(now(), now() - olderThanMs).changes;
+  }
+
+  /** @internal Extend a running job's visibility timeout (worker heartbeat). */
+  heartbeatInternal(id: number): void {
+    this.driver
+      .prepare(`UPDATE _jobs SET updated_at=? WHERE id=? AND status='active'`)
+      .run(now(), id);
   }
 
   /** Stop all workers and wait for in-flight jobs to finish. */

@@ -155,3 +155,31 @@ describe("@monlite/queue", () => {
     expect(q.counts("sync").pending).toBe(2);
   });
 });
+
+describe("visibility timeout (reaper + heartbeat)", () => {
+  it("reclaims a crashed worker's job and reprocesses it", async () => {
+    const db = open();
+    const q = createQueue(db, { maxAttempts: 5 });
+    queues.push(q);
+    const job = q.add("t", { x: 1 });
+
+    // simulate a crashed worker: claim the job (active), then make it stale
+    const claimed = (q as any).claimInternal("t");
+    expect(claimed?.id).toBe(job.id);
+    db.sqlite
+      .prepare("UPDATE _jobs SET updated_at = ? WHERE id = ?")
+      .run(Date.now() - 30_000, job.id);
+
+    // a worker with a visibility timeout reaps the stale job and runs it
+    let ran = false;
+    const w = q.process("t", async () => { ran = true; }, {
+      visibilityTimeout: 2000,
+      pollInterval: 100,
+    });
+    await sleep(2200); // reaper fires at ~vt/2 = 1000ms, then the job runs
+    await w.stop();
+
+    expect(ran).toBe(true);
+    expect(q.getJob(job.id)?.status).toBe("done");
+  }, 10_000);
+});
