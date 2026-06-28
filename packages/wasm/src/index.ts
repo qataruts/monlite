@@ -83,7 +83,7 @@ export class WasmDriver implements Driver {
       prepare: (sql: string) => this.prepare(sql),
       exec: (sql: string) => this.exec(sql),
       run: (sql: string, params: any[] = []) => this.raw.run(sql, params),
-      export: () => this.raw.export(),
+      export: () => this.export(),
       create_function: (name: string, fn: (...a: any[]) => any) =>
         this.raw.create_function(name, fn),
       raw: this.raw,
@@ -185,7 +185,12 @@ export class WasmDriver implements Driver {
 
   /** Serialize the whole database to bytes (for persistence). */
   export(): Uint8Array {
-    return this.raw.export();
+    const data = this.raw.export();
+    // sql.js's export() finalizes the connection's prepared statements, so any
+    // statement we cached is now dead ("Statement closed"). Drop the cache; the
+    // next prepare() re-creates them against the live connection.
+    this.cache.clear();
+    return data;
   }
 
   close(): void {

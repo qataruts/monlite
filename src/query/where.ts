@@ -1,6 +1,6 @@
 import type { WhereInput, FieldFilter } from "../types.js";
 import { MonliteQueryError } from "../errors.js";
-import { fieldExpr, pathLiteral, bindable, isColumn } from "./sql.js";
+import { fieldExpr, pathLiteral, bindable, isColumn, isBuffer } from "./sql.js";
 import { REGEXP_FN } from "../driver/regexp.js";
 
 export interface WhereContext {
@@ -59,7 +59,7 @@ function isFilterObject(v: any): v is FieldFilter {
     typeof v === "object" &&
     !Array.isArray(v) &&
     !(v instanceof Date) &&
-    !Buffer.isBuffer(v) &&
+    !isBuffer(v) &&
     (v.constructor === Object || v.constructor === undefined)
   );
 }

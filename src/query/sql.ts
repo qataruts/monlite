@@ -60,6 +60,11 @@ export function quoteIdent(name: string): string {
  * better-sqlite3 only accepts numbers, bigints, strings, Buffers and null —
  * so booleans, Dates, undefined and objects are converted here.
  */
+/** Browser-safe `Buffer.isBuffer` — `Buffer` is undefined outside Node. */
+export function isBuffer(value: unknown): boolean {
+  return typeof Buffer !== "undefined" && Buffer.isBuffer(value);
+}
+
 export function bindable(value: any): number | bigint | string | Buffer | null {
   if (value === undefined || value === null) return null;
   if (typeof value === "boolean") return value ? 1 : 0;
@@ -71,7 +76,7 @@ export function bindable(value: any): number | bigint | string | Buffer | null {
   ) {
     return value;
   }
-  if (Buffer.isBuffer(value)) return value;
+  if (isBuffer(value)) return value;
   // Arrays / nested objects: compare against SQLite's minified JSON text.
   return JSON.stringify(value);
 }

@@ -45,6 +45,7 @@ import { applyUpdate } from "./query/update.js";
 import {
   bindable,
   fieldExpr,
+  isBuffer,
   isColumn,
   pathLiteral,
   RESERVED_FIELDS,
@@ -434,7 +435,7 @@ export class Collection<T = Doc> {
       value !== null &&
       typeof value === "object" &&
       !(value instanceof Date) &&
-      !Buffer.isBuffer(value)
+      !isBuffer(value)
     ) {
       throw new MonliteQueryError(
         `Column "${field}" cannot store an object/array. Declare it as ` +
