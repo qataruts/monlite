@@ -27,6 +27,13 @@ export interface FindSimilarOptions<T = Doc> {
   topK?: number;
   /** Additionally constrain matches with a normal monlite where clause. */
   where?: WhereInput<T>;
+  /**
+   * When `where` is set, how many nearest neighbours to pull from the index
+   * before filtering (then trimmed to `topK`). Larger = better recall for
+   * selective filters. Default `max(topK * 10, 200)`. For exact pre-filtered
+   * recall over a large corpus, use {@link createVectorStore}'s `indexedFields`.
+   */
+  candidates?: number;
 }
 
 export type SimilarResult<T = Doc> = WithId<T> & { _distance: number };
@@ -163,12 +170,15 @@ function findSimilar<T = Doc>(
     );
   }
   const topK = opts.topK ?? 10;
+  // With a where filter, over-fetch nearest neighbours then filter + trim to
+  // topK, so a selective filter doesn't drop results that exist further out.
+  const k = opts.where ? Math.max(opts.candidates ?? topK * 10, 200) : topK;
   const rows = db.sqlite
     .prepare(
       `SELECT doc_id, distance FROM "${vecTable(coll.name)}" ` +
         `WHERE embedding MATCH ? AND k = ? ORDER BY distance`,
     )
-    .all(JSON.stringify(opts.vector), topK) as Array<{
+    .all(JSON.stringify(opts.vector), k) as Array<{
     doc_id: string;
     distance: number;
   }>;
@@ -188,6 +198,7 @@ function findSimilar<T = Doc>(
     if (allowed && !allowed.has(r.doc_id)) continue;
     const doc = coll.getRaw(r.doc_id);
     if (doc) out.push({ ...doc, _distance: r.distance } as SimilarResult<T>);
+    if (out.length >= topK) break;
   }
   return Promise.resolve(out);
 }

@@ -15,6 +15,12 @@ export interface SearchOptions<T = Doc> {
   limit?: number;
   /** Additionally constrain matches with a normal monlite where clause. */
   where?: WhereInput<T>;
+  /**
+   * When `where` is set, how many ranked matches to pull before filtering (then
+   * trimmed to `limit`). Larger = better recall for selective filters.
+   * Default `max(limit * 10, 200)`.
+   */
+  candidates?: number;
 }
 
 export type SearchResult<T = Doc> = WithId<T> & { _score: number };
@@ -165,12 +171,15 @@ function search<T = Doc>(
     );
   }
   const limit = opts?.limit ?? 50;
+  // With a where filter, over-fetch ranked matches then filter + trim to limit,
+  // so a selective filter doesn't drop results that exist further down the rank.
+  const fetch = opts?.where ? Math.max(opts.candidates ?? limit * 10, 200) : limit;
   const rows = db.sqlite
     .prepare(
       `SELECT doc_id, rank FROM "${ftsTable(coll.name)}" ` +
         `WHERE "${ftsTable(coll.name)}" MATCH ? ORDER BY rank LIMIT ?`,
     )
-    .all(query, limit) as Array<{ doc_id: string; rank: number }>;
+    .all(query, fetch) as Array<{ doc_id: string; rank: number }>;
 
   let allowed: Set<string> | null = null;
   if (opts?.where) {
@@ -187,6 +196,7 @@ function search<T = Doc>(
     if (allowed && !allowed.has(r.doc_id)) continue;
     const doc = coll.getRaw(r.doc_id);
     if (doc) out.push({ ...doc, _score: -r.rank } as SearchResult<T>);
+    if (out.length >= limit) break;
   }
   return Promise.resolve(out);
 }

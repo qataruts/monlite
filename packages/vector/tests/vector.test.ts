@@ -266,3 +266,20 @@ describe("createVectorStore (dynamic, programmatic)", () => {
     expect(store.search("docs", { vector: [0, 1, 0], topK: 5 }).length).toBe(0);
   });
 });
+
+describe("findSimilar where recall (over-fetch then filter)", () => {
+  it("returns a filtered match that ranks outside topK", async () => {
+    const c = open({ docs: { field: "e", dimensions: 8, distance: "cosine" } }).collection("docs");
+    const data: any[] = [];
+    for (let i = 0; i < 60; i++)
+      data.push({
+        e: i === 59 ? [0, 0, 0, 0, 0, 0, 0, 1] : [1, 0, 0, 0, 0, 0, 0, 0.001],
+        flag: i === 59,
+      });
+    await c.createMany({ data });
+    // The only flag=true doc is the farthest; with topK 3 it must still be found.
+    const hits = await c.findSimilar({ vector: [1, 0, 0, 0, 0, 0, 0, 0], topK: 3, where: { flag: true } });
+    expect(hits).toHaveLength(1);
+    expect((hits[0] as any).flag).toBe(true);
+  });
+});

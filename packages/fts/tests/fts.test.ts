@@ -201,3 +201,20 @@ describe("createSearchIndex (dynamic, programmatic)", () => {
     expect(idx.search("docs", "beta").length).toBe(0);
   });
 });
+
+describe("where recall (over-fetch then filter)", () => {
+  it("returns a filtered match that ranks outside the limit", async () => {
+    const c = open({ docs: ["body"] }).collection("docs");
+    const data: any[] = [];
+    for (let i = 0; i < 60; i++)
+      data.push({
+        body: i === 59 ? "apple" : "apple apple apple apple",
+        flag: i === 59,
+      });
+    await c.createMany({ data });
+    // The only flag=true doc ranks last; with limit 3 it must still be found.
+    const hits = await c.search("apple", { where: { flag: true }, limit: 3 });
+    expect(hits).toHaveLength(1);
+    expect((hits[0] as any).flag).toBe(true);
+  });
+});
