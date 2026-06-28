@@ -36,3 +36,19 @@ describe("resource limits", () => {
     expect(await c.count()).toBe(10);
   });
 });
+
+describe("maxRows does not cap internal/join reads", () => {
+  it("$lookup joins more than maxRows foreign rows without throwing", async () => {
+    const db = createDb(":memory:", { maxRows: 5 });
+    dbs.push(db);
+    const orders = db.collection("orders");
+    const items = db.collection("items");
+    for (let i = 0; i < 10; i++) await items.create({ data: { orderId: "o1", n: i } });
+    await orders.create({ data: { _id: "o1" } });
+    const r = await orders.findMany({
+      where: { _id: "o1" },
+      lookup: { from: "items", localField: "_id", foreignField: "orderId", as: "items" },
+    });
+    expect((r[0] as any).items.length).toBe(10);
+  });
+});

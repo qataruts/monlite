@@ -775,8 +775,10 @@ export class Collection<T = Doc> {
           .filter((v) => v !== undefined && v !== null),
       ),
     ];
+    // findManyCore (not the public findMany) so a join isn't capped by maxRows —
+    // the foreign fetch is already bounded by the `IN (localValues)` join keys.
     const foreign = localValues.length
-      ? await this.mon.collection(spec.from).findMany({
+      ? this.mon.collection(spec.from).findManyCore({
           where: { [spec.foreignField]: { in: localValues } } as WhereInput,
         })
       : [];
@@ -1043,6 +1045,7 @@ export class Collection<T = Doc> {
     args: FindOneAndUpdateArgs<T>,
   ): Promise<WithId<T> | null> {
     this.ensureTable();
+    this.mon.assertWriteAllowed();
     const params: any[] = [];
     const clause = buildWhere(args.where, {
       params,
@@ -1099,6 +1102,7 @@ export class Collection<T = Doc> {
    */
   async bulkWrite(operations: BulkWriteOp<T>[]): Promise<BulkWriteResult> {
     this.ensureTable();
+    this.mon.assertWriteAllowed();
     const ids: string[] = [];
     const result: BulkWriteResult = { inserted: 0, updated: 0, deleted: 0 };
 
@@ -1193,6 +1197,7 @@ export class Collection<T = Doc> {
       );
     }
     this.ensureTable();
+    this.mon.assertWriteAllowed();
     const cutoff = Date.now() - this.ttl.seconds * 1000;
     const expr = this.fieldSqlExpr(this.ttl.field);
     const rows = this.db
