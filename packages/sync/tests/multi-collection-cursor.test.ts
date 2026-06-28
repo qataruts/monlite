@@ -9,7 +9,8 @@ type Row = { _id: string; doc: any; v: string; deleted?: boolean };
 function fakePool(data: Record<string, Row[]>): PgQueryable {
   return {
     async query(text: string, params: any[] = []) {
-      if (!/_monlite_v\s*>\s*\$1/.test(text)) return { rows: [] }; // ensure/DDL
+      // pull query: references _monlite_v and the cursor param $1 (now via COLLATE "C")
+      if (!(/_monlite_v/.test(text) && />\s*\$1/.test(text))) return { rows: [] }; // ensure/DDL
       // table is schema-qualified: FROM "public"."posts" → capture the table.
       const table = text.match(/FROM\s+(?:"[^"]+"\.)?"([^"]+)"/)?.[1] ?? "";
       const since = String(params[0] ?? "");

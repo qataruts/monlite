@@ -132,7 +132,9 @@ export class PostgresAdapter implements SyncAdapter {
       const since = cursorFor(dec, collName);
       let maxVersion = since;
       const params: any[] = [since];
-      let sql = `SELECT _id, doc, ${VERSION} AS v, ${DELETED} AS deleted FROM ${q} WHERE ${VERSION} > $1 ORDER BY ${VERSION} ASC`;
+      // COLLATE "C" forces byte-order comparison so SQL `>` and the JS string
+      // ordering the cursor relies on agree, regardless of the database's locale.
+      let sql = `SELECT _id, doc, ${VERSION} AS v, ${DELETED} AS deleted FROM ${q} WHERE ${VERSION} COLLATE "C" > $1 ORDER BY ${VERSION} COLLATE "C" ASC`;
       if (opts.limit != null && opts.limit > 0) {
         sql += ` LIMIT $2`;
         params.push(opts.limit);

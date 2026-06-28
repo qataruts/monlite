@@ -123,7 +123,9 @@ export class MySqlAdapter implements SyncAdapter {
       const since = cursorFor(dec, collName);
       let maxVersion = since;
       const params: any[] = [since];
-      let sql = `SELECT _id, doc, ${VERSION} AS v, ${DELETED} AS deleted FROM ${t} WHERE ${VERSION} > ? ORDER BY ${VERSION} ASC`;
+      // CAST(... AS BINARY) forces byte-order comparison so SQL `>` and the JS
+      // string ordering the cursor relies on agree, regardless of column collation.
+      let sql = `SELECT _id, doc, ${VERSION} AS v, ${DELETED} AS deleted FROM ${t} WHERE CAST(${VERSION} AS BINARY) > ? ORDER BY CAST(${VERSION} AS BINARY) ASC`;
       if (opts.limit != null && opts.limit > 0) {
         sql += ` LIMIT ?`;
         params.push(opts.limit);
