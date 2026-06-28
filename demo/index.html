@@ -34,7 +34,7 @@
           </svg>
           <span class="logo-text">monlite</span>
         </div>
-        <span class="header-sub">documents · full-text search · cache &mdash; in your browser via SQLite WASM</span>
+        <span class="header-sub">a real SQLite database, running in your browser</span>
       </div>
       <div class="header-right">
         <div class="stats">
@@ -51,10 +51,19 @@
       </div>
     </header>
 
+    <div class="intro">
+      <span>👋 Everything here runs <b>100% in your browser</b> on SQLite-WASM — <b>no server, no backend</b>. The data lives in one <code>.db</code> file in this tab.</span>
+      <span class="pill">@monlite/core</span>
+      <span class="pill">@monlite/fts</span>
+      <span class="pill">@monlite/kv</span>
+      <span><b>Try it:</b> search the memories (FTS5), add your own, or use the cache — watch every SQL query appear live on the right →</span>
+    </div>
+
     <div class="layout">
 
       <!-- ── Left panel: memories ── -->
       <div class="panel panel-main">
+        <div class="panel-label">Memories · documents collection</div>
         <div class="search-wrap">
           <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input id="search" type="text" class="search-input" placeholder="Search memories with FTS5…" autocomplete="off" spellcheck="false" />

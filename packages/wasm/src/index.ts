@@ -34,6 +34,12 @@ export interface SqlJsStatement {
 export interface WasmDriverOptions {
   /** Existing database bytes to open (e.g. restored from IndexedDB/OPFS). */
   data?: Uint8Array | null;
+  /**
+   * Called after every executed statement with its SQL and duration — mirrors
+   * `createDb`'s `onQuery` (which only reaches the built-in Node drivers, since a
+   * user-constructed driver is used as-is). Useful for an in-browser query log.
+   */
+  onQuery?: (event: { sql: string; durationMs: number }) => void;
 }
 
 /**
@@ -60,15 +66,26 @@ export class WasmDriver implements Driver {
     { stmt: SqlJsStatement; wrapped: PreparedStatement }
   >();
   private depth = 0;
+  private readonly onQuery?: (e: { sql: string; durationMs: number }) => void;
 
   constructor(SQL: SqlJsStatic, options: WasmDriverOptions = {}) {
     this.raw = new SQL.Database(options.data ?? null);
     this.raw.run("PRAGMA foreign_keys = ON");
     this.raw.create_function(REGEXP_FN, monliteRegexp); // backs the `regex` operator
+    this.onQuery = options.onQuery;
+  }
+
+  /** Time `fn`, report it to `onQuery`, and return its result. */
+  private timed<T>(sql: string, fn: () => T): T {
+    if (!this.onQuery) return fn();
+    const t0 = globalThis.performance?.now?.() ?? 0;
+    const out = fn();
+    this.onQuery({ sql, durationMs: (globalThis.performance?.now?.() ?? 0) - t0 });
+    return out;
   }
 
   exec(sql: string): void {
-    this.raw.run(sql);
+    this.timed(sql, () => this.raw.run(sql));
   }
 
   /**
@@ -102,26 +119,29 @@ export class WasmDriver implements Driver {
     const stmt = this.raw.prepare(sql);
     // Arrow functions capture the driver's `this` lexically.
     const wrapped: PreparedStatement = {
-      run: (...params: any[]): RunResult => {
-        stmt.run(params);
-        return {
-          changes: this.raw.getRowsModified(),
-          lastInsertRowid: this.lastInsertRowid(),
-        };
-      },
-      get: (...params: any[]): any => {
-        stmt.bind(params);
-        const row = stmt.step() ? stmt.getAsObject() : undefined;
-        stmt.reset();
-        return row;
-      },
-      all: (...params: any[]): any[] => {
-        stmt.bind(params);
-        const rows: any[] = [];
-        while (stmt.step()) rows.push(stmt.getAsObject());
-        stmt.reset();
-        return rows;
-      },
+      run: (...params: any[]): RunResult =>
+        this.timed(sql, () => {
+          stmt.run(params);
+          return {
+            changes: this.raw.getRowsModified(),
+            lastInsertRowid: this.lastInsertRowid(),
+          };
+        }),
+      get: (...params: any[]): any =>
+        this.timed(sql, () => {
+          stmt.bind(params);
+          const row = stmt.step() ? stmt.getAsObject() : undefined;
+          stmt.reset();
+          return row;
+        }),
+      all: (...params: any[]): any[] =>
+        this.timed(sql, () => {
+          stmt.bind(params);
+          const rows: any[] = [];
+          while (stmt.step()) rows.push(stmt.getAsObject());
+          stmt.reset();
+          return rows;
+        }),
     };
     this.cache.set(sql, { stmt, wrapped });
     return wrapped;

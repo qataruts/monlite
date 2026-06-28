@@ -1,6 +1,6 @@
 {
   "name": "@monlite/wasm",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Run @monlite/core in the browser (or anywhere) on SQLite-WASM via sql.js — a custom driver.",
   "type": "module",
   "main": "./dist/index.cjs",

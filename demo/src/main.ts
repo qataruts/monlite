@@ -36,16 +36,16 @@ async function init() {
   setLoadingText("Starting database…");
 
   db = createDb(":memory:", {
-    driver: wasmDriver(SQL),
+    // onQuery lives on the wasm driver (createDb's onQuery only reaches the Node
+    // drivers — a user-built driver is used as-is). This powers the live SQL log.
+    driver: wasmDriver(SQL, {
+      onQuery: (e) => addSqlLog(e.sql.trim(), e.durationMs),
+    }),
     plugins: [
       // Full-text search on title + content + tags (SQLite FTS5, built-in).
       fts({ memories: ["title", "content", "tags"] }),
     ],
-    onQuery(sql: string, _params: unknown, ms: number) {
-      // Capture every SQL statement for the live log.
-      addSqlLog(sql.trim(), ms);
-    },
-  } as any);
+  });
 
   cache = kv(db);
   memories = db.collection<Memory>("memories");
@@ -287,6 +287,7 @@ function setupListeners() {
   document.getElementById("btn-get")!.addEventListener("click", () => {
     const key = (document.getElementById("kv-key") as HTMLInputElement).value.trim();
     if (!key) return;
+    clearInterval(countdownId); // stop the set-countdown from overwriting this result
 
     const value = cache.get(key);
     const ttlLeft = cache.ttl(key);
