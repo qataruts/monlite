@@ -1,5 +1,22 @@
 # @monlite/core
 
+## 2.6.3 — browser-clean bundle + batched plugin indexing
+
+- **The ESM bundle no longer statically imports `node:module`.** That single line broke
+  browser bundlers (Vite / esbuild / webpack) even though native-driver loading never
+  runs in the browser (a driver like `@monlite/wasm`'s `wasmDriver` is passed explicitly).
+  A CommonJS `require` is now resolved lazily — `process.getBuiltinModule` (Node 20.16+ /
+  22.3+, ESM and CJS) then a probed global `require`. Added a `browser` export condition.
+  Verified: an esbuild browser bundle succeeds with zero `node:module` references, the
+  native driver still loads in standalone ESM, and all 141 tests pass.
+- **Plugin `afterWrite` indexing is batched into one transaction.** `fts`/`vector` indexing
+  ran one INSERT per row with no enclosing transaction, so a bulk write did one commit/fsync
+  *per indexed row* (the N+1 dominating RAG ingestion on a file DB). All plugin `afterWrite`
+  calls for a write now run in a single transaction (nests as a SAVEPOINT). File-DB ingest:
+  5K FTS docs in ~0.47s; 100K plain docs in ~0.8s.
+- **`Driver.transaction` gained an `immediate` flag** (BEGIN IMMEDIATE). Powers
+  `@monlite/kv`'s cross-process-safe `setNX`/`incr`.
+
 ## 2.6.1 — cross-process CAS
 
 - **`findOneAndUpdate` CAS hardened to `BEGIN IMMEDIATE`.** The read-modify-write now
