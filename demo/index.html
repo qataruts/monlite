@@ -51,20 +51,17 @@
       </div>
     </header>
 
-    <div class="intro">
-      <span>👋 Everything here runs <b>100% in your browser</b> on SQLite-WASM — <b>no server, no backend</b>. The data lives in one <code>.db</code> file in this tab. Each tab is a different monlite package — every query shows live in the SQL log →</span>
-    </div>
+    <nav class="tabs" id="tabs">
+      <button class="tab active" data-tab="docs">Documents</button>
+      <button class="tab" data-tab="search">Full-text</button>
+      <button class="tab" data-tab="vector">Vector</button>
+      <button class="tab" data-tab="kv">Cache</button>
+      <button class="tab" data-tab="queue">Queue</button>
+      <button class="tab" data-tab="cron">Cron</button>
+    </nav>
 
     <div class="layout">
       <div class="panel panel-main">
-        <nav class="tabs" id="tabs">
-          <button class="tab active" data-tab="docs">Documents</button>
-          <button class="tab" data-tab="search">Full-text</button>
-          <button class="tab" data-tab="vector">Vector</button>
-          <button class="tab" data-tab="kv">Cache</button>
-          <button class="tab" data-tab="queue">Queue</button>
-          <button class="tab" data-tab="cron">Cron</button>
-        </nav>
 
         <!-- ── Documents (core) ── -->
         <section class="tab-panel active" id="panel-docs">
@@ -155,6 +152,10 @@
         </div>
       </div>
     </div>
+
+    <footer class="footer">
+      👋 Everything here runs <b>100% in your browser</b> on SQLite-WASM — <b>no server, no backend</b>. The data lives in one <code>.db</code> file in this tab. Each tab is a different monlite package, and every query shows live in the SQL&nbsp;log.
+    </footer>
   </div>
 
   <div id="loading" class="loading-overlay">

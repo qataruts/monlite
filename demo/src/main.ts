@@ -199,7 +199,16 @@ async function embed(text: string): Promise<number[]> {
 
 async function runVector(q: string) {
   q = q.trim();
-  if (!q || !embedder) return;
+  if (!embedder) return;
+  // Empty query → show ALL the vector data (the full corpus), not nothing.
+  if (!q) {
+    const all = await memories.findMany({});
+    $("vec-count").textContent = `${all.length} document${all.length === 1 ? "" : "s"}`;
+    $("vector-grid").innerHTML = all.length
+      ? all.map((d: any) => card(d, "", "")).join("")
+      : `<div class="empty">No documents yet.</div>`;
+    return;
+  }
   const v = await embed(q);
   // findSimilar ranks ALL docs by similarity; keep only the relevant ones so it
   // reads as search, not a re-sorted list (there are only a handful of docs).
@@ -389,10 +398,22 @@ function updateStats() {
 }
 
 // ── SQL log ─────────────────────────────────────────────────────────────────
+// Show only the useful "action" queries — the writes you trigger (on real tables)
+// and searches (FTS5 / vec0 use MATCH). Drop the noise: polling reads (queue status,
+// cron ticks, list re-renders) AND the plugin/sync plumbing that fires on every write
+// (`_monlite_*` change feed + vec state, and the `*_vec` / `*_fts` index shadows).
+function isActionSql(sql: string): boolean {
+  const s = sql.trim();
+  if (/\bMATCH\b/i.test(s)) return true; // a search
+  if (!/^(INSERT|UPDATE|DELETE|REPLACE)\b/i.test(s)) return false; // not a write → polling/DDL
+  if (/_monlite_\w+|\b\w+_vec\b|\b\w+_fts\b/i.test(s)) return false; // internal index/sync plumbing
+  return true; // a real write (memories, _jobs, _schedules, _kv)
+}
 function addSqlLog(sql: string, ms: number) {
+  if (!isActionSql(sql)) return;
   sqlLog.unshift({ sql: sql.length > 120 ? sql.slice(0, 120) + "…" : sql, ms });
   if (sqlLog.length > 40) sqlLog.pop();
-  $("sql-log").innerHTML = sqlLog.slice(0, 14).map((e) =>
+  $("sql-log").innerHTML = sqlLog.map((e) =>
     `<div class="sql-entry"><span class="sql-text">${escapeHtml(e.sql)}</span><span class="sql-time">${e.ms.toFixed(1)}ms</span></div>`).join("");
 }
 
