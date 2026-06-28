@@ -35,13 +35,16 @@ materialization, which is why broad scans look fast (see below).
 
 ## Scale (RAG-sized corpora)
 
-Verified on a file database (run the suite with `MONLITE_SCALE=1`):
+Each figure below is a **count of items** (not a byte size): "100,000 documents" means a
+hundred thousand small records, "50,000 vectors" means fifty thousand embeddings. The
+documents are small (a couple of fields each) and the vectors are 128-dimension. Measured
+on this machine (Apple Intel, Node 22) via the `MONLITE_SCALE`-gated tests — reproduce:
 
-| Workload | Result |
-|---|---|
-| Ingest 100K documents | ~0.8s (~0.008 ms/doc), indexed query ~9ms |
-| Index 50K vectors (`@monlite/vector`, vec0) | ~8s (~0.16 ms/doc), `findSimilar` ~14ms |
-| Index FTS5 documents (`@monlite/fts`) | linear — flat ~0.12 ms/doc to 30K+ |
+| Workload | Reproduce | Result |
+|---|---|---|
+| Ingest **100,000 documents** (file DB, 2-field records) | `MONLITE_SCALE=1 pnpm test scale` | ~1.0s (0.010 ms/doc), indexed query ~8ms |
+| Index **50,000 vectors** (128-dim, `@monlite/vector` vec0) | `cd packages/vector && MONLITE_SCALE=1 pnpm test scale` | ~7s (0.14 ms/doc), `findSimilar` ~13ms |
+| Index **30,000 FTS5 documents** (`@monlite/fts`) | `cd packages/fts && MONLITE_SCALE=1 pnpm test scale` | ~2s (0.068 ms/doc), `search` ~26ms |
 
 FTS5 and vector indexing are **linear** at scale (keyed `doc_id`, no O(n²) re-index),
 and plugin indexing batches into one transaction — so bulk RAG ingestion of 10K–100K
