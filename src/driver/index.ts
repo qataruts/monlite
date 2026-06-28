@@ -1,4 +1,3 @@
-import { createRequire } from "node:module";
 import { MonliteError } from "../errors.js";
 import type { Driver, DriverName, DriverOpenOptions } from "./types.js";
 import { BetterSqlite3Driver } from "./better-sqlite3.js";
@@ -11,8 +10,48 @@ export type {
   PreparedStatement,
 } from "./types.js";
 
-// Resolve relative to this module so optional deps load from the host app.
-const req = createRequire(import.meta.url);
+// Lazily resolve a CommonJS `require` to load the optional NATIVE SQLite drivers.
+// Deliberately NOT a static `import ... from "node:module"`: that single line
+// breaks browser bundlers (Vite / esbuild / webpack) even though this code path
+// never runs in the browser, where a driver (e.g. @monlite/wasm's wasmDriver) is
+// passed explicitly. Resolved on first native-driver load only.
+let _req: ((id: string) => any) | null | undefined;
+function resolveRequire(): ((id: string) => any) | null {
+  // Try `process.getBuiltinModule` FIRST (Node 20.16+ / 22.3+, ESM and CJS):
+  // it needs no static import and isn't affected by the bundler rewriting a bare
+  // `require` into a throwing ESM shim.
+  const proc: any = typeof process !== "undefined" ? process : undefined;
+  const getBuiltin = proc?.getBuiltinModule;
+  if (typeof getBuiltin === "function") {
+    try {
+      const mod = getBuiltin.call(proc, "module");
+      if (mod?.createRequire) return mod.createRequire(import.meta.url);
+    } catch {
+      /* fall through */
+    }
+  }
+  // Older Node: a real CommonJS `require`. In the ESM build the bundler turns
+  // this into a stub that throws when called, so probe it and discard if so.
+  try {
+    if (typeof require === "function") {
+      require.resolve("path");
+      return require;
+    }
+  } catch {
+    /* bundler require stub — unusable */
+  }
+  return null;
+}
+function req(id: string): any {
+  if (_req === undefined) _req = resolveRequire();
+  if (!_req) {
+    throw new MonliteError(
+      `Cannot load native driver "${id}" — no CommonJS require is available. In ` +
+        `the browser, pass a driver explicitly (e.g. wasmDriver from @monlite/wasm).`,
+    );
+  }
+  return _req(id);
+}
 
 function loadBetterSqlite3(): any | null {
   try {
