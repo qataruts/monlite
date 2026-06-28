@@ -31,10 +31,17 @@ declare module "@monlite/core" {
 const ftsTable = (coll: string) => `${coll}_fts`;
 const col = (i: number) => `f${i}`;
 const STATE = "_monlite_fts_state";
+// doc_id → fts rowid map, so the per-doc re-index can DELETE by rowid (O(log n))
+// instead of scanning the fts table on the UNINDEXED doc_id column (O(n), which
+// made bulk ingestion O(n²)).
+const IDMAP = "_monlite_fts_ids";
 
 function ensureState(db: Monlite): void {
   db.sqlite.exec(
     `CREATE TABLE IF NOT EXISTS ${STATE} (coll TEXT PRIMARY KEY, high_water INTEGER NOT NULL)`,
+  );
+  db.sqlite.exec(
+    `CREATE TABLE IF NOT EXISTS ${IDMAP} (coll TEXT NOT NULL, doc_id TEXT NOT NULL, rid INTEGER NOT NULL, PRIMARY KEY (coll, doc_id))`,
   );
 }
 function getHighWater(db: Monlite, coll: string): number {
@@ -75,13 +82,12 @@ export function catchUp(
   // Remove index rows whose document was deleted (possibly by another process).
   const orphans = sqlite
     .prepare(
-      `SELECT doc_id FROM "${ftsTable(coll)}" WHERE doc_id NOT IN (SELECT _id FROM "${coll}")`,
+      `SELECT rowid AS rid, doc_id FROM "${ftsTable(coll)}" WHERE doc_id NOT IN (SELECT _id FROM "${coll}")`,
     )
-    .all() as Array<{ doc_id: string }>;
-  const del = sqlite.prepare(
-    `DELETE FROM "${ftsTable(coll)}" WHERE doc_id = ?`,
-  );
-  for (const o of orphans) del.run(o.doc_id);
+    .all() as Array<{ rid: number; doc_id: string }>;
+  const del = sqlite.prepare(`DELETE FROM "${ftsTable(coll)}" WHERE rowid = ?`);
+  const delMap = sqlite.prepare(`DELETE FROM ${IDMAP} WHERE coll = ? AND doc_id = ?`);
+  for (const o of orphans) { del.run(o.rid); delMap.run(coll, o.doc_id); }
   setHighWater(db, coll, max);
   return { indexed: docs.length, removed: orphans.length };
 }
@@ -111,23 +117,35 @@ function indexDoc(
   id: string,
 ): void {
   const sqlite = db.sqlite;
-  sqlite.prepare(`DELETE FROM "${ftsTable(coll)}" WHERE doc_id = ?`).run(id);
+  const prev = sqlite
+    .prepare(`SELECT rid FROM ${IDMAP} WHERE coll = ? AND doc_id = ?`)
+    .get(coll, id) as { rid: number } | undefined;
+  if (prev) sqlite.prepare(`DELETE FROM "${ftsTable(coll)}" WHERE rowid = ?`).run(prev.rid);
   const doc = db.collection(coll).getRaw(id);
-  if (!doc) return; // deleted
+  if (!doc) {
+    if (prev) sqlite.prepare(`DELETE FROM ${IDMAP} WHERE coll = ? AND doc_id = ?`).run(coll, id);
+    return; // deleted
+  }
   const cols = fields.map((_, i) => `"${col(i)}"`).join(", ");
   const placeholders = fields.map(() => "?").join(", ");
   const values = fields.map((f) => extractText(doc, f));
-  sqlite
+  const res = sqlite
     .prepare(
       `INSERT INTO "${ftsTable(coll)}"(doc_id, ${cols}) VALUES (?, ${placeholders})`,
     )
     .run(id, ...values);
+  sqlite
+    .prepare(
+      `INSERT INTO ${IDMAP}(coll, doc_id, rid) VALUES (?, ?, ?) ON CONFLICT(coll, doc_id) DO UPDATE SET rid = excluded.rid`,
+    )
+    .run(coll, id, Number(res.lastInsertRowid));
 }
 
 /** Rebuild a collection's FTS index from scratch. */
 export function reindex(db: Monlite, coll: string, fields: string[]): void {
   const sqlite = db.sqlite;
   sqlite.exec(`DELETE FROM "${ftsTable(coll)}"`);
+  sqlite.prepare(`DELETE FROM ${IDMAP} WHERE coll = ?`).run(coll);
   for (const doc of db.collection(coll).findManyCore({})) {
     indexDoc(db, coll, fields, (doc as WithId<Doc>)._id);
   }
@@ -196,6 +214,14 @@ export function fts(spec: FtsSpec): MonlitePlugin {
           `CREATE VIRTUAL TABLE IF NOT EXISTS "${ftsTable(coll)}" ` +
             `USING fts5(doc_id UNINDEXED, ${cols})`,
         );
+        // Migration: backfill the doc_id→rowid map for any existing fts rows
+        // (databases written before the map existed), so re-index deletes hit
+        // the right row instead of leaving duplicates.
+        db.sqlite
+          .prepare(
+            `INSERT OR IGNORE INTO ${IDMAP}(coll, doc_id, rid) SELECT ?, doc_id, rowid FROM "${ftsTable(coll)}"`,
+          )
+          .run(coll);
         // Backfill when the index is empty (e.g. enabling FTS on an existing db).
         const count = db.sqlite
           .prepare(`SELECT count(*) AS n FROM "${ftsTable(coll)}"`)

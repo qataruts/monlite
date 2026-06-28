@@ -1,6 +1,6 @@
 {
   "name": "@monlite/vector",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Local vector / semantic search for @monlite/core, powered by sqlite-vec. Adds collection.findSimilar().",
   "type": "module",
   "main": "./dist/index.cjs",
