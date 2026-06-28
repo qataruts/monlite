@@ -37,8 +37,10 @@ jobs:
       # Build the @monlite/* packages + the Vite demo (workspace), then the docs
       # site, and fold the demo into the docs output so it serves at /demo.
       - run: pnpm install --frozen-lockfile
-      - run: pnpm -r build # build the @monlite/* packages (demo's deps)
-      - run: pnpm --filter monlite-demo build # build the browser demo → demo/dist (base /demo/)
+      # Build @monlite/* + the core (the demo's deps) FIRST so their dist/ exists,
+      # then the demo — pnpm -r alone builds them in parallel and the demo loses the race.
+      - run: pnpm --filter='!monlite-demo' -r build
+      - run: pnpm --filter monlite-demo build # browser demo → demo/dist (base /demo/)
       - run: ls -la demo/dist
       - name: Build docs site
         working-directory: docs
