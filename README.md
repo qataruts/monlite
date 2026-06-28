@@ -1,206 +1,269 @@
-# 🌙 monlite
+# monlite
 
-> **A local-first database for TypeScript** — a MongoDB-style document database in a
-> single SQLite file, with vectors, full-text search, cache, queue, and cron built in.
-> Zero config, zero server, zero-dependency core. The complete local data layer for
-> apps and AI agents.
+> **Stop spinning up Docker stacks.** Documents, vectors, full-text search, cache, queue, and
+> cron — in one SQLite file, with a zero-dependency TypeScript core.
 
 ```ts
 import { createDb } from "@monlite/core";
 
 const db = createDb("./app.db");
-const users = db.collection("users");
-
-await users.create({ data: { name: "Ali", age: 28 } });
-await users.findMany({ where: { age: { gte: 18 } } });
 ```
 
-That's the whole setup — no server, no migrations, no config. Your data is in `app.db`.
-
-📖 **Full documentation:** [monlite.dev](https://monlite.dev) · 🤖 [The local AI-agent backend](#the-complete-local-backend-for-an-ai-agent)
+That's it. No server. No migrations. No configuration. Everything below lives in `app.db`.
 
 ---
 
-## One file replaces your local stack
+## Replace your entire local stack with one file
 
-monlite is a **platform**, not just a document store. The zero-dependency core does
-documents; opt-in packages cover the rest — each a separate `npm install`, so you
-only pull what you use.
+Most local apps, CLIs, and AI agents juggle the same set of services. monlite collapses all
+of them into a single `.db` file:
 
-| Package | Replaces | Adds |
-| --- | --- | --- |
-| **[`@monlite/core`](https://www.npmjs.com/package/@monlite/core)** | MongoDB | documents + native-column tables, one query API, transactions, **reactive `watch()`** |
-| **[`@monlite/vector`](https://www.npmjs.com/package/@monlite/vector)** | Qdrant / Pinecone | vector / semantic search (sqlite-vec) — `findSimilar()` + dynamic `createVectorStore()` |
-| **[`@monlite/fts`](https://www.npmjs.com/package/@monlite/fts)** | search engines | full-text search (SQLite FTS5) — `search()` + dynamic `createSearchIndex()` |
-| **[`@monlite/kv`](https://www.npmjs.com/package/@monlite/kv)** | Redis (cache) | synchronous cache + locks with TTL |
-| **[`@monlite/queue`](https://www.npmjs.com/package/@monlite/queue)** | BullMQ / Redis | durable job queue — retries, backoff, delays, dedupe |
-| **[`@monlite/cron`](https://www.npmjs.com/package/@monlite/cron)** | cron | persisted scheduled jobs |
-| **[`@monlite/sync`](https://www.npmjs.com/package/@monlite/sync)** | cloud sync | local-first replication to MongoDB / PostgreSQL / MySQL |
-| **[`@monlite/wasm`](https://www.npmjs.com/package/@monlite/wasm)** | — | run it all in the **browser** (SQLite-WASM) |
+| You were running | monlite gives you |
+|---|---|
+| MongoDB / Mongoose | `@monlite/core` — document collections, typed queries, reactive `watch()` |
+| Redis (cache) | `@monlite/kv` — synchronous cache, atomic locks, TTLs |
+| BullMQ + Redis | `@monlite/queue` — durable job queue, retries, backoff, dedupe |
+| Qdrant / Pinecone | `@monlite/vector` — vector search, `findSimilar()`, hybrid RAG |
+| Elasticsearch / Typesense | `@monlite/fts` — full-text search, FTS5, `search()` |
+| Cron server | `@monlite/cron` — persisted scheduled jobs |
+| MongoDB Atlas sync | `@monlite/sync` — local-first replication to MongoDB / PostgreSQL / MySQL |
 
-> Same file from **Python**, too — [`pip install monlite`](https://pypi.org/project/monlite/)
-> reads and writes the same `.db`.
-
-With reactive `watch()` + cloud `sync`, monlite is effectively a **local-first
-Firebase**: live data, no Docker, no servers.
+**One npm install per feature. One `.db` file for all of them. Backup = `cp app.db backup.db`.**
 
 ---
 
-## The complete local backend for an AI agent
+## The AI agent backend — without Docker
 
-A coding agent, RAG app, or autonomous worker needs the same local services — and
-monlite is **all of them, in one `.db`, with no Docker, no Redis, no Qdrant**.
+A coding agent, RAG pipeline, or autonomous worker typically needs MongoDB for memory,
+Redis for cache and locks, Qdrant for semantic search, and BullMQ for the task queue.
 
-| Agent needs | monlite |
-| --- | --- |
-| Memory / state | `@monlite/core` documents |
-| Semantic recall (RAG) | `@monlite/vector` — `createVectorStore()` |
-| Keyword recall | `@monlite/fts` — `createSearchIndex()` |
-| Cache & locks | `@monlite/kv` — `setNX` |
-| Durable task queue | `@monlite/queue` — retries, dedupe |
-| Scheduling | `@monlite/cron` |
-| Exactly-once job claim | `findOneAndUpdate` — cross-process CAS |
-| Live UI updates | `collection.watch()` |
+With monlite, that entire stack is one file:
 
 ```ts
-// RAG memory — scoped + exact — in the same file as everything else
-const mem = createVectorStore(db);
-mem.ensureCollection("memory", { dimensions: 384, indexedFields: ["agentId"] });
-mem.upsert("memory", [{ id, vector, metadata: { agentId, text } }]);
-const recall = mem.search("memory", { vector: q, topK: 5, where: { agentId } });
+import { createDb } from "@monlite/core";
+import { kv } from "@monlite/kv";
+import { createVectorStore } from "@monlite/vector";
+import { createQueue } from "@monlite/queue";
+import { createCron } from "@monlite/cron";
 
-// a durable job a separate worker claims exactly ONCE (cross-process CAS)
+const db = createDb("./agent.db");
+
+// Memory / state — document collections
+const memories = db.collection("memories");
+await memories.create({ data: { agentId: "a1", content: "user prefers dark mode" } });
+
+// Semantic recall — vector search over embeddings
+const store = createVectorStore(db);
+store.ensureCollection("memory", { dimensions: 384, indexedFields: ["agentId"] });
+const recall = store.search("memory", { vector: queryEmb, topK: 5, where: { agentId: "a1" } });
+
+// Exactly-once job claim — cross-process compare-and-swap
 const claimed = await jobs.findOneAndUpdate({
-  where: { _id: jobId, status: "pending" },
+  where: { status: "pending", type: "summarize" },
   data: { $set: { status: "active" }, $inc: { version: 1 } },
   returnDocument: "after",
 });
+// 8 workers race. Exactly one wins. The rest get null.
+
+// Cache + atomic locks — set-if-absent
+const lock = kv(db);
+const acquired = lock.setNX("lock:job:42", 1, { ttl: 30_000 }); // true = you own it
+
+// Durable task queue — retries, backoff, dead-letter
+const queue = createQueue(db, { maxAttempts: 3 });
+queue.process("embed", async (job) => await embed(job.payload.text), { concurrency: 4 });
+
+// Scheduled work — persisted across restarts
+const cron = createCron(db);
+cron.schedule("nightly-cleanup", "0 3 * * *", () => queue.add("cleanup", {}));
 ```
 
-This is exactly how a real durable job/mission/approval engine + RAG can run on a
-**single file** — proven in production integration. See the
-[AI-agent backend guide](docs/docs/guides/ai-agent-backend.md).
+No Docker. No `.env` files with connection strings. No Redis setup. **One file, `node serve.mjs`.**
 
 ---
 
-## Why monlite
+## Real-time reactivity — local Firebase
 
-- **One file.** Documents, vectors, cache, queue, cron — all in one SQLite file.
-  Backup = copy the file.
-- **Zero-dependency core.** Runs on Node's built-in `node:sqlite` (Node ≥ 22.5) with
-  no native build, or on `better-sqlite3` when you install it.
-- **One query API.** Mongo/Prisma-style `find`/`where`/`orderBy`/`groupBy`, the same
-  whether a field is JSON or a native SQL column.
-- **Production-hardened.** Atomic async transactions, cross-process compare-and-swap,
-  crash-tested durability, observability, encryption at rest, cross-platform CI
-  (Linux/macOS/Windows).
-- **Local-first.** Sync to MongoDB / PostgreSQL / MySQL when you want the cloud.
+`collection.watch()` delivers a live result set that re-emits only when a relevant change lands.
+Row-level matching, no spurious re-renders. Works with changes from `@monlite/sync` too.
 
-**Boundary:** monlite targets **local / edge / desktop / single-machine**. For
-multi-site shared state, very high write volume, or strict HA, keep the managed
-services and [sync](docs/docs/packages/sync.md) to them — same code, flip the
-backend.
+```ts
+// Initial snapshot → then re-fires only when an admin is added/changed/removed
+const stop = users.watch(
+  { where: { roles: { has: "admin" } } },
+  ({ results, added, removed }) => renderAdminList(results),
+);
+```
+
+Pair with `@monlite/sync` and your local database becomes a live replica of MongoDB or
+PostgreSQL — **fully offline capable, syncs when reconnected**.
+
+---
+
+## A proper query language — not a toy
+
+monlite has a Mongo/Prisma-style query API. Typed collections get compile-time checked
+`where`/`orderBy` and return types that narrow with `select`.
+
+```ts
+interface Order {
+  customerId: string;
+  items: { sku: string; qty: number }[];
+  status: "pending" | "shipped" | "returned";
+  total: number;
+}
+
+const orders = db.collection<Order>("orders");
+
+// elemMatch — query inside arrays of objects
+await orders.findMany({
+  where: { items: { elemMatch: { sku: "WIDGET-A", qty: { gte: 5 } } } },
+});
+
+// Regex — case-insensitive pattern matching
+await orders.findMany({ where: { status: { regex: "^pend", mode: "insensitive" } } });
+
+// Aggregation pipeline — GROUP BY, $lookup joins, $unwind
+await orders.aggregate([
+  { $match: { status: "shipped" } },
+  { $group: { _id: "$customerId", spent: { $sum: "$total" } } },
+  { $sort: { spent: -1 } },
+  { $limit: 10 },
+]);
+
+// Atomic async transactions — await inside, all-or-nothing
+await db.transactionAsync(async (tx) => {
+  const account = await tx.findFirst({ where: { _id: "acc-1" } });
+  if (account.balance < 100) throw new Error("insufficient funds");
+  await tx.update({ where: { _id: "acc-1" }, data: { $inc: { balance: -100 } } });
+  await tx.update({ where: { _id: "acc-2" }, data: { $inc: { balance: +100 } } });
+});
+```
+
+---
+
+## Hybrid search — keyword + semantic in one call
+
+Get the best of both worlds: FTS5 keyword ranking fused with vector similarity via Reciprocal
+Rank Fusion. One query, one ranked list.
+
+```ts
+import { fts } from "@monlite/fts";
+import { vector, hybridSearch } from "@monlite/vector";
+
+const db = createDb("./app.db", {
+  allowExtensions: true,
+  plugins: [
+    fts({ docs: ["title", "body"] }),
+    vector({ docs: { field: "embedding", dimensions: 384 } }),
+  ],
+});
+
+const hits = await hybridSearch(db.collection("docs"), {
+  text: "machine learning fundamentals",
+  vector: await embed("machine learning fundamentals"),
+  topK: 10,
+  where: { published: true },
+});
+// Fused ranking — semantically similar AND keyword-relevant results, best first
+```
+
+---
+
+## Python reads the same file
+
+A monlite database is plain SQLite with documented conventions, so the Python port reads
+and writes the same `.db`. Python ingests, Node serves — or any split you like.
+
+```python
+from monlite import create_db, kv
+
+db = create_db("app.db")   # the exact same file your Node process uses
+users = db.collection("users")
+users.create({"name": "Ali", "age": 30, "tags": ["admin"]})
+users.find_many(where={"tags": {"has": "admin"}})
+
+kv(db).set("session:42", {"user": "ali"}, ttl=60_000)
+```
+
+One file. Two runtimes. Zero translation layer.
+
+---
+
+## Works everywhere SQLite runs
+
+| Environment | How |
+|---|---|
+| Node 22.5+ | `@monlite/core` — uses built-in `node:sqlite`, **zero native build** |
+| Node 18/20 | `@monlite/core` + `better-sqlite3` — auto-selected when present |
+| Browser | `@monlite/wasm` — same API on SQLite-WASM (sql.js) |
+| Electron | `@monlite/electron` — DB in main process, same API in renderer over IPC |
+| Python | `pip install monlite` — same `.db` file, pure stdlib core |
 
 ---
 
 ## Install
 
 ```bash
+# Zero-dependency: uses Node's built-in node:sqlite (Node >= 22.5)
 npm install @monlite/core
-```
 
-Zero required dependencies — on **Node 22.5+** it uses built-in
-[`node:sqlite`](https://nodejs.org/api/sqlite.html). For Node 18/20 (or to avoid the
-experimental warning), also install the native driver:
-
-```bash
+# For Node 18/20, or to avoid the experimental flag:
 npm install @monlite/core better-sqlite3
 ```
 
----
+Add packages as you need them:
 
-## A 60-second tour
-
-```ts
-// Typed collections: where/orderBy are checked, select narrows the result
-interface User { name: string; age: number; roles?: string[] }
-const users = db.collection<User>("users");
-
-await users.createMany({ data: [{ name: "Ali", age: 30 }, { name: "Sara", age: 25 }] });
-await users.findMany({ where: { age: { gte: 18 }, roles: { has: "admin" } }, orderBy: { age: "desc" } });
-
-// Rich operators — elemMatch, regex, dot-paths
-await orders.findMany({ where: { items: { elemMatch: { sku: "A", qty: { gte: 2 } } } } });
-await users.findMany({ where: { email: { regex: "@acme\\.com$" } } });
-
-// Atomic transactions + compare-and-swap
-await db.transactionAsync(async (tx) => { /* read → compute → write, all-or-nothing */ });
-
-// Reactive live queries — re-runs only when a relevant change lands
-const handle = users.watch({ where: { roles: { has: "admin" } } }, (u) => render(u.results));
-```
-
-→ Full reference: **[Documents](docs/docs/core/documents.md)** ·
-[Queries](docs/docs/core/queries.md) ·
-[Transactions & CAS](docs/docs/core/transactions.md) ·
-[Structured collections](docs/docs/core/structured.md) ·
-[Aggregation](docs/docs/core/aggregation.md).
-
----
-
-## Reactive — a local-first Firebase
-
-`collection.watch()` delivers an initial snapshot, then re-emits only when a change
-actually affects the result set (row-level matching) — including changes applied by
-`@monlite/sync`. Wrap it in a hook for auto-updating UI:
-
-```ts
-const stop = todos.watch({ where: { done: false } }, ({ results, added, removed }) => {
-  setTodos(results);
-});
+```bash
+npm install @monlite/vector   # semantic search
+npm install @monlite/fts      # full-text search
+npm install @monlite/kv       # cache + locks
+npm install @monlite/queue    # job queue
+npm install @monlite/cron     # scheduler
+npm install @monlite/sync     # cloud sync (MongoDB / PostgreSQL / MySQL)
+npm install @monlite/wasm     # browser support
 ```
 
 ---
 
-## Cross-language — Python & interop
+## Why not just use…
 
-A monlite database is **plain SQLite + documented conventions**, so other languages
-read and write the same file. The Python port mirrors the API:
+**SQLite directly?** You could — but you'd be writing the document layer, the query translator,
+the FTS integration, the vector extension wiring, the change feed, the sync engine, and all the
+TypeScript types yourself. monlite is that work, already done and tested.
 
-```python
-from monlite import create_db, kv
-db = create_db("app.db")                      # the SAME file Node uses
-db.collection("users").find_many(where={"age": {"gte": 18}})
-kv(db).set("session:42", {"user": "ali"}, ttl=60_000)
-```
+**MongoDB + Redis + Qdrant?** For local / edge / desktop / single-machine work, you're paying
+the operational cost of three separate services to solve one problem. monlite puts them all in
+one file, with one API, and zero infrastructure.
 
-The classic split is first-class: **Python ingests/embeds, Node serves**, over one
-file. See [Python / interop](docs/docs/reference/python.md) and the
-[file format](docs/docs/reference/file-format.md).
+**Firebase / Supabase?** Great for shared cloud state. Not so great when you need to work
+offline, ship a CLI tool, build a desktop app, or keep data on-device. monlite is local-first;
+[`@monlite/sync`](docs/docs/packages/sync.md) handles the cloud part when you need it.
 
 ---
 
 ## Documentation
 
-The full guide lives at **[monlite.dev](https://monlite.dev)**:
+Full guide at [monlite.dev](https://monlite.dev):
 
 - [Getting started](docs/docs/getting-started.md) · [Core API](docs/docs/core/documents.md)
-- Packages: [sync](docs/docs/packages/sync.md) · [vector](docs/docs/packages/vector.md) · [fts](docs/docs/packages/fts.md) · [kv](docs/docs/packages/kv.md) · [queue](docs/docs/packages/queue.md) · [cron](docs/docs/packages/cron.md) · [wasm](docs/docs/packages/wasm.md)
-- Guides: [production](docs/docs/guides/production.md) · [migrations](docs/docs/guides/migrations.md) · [the AI-agent backend](docs/docs/guides/ai-agent-backend.md) · [custom adapters](docs/docs/guides/custom-adapter.md)
+- Packages: [vector](docs/docs/packages/vector.md) · [fts](docs/docs/packages/fts.md) · [kv](docs/docs/packages/kv.md) · [queue](docs/docs/packages/queue.md) · [cron](docs/docs/packages/cron.md) · [sync](docs/docs/packages/sync.md) · [wasm](docs/docs/packages/wasm.md)
+- Guides: [AI-agent backend](docs/docs/guides/ai-agent-backend.md) · [production](docs/docs/guides/production.md) · [migrations](docs/docs/guides/migrations.md) · [custom sync adapters](docs/docs/guides/custom-adapter.md)
 - Reference: [file format](docs/docs/reference/file-format.md) · [Python](docs/docs/reference/python.md) · [benchmarks](docs/docs/reference/benchmarks.md)
 
-Runnable demos are in [`examples/`](examples/); the docs site source is in [`docs/`](docs/).
+Runnable demos are in [`examples/`](examples/).
 
 ---
 
 ## Status
 
-Production-ready and published. Current versions: `@monlite/core` **2.6.1**,
-`@monlite/sync` 1.3.0, `@monlite/vector` & `@monlite/fts` 0.4.0,
-`@monlite/kv` & `@monlite/queue` 0.2.0, `@monlite/cron` 0.1.1, `@monlite/wasm` 0.2.0.
-The 2.x API is frozen. The Python port (`pip install monlite`) currently covers
-documents + kv, with the rest of the family on the way.
+Production-ready and published. Current versions: `@monlite/core` **2.6.1**, `@monlite/sync`
+1.3.0, `@monlite/vector` & `@monlite/fts` 0.4.0, `@monlite/kv` & `@monlite/queue` 0.2.0,
+`@monlite/cron` 0.1.1, `@monlite/wasm` 0.2.0. The 2.x API is frozen.
+
+The Python port (`pip install monlite`) currently ships documents + kv, with the rest of the
+package family in progress.
 
 ## License
 
-MIT 🌙
+MIT

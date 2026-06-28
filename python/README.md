@@ -1,18 +1,15 @@
 # monlite (Python)
 
-**The local-first database for Python** — documents and a cache (with queue, cron,
-full-text, and vectors landing) over **one SQLite file**, with a pure-standard-library
-core.
+The local-first database for Python — documents and a cache over **one SQLite file**, with a
+pure-standard-library core. No dependencies required.
 
-`monlite` is the Python port of [monlite](https://monlite.dev). It reads and writes the
-**same `.db` file** as the TypeScript `@monlite/*` packages, so Python and Node can share
-one database — *Python ingests/embeds, Node serves*, or any split you like.
+`monlite` is the Python port of [monlite](https://monlite.dev). It reads and writes the **same
+`.db` file** as the TypeScript `@monlite/*` packages, so Python and Node can share one database.
+Python ingests or embeds; Node serves — or any split you like.
 
 ```bash
 pip install monlite
 ```
-
-No dependencies for the core — it uses Python's built-in `sqlite3` (with FTS5).
 
 ## Quick start
 
@@ -28,18 +25,18 @@ users.create_many([{"name": "Sara", "age": 25}, {"name": "Omar", "age": 40}])
 adults = users.find_many(where={"age": {"gte": 18}}, order_by={"age": "asc"})
 ali = users.find_first(where={"name": "Ali"})
 users.update({"_id": ali["_id"]}, {"$inc": {"age": 1}, "$push": {"tags": "vip"}})
-users.count(where={"role": "admin"})
+count = users.count(where={"role": "admin"})
 
-# a synchronous cache + locks (Redis's local role)
+# Synchronous cache + atomic locks (Redis's local role)
 cache = kv(db)
 cache.set("session:42", {"user": "ali"}, ttl=60_000)
-cache.get("session:42")            # {"user": "ali"}
-cache.set_nx("lock:job", 1, ttl=5_000)   # atomic set-if-absent → True/False
+cache.get("session:42")                   # {"user": "ali"}
+cache.set_nx("lock:job:42", 1, ttl=5_000) # atomic set-if-absent → True / False
 ```
 
 ## Query operators
 
-Mongo/Prisma-style, mirroring the TypeScript API:
+Mongo/Prisma-style, mirroring the TypeScript API (snake_case method names):
 
 ```python
 where={"age": {"gte": 18, "lt": 65}}
@@ -53,23 +50,24 @@ Update operators: `$set`, `$unset`, `$inc`, `$push`, `$pull`, `$addToSet`.
 
 ## Cross-language interop
 
-Because a monlite database is **plain SQLite + documented conventions**, the same file
-works from both languages:
+Because a monlite database is plain SQLite with documented conventions, the same file is
+readable from both languages without any translation:
 
 ```python
-# Python reads a collection a Node process wrote — and queries it
+# Python reads a collection a Node process wrote
 db = create_db("shared.db")
 for doc in db.collection("docs").find_many(where={"tenantId": "t1"}):
     print(doc["title"])
 ```
 
-The two sides are **independent** — each is a complete database library on its own. The
-shared-file interop is a bonus you opt into.
+The two runtimes are fully independent — each is a complete library. The shared-file interop
+is a bonus you opt into. See the [file format spec](https://monlite.dev/reference/file-format)
+for the conventions both sides follow.
 
 ## Optional extras
 
-The core (documents + kv + queue + cron + fts) is pure-stdlib. Native bits are extras,
-mirroring the TypeScript packages:
+The core (documents + kv) uses only Python's built-in `sqlite3`. Native extras mirror the
+TypeScript packages and require additional installation:
 
 ```bash
 pip install "monlite[vector]"    # semantic search via sqlite-vec
@@ -79,9 +77,9 @@ pip install "monlite[mongo]"     # sync to MongoDB
 
 ## Status
 
-Early release: **documents + kv** are implemented and covered by tests (including an
-interop suite that round-trips a `.db` between Node and Python). Queue, cron, FTS, the
-`[vector]` extra, and sync adapters are on the way — the
-[file format](https://monlite.dev/reference/file-format) is the contract they all share.
+**Documents and kv are implemented** and covered by tests — including an interop suite that
+round-trips a `.db` file between Node and Python. Queue, cron, FTS, the `[vector]` extra, and
+sync adapters are in progress. The [file format](https://monlite.dev/reference/file-format) is
+the contract they all share.
 
-MIT.
+MIT
