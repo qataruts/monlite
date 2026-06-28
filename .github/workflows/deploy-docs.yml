@@ -23,18 +23,21 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: docs
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: docs/package-lock.json
-      - run: npm ci
-      - run: npm run build
+          cache: pnpm
+      # Build the @monlite/* packages + the Vite demo (workspace), then the docs
+      # site, and fold the demo into the docs output so it serves at /demo.
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build # @monlite/* packages + demo (→ demo/dist, base /demo/)
+      - name: Build docs site
+        working-directory: docs
+        run: npm ci && npm run build
+      - run: cp -r demo/dist docs/build/demo
       - uses: actions/upload-pages-artifact@v3
         with:
           path: docs/build

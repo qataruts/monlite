@@ -11,6 +11,8 @@ const db = createDb("./app.db");
 
 That's it. No server. No migrations. No configuration. Everything below lives in `app.db`.
 
+📖 [Docs](https://monlite.dev) · 🎮 [Live demo](https://monlite.dev/demo) — monlite running in your browser · 💻 [GitHub](https://github.com/qataruts/monlite)
+
 ---
 
 ## Replace your entire local stack with one file
