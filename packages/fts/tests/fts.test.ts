@@ -218,3 +218,15 @@ describe("where recall (over-fetch then filter)", () => {
     expect((hits[0] as any).flag).toBe(true);
   });
 });
+
+describe("search tolerates malformed FTS5 input", () => {
+  it("never throws on untrusted query syntax", async () => {
+    const c = open({ docs: ["body"] }).collection("docs");
+    await c.createMany({ data: [{ body: "the quick brown fox" }] });
+    for (const q of ["quick", 'a "b', '"', "AND", "fox*", "x:y", "a OR", "("]) {
+      await expect(c.search(q)).resolves.toBeDefined();
+    }
+    // a normal term still matches
+    expect((await c.search("quick")).length).toBe(1);
+  });
+});

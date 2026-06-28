@@ -157,6 +157,43 @@ export function reindex(db: Monlite, coll: string, fields: string[]): void {
   }
 }
 
+/**
+ * Run an FTS5 MATCH. Untrusted input can contain FTS5 syntax (a stray `"`, a bare
+ * `AND`/`*`, column filters) that throws "fts5: syntax error" — so on error, retry
+ * with the text quoted as literal phrase tokens. Never throws on user input.
+ */
+function ftsMatch(
+  db: Monlite,
+  coll: string,
+  query: string,
+  fetch: number,
+): Array<{ doc_id: string; rank: number }> {
+  const sql =
+    `SELECT doc_id, rank FROM "${ftsTable(coll)}" ` +
+    `WHERE "${ftsTable(coll)}" MATCH ? ORDER BY rank LIMIT ?`;
+  const run = (q: string) =>
+    db.sqlite.prepare(sql).all(q, fetch) as Array<{
+      doc_id: string;
+      rank: number;
+    }>;
+  try {
+    return run(query);
+  } catch {
+    const safe = query
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((t) => `"${t.replace(/"/g, '""')}"`)
+      .join(" ");
+    if (!safe) return [];
+    try {
+      return run(safe);
+    } catch {
+      return [];
+    }
+  }
+}
+
 function search<T = Doc>(
   db: Monlite,
   coll: Collection<T>,
@@ -174,12 +211,7 @@ function search<T = Doc>(
   // With a where filter, over-fetch ranked matches then filter + trim to limit,
   // so a selective filter doesn't drop results that exist further down the rank.
   const fetch = opts?.where ? Math.max(opts.candidates ?? limit * 10, 200) : limit;
-  const rows = db.sqlite
-    .prepare(
-      `SELECT doc_id, rank FROM "${ftsTable(coll.name)}" ` +
-        `WHERE "${ftsTable(coll.name)}" MATCH ? ORDER BY rank LIMIT ?`,
-    )
-    .all(query, fetch) as Array<{ doc_id: string; rank: number }>;
+  const rows = ftsMatch(db, coll.name, query, fetch);
 
   let allowed: Set<string> | null = null;
   if (opts?.where) {
