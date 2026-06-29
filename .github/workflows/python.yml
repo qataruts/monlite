@@ -1,0 +1,53 @@
+name: Python
+
+# Tests the Python port (python/) across supported versions. The TS↔Python interop
+# tests skip automatically when the built Node bundles aren't present, so this job is
+# pure-Python and fast; interop is covered in the `interop` job below.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "python/**"
+      - ".github/workflows/python.yml"
+  pull_request:
+    paths:
+      - "python/**"
+      - ".github/workflows/python.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python -m pip install --upgrade pip pytest
+      - run: python -m pytest -q
+
+  interop:
+    # Builds the Node bundles so the TS↔Python interop tests actually run (not skip).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter='!monlite-demo' -r build # @monlite/core (root) + kv/queue/fts/… dist
+      - run: pip install pytest
+      - name: Run Python suite incl. interop
+        working-directory: python
+        run: python -m pytest -q
