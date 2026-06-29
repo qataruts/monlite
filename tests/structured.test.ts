@@ -203,3 +203,50 @@ describe("structured collections: introspection", () => {
     expect(() => db.collection("bad2", { schema: { _id: "TEXT" } })).toThrow();
   });
 });
+
+describe("structured-collection edge cases (swarm-found)", () => {
+  it("dot-path query/orderBy into a JSON column", async () => {
+    const db = openDb();
+    const c = db.collection("c", { schema: { obj: { type: "JSON" } } });
+    await c.createMany({
+      data: [
+        { _id: "x", obj: { k: 5 } },
+        { _id: "y", obj: { k: 9 } },
+      ],
+    });
+    expect(
+      (await c.findMany({ where: { "obj.k": 5 } })).map((d: any) => d._id),
+    ).toEqual(["x"]);
+    expect(
+      (
+        await c.findMany({
+          orderBy: { "obj.k": "desc" },
+          select: { _id: true },
+        })
+      ).map((d: any) => d._id),
+    ).toEqual(["y", "x"]);
+    await db.$disconnect();
+  });
+  it("column defaults are applied for omitted fields (incl. notNull)", async () => {
+    const db = openDb();
+    const c = db.collection("c", {
+      schema: {
+        role: { type: "TEXT", default: "user" },
+        status: { type: "TEXT", notNull: true, default: "new" },
+      },
+    });
+    await c.create({ data: { _id: "a" } });
+    const d = await c.findById("a");
+    expect(d.role).toBe("user");
+    expect(d.status).toBe("new");
+    await db.$disconnect();
+  });
+  it("field names containing a quote or backslash are queryable", async () => {
+    const db = openDb();
+    const c = db.collection("c");
+    await c.create({ data: { _id: "a", 'we"rd': 1, "back\\slash": 2 } });
+    expect((await c.findMany({ where: { 'we"rd': 1 } })).length).toBe(1);
+    expect((await c.findMany({ where: { "back\\slash": 2 } })).length).toBe(1);
+    await db.$disconnect();
+  });
+});

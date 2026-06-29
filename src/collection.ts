@@ -228,9 +228,18 @@ export class Collection<T = Doc> {
   private createUniqueIndexes(): void {
     this.uniqueIndexes.forEach((fields, i) => {
       const exprs = fields.map((f) => this.fieldSqlExpr(f)).join(", ");
-      this.db.exec(
-        `CREATE UNIQUE INDEX IF NOT EXISTS "uqx_${this.name}_${i}" ON "${this.name}"(${exprs})`,
-      );
+      try {
+        this.db.exec(
+          `CREATE UNIQUE INDEX IF NOT EXISTS "uqx_${this.name}_${i}" ON "${this.name}"(${exprs})`,
+        );
+      } catch (err) {
+        // Existing rows already violate the new unique index — surface a typed
+        // error instead of a raw driver SqliteError.
+        throw new MonliteError(
+          `Cannot create a unique index on (${fields.join(", ")}) for "${this.name}": ` +
+            `existing rows are not unique on those fields.`,
+        );
+      }
     });
   }
 
@@ -506,6 +515,17 @@ export class Collection<T = Doc> {
     for (const [k, v] of Object.entries(doc)) {
       if (this.columns.has(k)) colValues[k] = v;
       else overflow[k] = v;
+    }
+    // Apply column `default`s for omitted fields: binding an explicit NULL would
+    // defeat the DEFAULT (and trip a notNull column). Reflect it in the returned doc.
+    for (const c of this.columnOrder) {
+      if (!(c in colValues)) {
+        const def = this.columnDefs[c]!.default;
+        if (def !== undefined) {
+          colValues[c] = def;
+          (returned as Record<string, any>)[c] = def;
+        }
+      }
     }
     const values = [
       id,

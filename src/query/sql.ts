@@ -29,7 +29,10 @@ export function jsonPath(field: string): string {
     } else if (/^\d+$/.test(seg)) {
       path += "[" + seg + "]";
     } else {
-      path += '."' + seg.replace(/"/g, '""') + '"';
+      // A quoted JSON-path label is a JSON string: escape \ and " the JSON way
+      // (backslash), NOT with SQL quote-doubling — otherwise a key containing a
+      // double-quote or backslash builds an invalid path and silently matches nothing.
+      path += '."' + seg.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
     }
   }
   return path;
@@ -47,6 +50,15 @@ export function pathLiteral(field: string): string {
  */
 export function fieldExpr(field: string, columns?: Set<string>): string {
   if (isColumn(field, columns)) return quoteIdent(field);
+  // A dotted path whose ROOT is a declared column reads into that column's JSON
+  // (e.g. `obj.k` on a JSON column `obj` → json_extract("obj", '$.k')), not `data`.
+  const dot = field.indexOf(".");
+  if (dot > 0) {
+    const root = field.slice(0, dot);
+    if (columns?.has(root)) {
+      return `json_extract(${quoteIdent(root)}, ${pathLiteral(field.slice(dot + 1))})`;
+    }
+  }
   return `json_extract(data, ${pathLiteral(field)})`;
 }
 
