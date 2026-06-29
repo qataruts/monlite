@@ -115,3 +115,41 @@ describe("groupBy having-filters", () => {
     expect(res[0]._sum.age).toBe(24);
   });
 });
+
+describe("groupBy orderBy by accumulator (Prisma-style)", () => {
+  it("orders groups by _sum / _avg, and keeps _count + by-field ordering", async () => {
+    const o = db.collection("orders2");
+    await o.createMany({
+      data: [
+        { c: "c1", total: 100 },
+        { c: "c1", total: 50 },
+        { c: "c2", total: 300 },
+        { c: "c3", total: 30 },
+      ],
+    });
+    const bySum = await o.groupBy({
+      by: ["c"],
+      _sum: { total: true },
+      orderBy: { _sum: { total: "desc" } },
+    });
+    expect(bySum.map((r: any) => r.c)).toEqual(["c2", "c1", "c3"]); // 300, 150, 30
+    const byAvg = await o.groupBy({
+      by: ["c"],
+      _avg: { total: true },
+      orderBy: { _avg: { total: "asc" } },
+    });
+    expect(byAvg[0].c).toBe("c3"); // avg 30 lowest
+    const byCount = await o.groupBy({
+      by: ["c"],
+      _count: true,
+      orderBy: { _count: "desc" },
+    });
+    expect(byCount[0].c).toBe("c1"); // 2 rows
+    const byField = await o.groupBy({
+      by: ["c"],
+      _sum: { total: true },
+      orderBy: { c: "asc" },
+    });
+    expect(byField.map((r: any) => r.c)).toEqual(["c1", "c2", "c3"]);
+  });
+});

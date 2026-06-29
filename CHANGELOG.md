@@ -1,5 +1,14 @@
 # @monlite/core
 
+## 2.6.10 — groupBy ordering by an accumulator
+
+- **`groupBy({ orderBy })` now sorts by an accumulator** — e.g.
+  `orderBy: { _sum: { total: "desc" } }` (also `_avg`/`_min`/`_max`). Previously only
+  `_count` and `by`-fields were honoured; an accumulator `orderBy` was silently ignored
+  (the `{ total: "desc" }` object stringified to `"[object Object]"`, defaulted to ASC,
+  and ordered by a non-existent column). The docs already documented this syntax — found
+  during a functional-accuracy audit. `_count` and `by`-field ordering are unchanged.
+
 ## 2.6.9 — atomic sync ingest
 
 - **`applyRemoteWrite` (the `@monlite/sync` ingest path) now indexes inside a

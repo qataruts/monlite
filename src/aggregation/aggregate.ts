@@ -188,10 +188,28 @@ export function groupBy(ctx: AggContext, args: GroupByArgs): GroupByResult[] {
   if (args.orderBy) {
     const parts: string[] = [];
     for (const key of Object.keys(args.orderBy)) {
-      const dir =
-        String(args.orderBy[key]).toLowerCase() === "desc" ? "DESC" : "ASC";
-      if (key === "_count") parts.push(`agg_count ${dir}`);
-      else parts.push(`${fieldExpr(key, ctx.columns)} ${dir}`);
+      const val = (args.orderBy as Record<string, any>)[key];
+      if (key === "_count") {
+        const dir = String(val).toLowerCase() === "desc" ? "DESC" : "ASC";
+        parts.push(`agg_count ${dir}`);
+      } else if (
+        (ACCUMULATORS as readonly string[]).includes(key) &&
+        val &&
+        typeof val === "object"
+      ) {
+        // orderBy by an accumulator — e.g. `{ _sum: { total: "desc" } }`.
+        for (const field of Object.keys(val)) {
+          const dir =
+            String(val[field]).toLowerCase() === "desc" ? "DESC" : "ASC";
+          if (!isColumn(field, ctx.columns)) ctx.onPath(field);
+          parts.push(
+            `${SQL_FN[key as Accumulator]}(${fieldExpr(field, ctx.columns)}) ${dir}`,
+          );
+        }
+      } else {
+        const dir = String(val).toLowerCase() === "desc" ? "DESC" : "ASC";
+        parts.push(`${fieldExpr(key, ctx.columns)} ${dir}`);
+      }
     }
     if (parts.length) sql += ` ORDER BY ${parts.join(", ")}`;
   }

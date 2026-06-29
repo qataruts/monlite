@@ -125,13 +125,15 @@ await orders.findMany({
 // Regex — case-insensitive pattern matching
 await orders.findMany({ where: { status: { regex: "^pend", mode: "insensitive" } } });
 
-// Aggregation pipeline — GROUP BY, $lookup joins, $unwind
-await orders.aggregate([
-  { $match: { status: "shipped" } },
-  { $group: { _id: "$customerId", spent: { $sum: "$total" } } },
-  { $sort: { spent: -1 } },
-  { $limit: 10 },
-]);
+// Grouped aggregation — GROUP BY with sums/averages, HAVING, and top-N ordering
+await orders.groupBy({
+  by: ["customerId"],
+  where: { status: "shipped" },
+  _sum: { total: true },
+  orderBy: { _sum: { total: "desc" } },
+  take: 10,
+});
+// → [{ customerId: "c1", _sum: { total: 4200 } }, …]
 
 // Atomic async transactions — await inside, all-or-nothing
 await db.transactionAsync(async (tx) => {
@@ -259,7 +261,7 @@ Runnable demos are in [`examples/`](examples/).
 
 ## Status
 
-Production-ready and published. Current versions: `@monlite/core` **2.6.9**, `@monlite/sync`
+Production-ready and published. Current versions: `@monlite/core` **2.6.10**, `@monlite/sync`
 **1.3.4**, `@monlite/vector` **0.5.5**, `@monlite/fts` **0.5.4**, `@monlite/kv` **0.2.1**,
 `@monlite/queue` **0.3.4**, `@monlite/cron` 0.1.1, `@monlite/wasm` 0.2.2. The 2.x API is frozen.
 
