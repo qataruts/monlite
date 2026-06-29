@@ -32,6 +32,9 @@ importers:
       lowdb:
         specifier: ^7.0.1
         version: 7.0.1
+      pg:
+        specifier: ^8.22.0
+        version: 8.22.0
       prettier:
         specifier: ^3.4.2
         version: 3.8.5

@@ -1,6 +1,13 @@
 import type { WhereInput, FieldFilter } from "../types.js";
 import { MonliteQueryError } from "../errors.js";
-import { fieldExpr, pathLiteral, bindable, isColumn, isBuffer } from "./sql.js";
+import {
+  fieldExpr,
+  pathLiteral,
+  bindable,
+  isColumn,
+  isBuffer,
+  quoteIdent,
+} from "./sql.js";
 import { REGEXP_FN } from "../driver/regexp.js";
 
 export interface WhereContext {
@@ -9,15 +16,22 @@ export interface WhereContext {
   columns?: Set<string>;
   /** Called with every document path referenced (for auto-index tracking). */
   onPath?: (path: string) => void;
+  /**
+   * SQL dialect to emit. Default (`undefined`/`"sqlite"`) is unchanged SQLite. When
+   * `"postgres"`, leaf fields route to {@link pgTranslateField} (JSONB) — the SQLite
+   * path is byte-for-byte untouched, so existing behavior is identical.
+   */
+  dialect?: "sqlite" | "postgres";
 }
 
-/** Build a SQL boolean expression from a where clause. Returns `1` when empty. */
+/** Build a SQL boolean expression from a where clause. Returns the dialect's "always true". */
 export function buildWhere(
   where: WhereInput | undefined,
   ctx: WhereContext,
 ): string {
-  if (!where) return "1";
-  return translateObject(where, ctx) || "1";
+  const empty = ctx.dialect === "postgres" ? "true" : "1";
+  if (!where) return empty;
+  return translateObject(where, ctx) || empty;
 }
 
 function asArray<T>(v: T | T[]): T[] {
@@ -48,12 +62,15 @@ function translateObject(where: WhereInput, ctx: WhereContext): string {
       const subs = asArray(value)
         .map((w: WhereInput) => translateObject(w, ctx))
         .filter(Boolean);
-      // COALESCE(..., 0): a missing/null field makes the inner predicate NULL in
+      // COALESCE(..., FALSE): a missing/null field makes the inner predicate NULL in
       // SQL, and `NOT NULL` is NULL (the row is dropped). Treat a NULL inner as
       // FALSE so NOT still matches missing/null-field docs — consistent with the
       // `not` field operator and document-DB semantics (a missing `n` IS "not 5").
-      if (subs.length)
-        parts.push("NOT COALESCE((" + subs.join(" AND ") + "), 0)");
+      // SQLite has no boolean type (uses 0); Postgres is strict (needs FALSE).
+      if (subs.length) {
+        const falsy = ctx.dialect === "postgres" ? "FALSE" : "0";
+        parts.push("NOT COALESCE((" + subs.join(" AND ") + "), " + falsy + ")");
+      }
     } else {
       const clause = translateField(key, value, ctx);
       if (clause) parts.push(clause);
@@ -97,6 +114,9 @@ function translateField(
   // (create() accepts `_id: 123` and stores "123"; this makes queries find it).
   if (field === "_id") condition = coerceId(condition);
   if (ctx.onPath && !isColumn(field, ctx.columns)) ctx.onPath(field);
+  // Postgres dialect: emit JSONB SQL via a separate path. Everything below is the
+  // original, unchanged SQLite emitter (so the SQLite output is provably identical).
+  if (ctx.dialect === "postgres") return pgTranslateField(field, condition, ctx);
   const expr = fieldExpr(field, ctx.columns);
 
   // Scalar (or array/Date) value is shorthand for `{ equals: value }`.
@@ -181,6 +201,268 @@ function translateField(
 
   if (!clauses.length) return "";
   return clauses.length === 1 ? clauses[0]! : "(" + clauses.join(" AND ") + ")";
+}
+
+// ── Postgres (JSONB) dialect ─────────────────────────────────────────────────
+// Selected by `ctx.dialect === "postgres"`; emits JSONB SQL parallel to the SQLite
+// emitters above, which are untouched. Placeholders stay "?" (the Postgres driver
+// rewrites "?" → $1,$2,…); values bind natively (number→numeric, string→text,
+// boolean→boolean). Equality goes through `to_jsonb(?::type)` so it matches the
+// typed comparison SQLite's `json_extract` gives. Validated against live Postgres
+// (plan/postgres-prototype). NOTE: the one subtle invariant is type handling —
+// `->>'f'` is text, so numeric compares cast, and equality compares jsonb values.
+const PG_CMP: Record<string, string> = { gt: ">", gte: ">=", lt: "<", lte: "<=" };
+
+function pgType(v: any): "numeric" | "boolean" | "text" {
+  return typeof v === "number"
+    ? "numeric"
+    : typeof v === "boolean"
+      ? "boolean"
+      : "text";
+}
+
+/** Field projection for Postgres: `text` → `->>` (text), else `->` (jsonb). */
+function pgField(
+  field: string,
+  columns: Set<string> | undefined,
+  text: boolean,
+): string {
+  if (isColumn(field, columns)) return quoteIdent(field);
+  const segs = field.split(".").map((s) => s.replace(/'/g, "''"));
+  if (segs.length === 1) return `data${text ? "->>" : "->"}'${segs[0]}'`;
+  return text ? `data#>>'{${segs.join(",")}}'` : `data#>'{${segs.join(",")}}'`;
+}
+
+function pgRegexSource(v: any): string {
+  return v instanceof RegExp ? v.source : String(v);
+}
+
+/** Translate one field's condition to Postgres JSONB SQL (the dialect == "postgres" path). */
+function pgTranslateField(
+  field: string,
+  condition: any,
+  ctx: WhereContext,
+): string {
+  const P = (v: any): string => {
+    ctx.params.push(v);
+    return "?";
+  };
+
+  // Native column (system _id/created_at/updated_at, or a declared structured column).
+  if (isColumn(field, ctx.columns)) {
+    const col = quoteIdent(field);
+    if (!isFilterObject(condition)) {
+      return condition === null ? `${col} IS NULL` : `${col} = ${P(condition)}`;
+    }
+    const f = condition as Record<string, any>;
+    const ci = f.mode === "insensitive";
+    const out: string[] = [];
+    for (const op of Object.keys(f)) {
+      const v = f[op];
+      if (v === undefined || op === "mode") continue;
+      if (op === "equals")
+        out.push(v === null ? `${col} IS NULL` : `${col} = ${P(v)}`);
+      else if (op === "not")
+        out.push(
+          v === null
+            ? `${col} IS NOT NULL`
+            : `(${col} IS NULL OR ${col} <> ${P(v)})`,
+        );
+      else if (PG_CMP[op]) out.push(`${col} ${PG_CMP[op]} ${P(v)}`);
+      else if (op === "in")
+        out.push(v.length ? `${col} IN (${v.map(P).join(", ")})` : "false");
+      else if (op === "notIn")
+        out.push(
+          v.length
+            ? `(${col} IS NULL OR ${col} NOT IN (${v.map(P).join(", ")}))`
+            : "true",
+        );
+      else if (op === "contains")
+        out.push(
+          ci
+            ? `${col} ILIKE '%'||${P(v)}||'%'`
+            : `position(${P(v)} in ${col}) > 0`,
+        );
+      else if (op === "startsWith")
+        out.push(
+          ci
+            ? `${col} ILIKE ${P(v)}||'%'`
+            : `left(${col}, length(${P(v)})) = ${P(v)}`,
+        );
+      else if (op === "endsWith")
+        out.push(
+          v === ""
+            ? `${col} IS NOT NULL`
+            : ci
+              ? `${col} ILIKE '%'||${P(v)}`
+              : `right(${col}, length(${P(v)})) = ${P(v)}`,
+        );
+      else if (op === "regex")
+        out.push(`${col} ${ci ? "~*" : "~"} ${P(pgRegexSource(v))}`);
+      else if (op === "exists") out.push(v ? "TRUE" : "FALSE");
+      else
+        throw new MonliteQueryError(
+          `Operator "${op}" is not supported on column "${field}" (postgres)`,
+        );
+    }
+    return out.length === 1 ? out[0]! : "(" + out.join(" AND ") + ")";
+  }
+
+  // JSONB document field.
+  const txt = pgField(field, ctx.columns, true);
+  const jsn = pgField(field, ctx.columns, false);
+  if (!isFilterObject(condition)) {
+    return condition === null
+      ? `(${jsn} IS NULL OR ${jsn} = 'null'::jsonb)`
+      : `${jsn} = to_jsonb(${P(condition)}::${pgType(condition)})`;
+  }
+  const f = condition as Record<string, any>;
+  const ci = f.mode === "insensitive";
+  const out: string[] = [];
+  for (const op of Object.keys(f)) {
+    const v = f[op];
+    if (v === undefined || op === "mode") continue;
+    switch (op) {
+      case "equals":
+        out.push(
+          v === null
+            ? `(${jsn} IS NULL OR ${jsn} = 'null'::jsonb)`
+            : `${jsn} = to_jsonb(${P(v)}::${pgType(v)})`,
+        );
+        break;
+      case "not":
+        out.push(
+          v === null
+            ? `${jsn} IS NOT NULL`
+            : `(${jsn} IS NULL OR ${jsn} <> to_jsonb(${P(v)}::${pgType(v)}))`,
+        );
+        break;
+      case "gt":
+      case "gte":
+      case "lt":
+      case "lte":
+        out.push(
+          typeof v === "number"
+            ? `(${txt})::numeric ${PG_CMP[op]} ${P(v)}`
+            : `${txt} ${PG_CMP[op]} ${P(v)}`,
+        );
+        break;
+      case "in":
+        out.push(
+          v.length
+            ? `${jsn} IN (${v.map((x: any) => `to_jsonb(${P(x)}::${pgType(x)})`).join(", ")})`
+            : "false",
+        );
+        break;
+      case "notIn":
+        out.push(
+          v.length
+            ? `(${jsn} IS NULL OR ${jsn} NOT IN (${v.map((x: any) => `to_jsonb(${P(x)}::${pgType(x)})`).join(", ")}))`
+            : "true",
+        );
+        break;
+      case "contains":
+        out.push(
+          ci
+            ? `${txt} ILIKE '%'||${P(v)}||'%'`
+            : `position(${P(v)} in ${txt}) > 0`,
+        );
+        break;
+      case "startsWith":
+        out.push(
+          ci
+            ? `${txt} ILIKE ${P(v)}||'%'`
+            : `left(${txt}, length(${P(v)})) = ${P(v)}`,
+        );
+        break;
+      case "endsWith":
+        out.push(
+          v === ""
+            ? `${txt} IS NOT NULL`
+            : ci
+              ? `${txt} ILIKE '%'||${P(v)}`
+              : `right(${txt}, length(${P(v)})) = ${P(v)}`,
+        );
+        break;
+      case "regex":
+        out.push(`${txt} ${ci ? "~*" : "~"} ${P(pgRegexSource(v))}`);
+        break;
+      case "has":
+        out.push(`${jsn} @> to_jsonb(${P(v)}::${pgType(v)})`);
+        break;
+      case "elemMatch":
+        out.push(pgElemMatch(jsn, v, ctx));
+        break;
+      case "exists":
+        out.push(
+          v
+            ? `(${jsn} IS NOT NULL AND ${jsn} <> 'null'::jsonb)`
+            : `(${jsn} IS NULL OR ${jsn} = 'null'::jsonb)`,
+        );
+        break;
+      default:
+        throw new MonliteQueryError(
+          `Unknown where operator "${op}" on field "${field}" (postgres)`,
+        );
+    }
+  }
+  if (!out.length) return "";
+  return out.length === 1 ? out[0]! : "(" + out.join(" AND ") + ")";
+}
+
+/** `elemMatch` for Postgres: any element of a JSONB array satisfies a sub-filter. */
+function pgElemMatch(arrayJsn: string, sub: any, ctx: WhereContext): string {
+  const P = (v: any): string => {
+    ctx.params.push(v);
+    return "?";
+  };
+  const SCALAR = new Set([
+    "equals",
+    "not",
+    "gt",
+    "gte",
+    "lt",
+    "lte",
+    "in",
+    "notIn",
+  ]);
+  const clauses: string[] = [];
+  // `elem` is each jsonb array element; `txt` reads it (or a nested field) as text.
+  const constrain = (txt: string, jsn: string, c: any): void => {
+    if (!isFilterObject(c)) {
+      clauses.push(`${jsn} = to_jsonb(${P(c)}::${pgType(c)})`);
+      return;
+    }
+    const rec = c as Record<string, any>;
+    for (const op of Object.keys(rec)) {
+      const v = rec[op];
+      if (v === undefined || op === "mode") continue;
+      if (op === "equals") clauses.push(`${jsn} = to_jsonb(${P(v)}::${pgType(v)})`);
+      else if (PG_CMP[op])
+        clauses.push(
+          typeof v === "number"
+            ? `(${txt})::numeric ${PG_CMP[op]} ${P(v)}`
+            : `${txt} ${PG_CMP[op]} ${P(v)}`,
+        );
+      else
+        throw new MonliteQueryError(
+          `Unsupported elemMatch operator "${op}" (postgres)`,
+        );
+    }
+  };
+  const scalarForm =
+    !isFilterObject(sub) ||
+    Object.keys(sub).every((k) => SCALAR.has(k) || k === "mode");
+  if (scalarForm) {
+    constrain("elem#>>'{}'", "elem", sub);
+  } else {
+    const rec = sub as Record<string, any>;
+    for (const k of Object.keys(rec)) {
+      const kk = k.replace(/'/g, "''");
+      constrain(`elem->>'${kk}'`, `elem->'${kk}'`, rec[k]);
+    }
+  }
+  return `EXISTS (SELECT 1 FROM jsonb_array_elements(${arrayJsn}) elem WHERE ${clauses.join(" AND ")})`;
 }
 
 /**

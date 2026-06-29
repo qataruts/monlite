@@ -84,6 +84,7 @@
     "better-sqlite3-multiple-ciphers": "^12.11.1",
     "eslint": "^9.17.0",
     "lowdb": "^7.0.1",
+    "pg": "^8.22.0",
     "prettier": "^3.4.2",
     "sql.js": "^1.14.1",
     "tsup": "^8.3.5",
