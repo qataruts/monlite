@@ -9,6 +9,10 @@ on:
       - "docs/**"
       - "demo/**"
       - "packages/**"
+      # @monlite/core lives at the repo root (src/) — the demo bundles it via
+      # workspace:*, so a core change must redeploy the live demo too.
+      - "src/**"
+      - "package.json"
       - "pnpm-workspace.yaml"
       - "pnpm-lock.yaml"
       - ".github/workflows/deploy-docs.yml"
