@@ -18,6 +18,7 @@ const sidebars: SidebarsConfig = {
         "core/aggregation",
         "core/structured",
         "core/transactions",
+        "core/realtime",
         "core/durability",
       ],
     },

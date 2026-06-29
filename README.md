@@ -87,7 +87,9 @@ No Docker. No `.env` files with connection strings. No Redis setup. **One file, 
 ## Real-time reactivity — local Firebase
 
 `collection.watch()` delivers a live result set that re-emits only when a relevant change lands.
-Row-level matching, no spurious re-renders. Works with changes from `@monlite/sync` too.
+Row-level matching, no spurious re-renders. Watch a single doc with `watchDoc()`, scope to
+specific `fields`, and get `added`/`removed`/`changed`/`moved` deltas. Works with changes from
+`@monlite/sync` too.
 
 ```ts
 // Initial snapshot → then re-fires only when an admin is added/changed/removed
@@ -95,10 +97,24 @@ const stop = users.watch(
   { where: { roles: { has: "admin" } } },
   ({ results, added, removed }) => renderAdminList(results),
 );
+
+// Single-document listener (Firebase-style onSnapshot)
+orders.watchDoc("o-123", (doc) => render(doc)); // doc is null on delete
+```
+
+Turn on the **change feed** (`{ changefeed: true }`) for a durable, resumable, ordered stream —
+and `watch()` then sees writes from **other processes** on the same file too:
+
+```ts
+const db = createDb("./app.db", { changefeed: true });
+for await (const ev of db.changes("orders", { since: lastSeq })) {
+  // { seq, collection, id, op: "upsert" | "delete", ts } — resumable by seq
+}
 ```
 
 Pair with `@monlite/sync` and your local database becomes a live replica of MongoDB or
-PostgreSQL — **fully offline capable, syncs when reconnected**.
+PostgreSQL — **fully offline capable, syncs when reconnected**. See the
+[realtime docs](https://qataruts.github.io/monlite/docs/core/realtime).
 
 ---
 
@@ -261,7 +277,7 @@ Runnable demos are in [`examples/`](examples/).
 
 ## Status
 
-Production-ready and published. Current versions: `@monlite/core` **2.6.16**, `@monlite/sync`
+Production-ready and published. Current versions: `@monlite/core` **2.7.0**, `@monlite/sync`
 **1.3.4**, `@monlite/vector` **0.5.6**, `@monlite/fts` **0.5.5**, `@monlite/kv` **0.2.2**,
 `@monlite/queue` **0.3.5**, `@monlite/cron` 0.1.2, `@monlite/wasm` 0.2.2. The 2.x API is frozen.
 

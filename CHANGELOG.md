@@ -1,5 +1,29 @@
 # @monlite/core
 
+## 2.7.0 — realtime: change feed + deeper watch() + cross-process reactivity
+
+All additive — the 2.x API is unchanged; new options/methods only. Off by default (zero overhead).
+
+**Change feed (new)** — opt in with `{ changefeed: true }` (or `{ sync: true }`, which implies it):
+- `db.changes(collection?, { since, pollMs, signal })` — an ordered, durable, resumable
+  `AsyncIterable` of `{ seq, collection, id, op, ts }`, including writes from OTHER processes
+  sharing the `.db` and changes applied by sync.
+- `db.changesSince(collection, since, limit?)` (pull form), `db.currentSeq()`, and
+  `db.compactChanges({ keepLast })` to bound feed growth.
+
+**Deeper `watch()`**:
+- `collection.watchDoc(id, cb)` — single-document listener (Firebase-style `onSnapshot(doc)`);
+  the callback gets the doc or `null` (incl. on delete).
+- `watch({ fields: [...] })` — only emit a `"change"` when a listed field actually changes
+  (`added`/`removed`/`moved` still always fire).
+- `LiveEvent` gains optional `changedFields` (per-doc changed field names) and `moved` (docs whose
+  position changed in an ordered query).
+
+**Cross-process reactivity** — with the change feed on, `watch()` is driven by the feed, so a write
+in another process/connection now fires local watchers (polled every `reactorPollMs`, default
+`200`; same-process writes still notify immediately). With the feed off, `watch()` is byte-for-byte
+the previous in-process behavior.
+
 ## 2.6.16 — typecheck fix for the 2.6.15 run() coercion
 
 - Types-only follow-up to 2.6.15: the node:sqlite `run()` wrapper is now typed as `RunResult`
