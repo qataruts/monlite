@@ -226,6 +226,11 @@ export class Cron extends EventEmitter {
 
   constructor(db: Monlite, opts: CronOptions = {}) {
     super();
+    if (db.asyncDriver)
+      throw new Error(
+        "@monlite/cron: the Postgres engine is asynchronous — use `new PgCron(db)` " +
+          "or `createPgCron(db)`. `Cron`/`createCron()` are the synchronous SQLite engine.",
+      );
     this.driver = db.driver;
     this.heartbeat = db.heartbeat;
     this.checkInterval = opts.checkInterval ?? 1000;
@@ -331,7 +336,154 @@ export class Cron extends EventEmitter {
   }
 }
 
-/** Create a cron scheduler over a monlite database. */
+// ── Postgres engine: async scheduler ──────────────────────────────────────────
+const pgEnsured = new WeakMap<object, Promise<void>>();
+
+/**
+ * The Postgres counterpart of {@link Cron} — same model (a persisted `_schedules` table, an
+ * atomic cross-process claim so exactly one process fires each tick), with an async API.
+ * `await cron.schedule(...)`. Emits `"error"` (err, name) if a handler throws.
+ */
+export class PgCron extends EventEmitter {
+  private readonly driver: NonNullable<Monlite["asyncDriver"]>;
+  private readonly heartbeat: Monlite["heartbeat"];
+  private readonly checkInterval: number;
+  private readonly ready: Promise<void>;
+  private readonly handlers = new Map<
+    string,
+    { c: ParsedCron; fn: CronHandler; tz?: string; jitter?: number }
+  >();
+  private task: HeartbeatTask | undefined;
+
+  constructor(db: Monlite, opts: CronOptions = {}) {
+    super();
+    if (!db.asyncDriver)
+      throw new Error(
+        "@monlite/cron: PgCron requires the Postgres engine — use `new Cron(db)` " +
+          "/ `createCron(db)` on the SQLite engine.",
+      );
+    this.driver = db.asyncDriver;
+    this.heartbeat = db.heartbeat;
+    this.checkInterval = opts.checkInterval ?? 1000;
+    if (!pgEnsured.has(db)) {
+      pgEnsured.set(
+        db,
+        this.driver.exec(
+          `CREATE TABLE IF NOT EXISTS _schedules (
+            name TEXT PRIMARY KEY, cron TEXT NOT NULL,
+            next_run BIGINT NOT NULL, last_run BIGINT
+          )`,
+        ),
+      );
+    }
+    this.ready = pgEnsured.get(db)!;
+  }
+
+  private computeNext(
+    c: ParsedCron,
+    from: Date,
+    tz?: string,
+    jitter?: number,
+  ): number {
+    const base = nextCronRun(c, from, { tz }).getTime();
+    return jitter && jitter > 0
+      ? base + Math.floor(Math.random() * jitter)
+      : base;
+  }
+
+  /** Register (or update) a schedule and start the scheduler. */
+  async schedule(
+    name: string,
+    expr: string,
+    handler: CronHandler,
+    opts: ScheduleOptions = {},
+  ): Promise<void> {
+    await this.ready;
+    const c = parseCron(expr);
+    const { tz, jitter } = opts;
+    const existing = (
+      await this.driver.query(
+        `SELECT next_run, cron FROM _schedules WHERE name = ?`,
+        [name],
+      )
+    ).rows[0] as { next_run: any; cron: string } | undefined;
+    const next =
+      existing && existing.cron === expr
+        ? Number(existing.next_run)
+        : this.computeNext(c, new Date(), tz, jitter);
+    await this.driver.query(
+      `INSERT INTO _schedules (name, cron, next_run, last_run) VALUES (?, ?, ?, NULL)
+       ON CONFLICT(name) DO UPDATE SET cron = excluded.cron, next_run = excluded.next_run`,
+      [name, expr, next],
+    );
+    this.handlers.set(name, { c, fn: handler, tz, jitter });
+    if (!this.task) {
+      this.task = this.heartbeat.every(this.checkInterval, () =>
+        void this.tick(),
+      );
+    }
+  }
+
+  /** Remove a schedule. */
+  async unschedule(name: string): Promise<void> {
+    this.handlers.delete(name);
+    await this.driver.query(`DELETE FROM _schedules WHERE name = ?`, [name]);
+  }
+
+  /** The next scheduled run (epoch ms) for a registered schedule. */
+  async next(name: string): Promise<number | undefined> {
+    await this.ready;
+    const row = (
+      await this.driver.query(
+        `SELECT next_run FROM _schedules WHERE name = ?`,
+        [name],
+      )
+    ).rows[0] as { next_run: any } | undefined;
+    return row ? Number(row.next_run) : undefined;
+  }
+
+  /** @internal — exposed for tests; runs one scheduling pass. */
+  async tick(): Promise<void> {
+    await this.ready;
+    const t = nowMs();
+    for (const [name, reg] of this.handlers) {
+      const row = (
+        await this.driver.query(
+          `SELECT next_run FROM _schedules WHERE name = ?`,
+          [name],
+        )
+      ).rows[0] as { next_run: any } | undefined;
+      if (!row || Number(row.next_run) > t) continue;
+      const next = this.computeNext(reg.c, new Date(t), reg.tz, reg.jitter);
+      // Atomic claim: only the process that flips next_run gets to fire.
+      const claimed =
+        (
+          await this.driver.query(
+            `UPDATE _schedules SET last_run = ?, next_run = ? WHERE name = ? AND next_run <= ?`,
+            [t, next, name, t],
+          )
+        ).changes > 0;
+      if (claimed) {
+        Promise.resolve()
+          .then(() => reg.fn())
+          .catch((err) => this.emit("error", err, name));
+      }
+    }
+  }
+
+  /** Stop the scheduler (schedules remain persisted). */
+  stop(): void {
+    if (this.task) this.task.cancel();
+    this.task = undefined;
+  }
+}
+
+/** Create a cron scheduler over a monlite database (SQLite engine — synchronous API). */
 export function createCron(db: Monlite, opts?: CronOptions): Cron {
   return new Cron(db, opts);
+}
+
+/** Create a cron scheduler over a monlite database on the Postgres engine (async API). */
+export function createPgCron(db: Monlite, opts?: CronOptions): PgCron {
+  return new PgCron(db, opts);
 }

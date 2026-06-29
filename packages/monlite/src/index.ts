@@ -37,6 +37,8 @@ export {
 export {
   createCron,
   Cron,
+  createPgCron,
+  PgCron,
   parseCron,
   nextCronRun,
   type CronOptions,
