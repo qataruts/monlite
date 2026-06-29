@@ -118,7 +118,10 @@ export class SyncStore {
       )
       .get() as { version: string } | undefined;
     if (!row) return 0;
-    const parsed = parseInt(row.version.slice(row.version.lastIndexOf(":") + 1), 10);
+    const parsed = parseInt(
+      row.version.slice(row.version.lastIndexOf(":") + 1),
+      10,
+    );
     return Number.isFinite(parsed) ? parsed + 1 : 0;
   }
 

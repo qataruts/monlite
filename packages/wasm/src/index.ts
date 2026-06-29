@@ -80,7 +80,10 @@ export class WasmDriver implements Driver {
     if (!this.onQuery) return fn();
     const t0 = globalThis.performance?.now?.() ?? 0;
     const out = fn();
-    this.onQuery({ sql, durationMs: (globalThis.performance?.now?.() ?? 0) - t0 });
+    this.onQuery({
+      sql,
+      durationMs: (globalThis.performance?.now?.() ?? 0) - t0,
+    });
     return out;
   }
 

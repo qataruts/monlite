@@ -18,7 +18,9 @@ describe("vector scale", () => {
       const D = 128;
       const db = createDb(":memory:", {
         allowExtensions: true,
-        plugins: [vector({ docs: { field: "e", dimensions: D, distance: "cosine" } })],
+        plugins: [
+          vector({ docs: { field: "e", dimensions: D, distance: "cosine" } }),
+        ],
       });
       dbs.push(db);
       const c = db.collection("docs");
@@ -40,7 +42,9 @@ describe("vector scale", () => {
       expect(hits.length).toBe(10);
 
       // eslint-disable-next-line no-console
-      console.log(`50K vector ingest ${ingestMs}ms (${(ingestMs / N).toFixed(3)} ms/doc), findSimilar ${queryMs}ms`);
+      console.log(
+        `50K vector ingest ${ingestMs}ms (${(ingestMs / N).toFixed(3)} ms/doc), findSimilar ${queryMs}ms`,
+      );
     },
     120_000,
   );

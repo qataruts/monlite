@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createDb, type Monlite } from "../src/index";
@@ -40,13 +40,17 @@ describe("scale (100K documents)", () => {
       expect(await c.count({ where: { kind: "special" } })).toBe(N / 5);
 
       const t1 = Date.now();
-      const rows = await c.findMany({ where: { kind: "special", n: { lt: 1000 } } });
+      const rows = await c.findMany({
+        where: { kind: "special", n: { lt: 1000 } },
+      });
       const queryMs = Date.now() - t1;
       expect(rows.length).toBe(200);
 
       expect(db.checkIntegrity()).toBe(true);
       // eslint-disable-next-line no-console
-      console.log(`100K ingest ${ingestMs}ms (${(ingestMs / N).toFixed(3)} ms/doc), indexed query ${queryMs}ms`);
+      console.log(
+        `100K ingest ${ingestMs}ms (${(ingestMs / N).toFixed(3)} ms/doc), indexed query ${queryMs}ms`,
+      );
     },
     120_000,
   );

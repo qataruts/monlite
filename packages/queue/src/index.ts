@@ -125,9 +125,12 @@ class WorkerImpl implements Worker {
     this.pollInterval = opts.pollInterval ?? 500;
     this.visibilityTimeout = Math.max(0, opts.visibilityTimeout ?? 0);
     if (this.visibilityTimeout > 0) {
-      this.reaper = setInterval(() => {
-        if (this.running) this.q.recover(this.visibilityTimeout, this.name);
-      }, Math.max(1000, Math.floor(this.visibilityTimeout / 2)));
+      this.reaper = setInterval(
+        () => {
+          if (this.running) this.q.recover(this.visibilityTimeout, this.name);
+        },
+        Math.max(1000, Math.floor(this.visibilityTimeout / 2)),
+      );
       this.reaper.unref?.();
     }
     this.kick();
@@ -396,8 +399,8 @@ export class Queue extends EventEmitter {
         .prepare(
           `UPDATE _jobs SET status='done', result=?, error=NULL, updated_at=? WHERE id=? AND attempts=?`,
         )
-        .run(JSON.stringify(result ?? null), now(), job.id, job.attempts).changes >
-      0
+        .run(JSON.stringify(result ?? null), now(), job.id, job.attempts)
+        .changes > 0
     );
   }
 
@@ -412,8 +415,13 @@ export class Queue extends EventEmitter {
           .prepare(
             `UPDATE _jobs SET status='pending', run_at=?, error=?, locked_by=NULL, updated_at=? WHERE id=? AND attempts=?`,
           )
-          .run(now() + this.backoff(job.attempts), message, now(), job.id, job.attempts)
-          .changes > 0
+          .run(
+            now() + this.backoff(job.attempts),
+            message,
+            now(),
+            job.id,
+            job.attempts,
+          ).changes > 0
       );
     }
     return (

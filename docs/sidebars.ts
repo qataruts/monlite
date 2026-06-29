@@ -48,7 +48,11 @@ const sidebars: SidebarsConfig = {
     {
       type: "category",
       label: "Reference",
-      items: ["reference/file-format", "reference/benchmarks", "reference/python"],
+      items: [
+        "reference/file-format",
+        "reference/benchmarks",
+        "reference/python",
+      ],
     },
   ],
 };

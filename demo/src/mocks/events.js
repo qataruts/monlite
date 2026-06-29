@@ -18,7 +18,11 @@ export class EventEmitter {
   }
   off(e, fn) {
     const a = this._l.get(e);
-    if (a) this._l.set(e, a.filter((f) => f !== fn));
+    if (a)
+      this._l.set(
+        e,
+        a.filter((f) => f !== fn),
+      );
     return this;
   }
   removeListener(e, fn) {

@@ -1,171 +1,351 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%236366f1'/%3E%3Cpath d='M22 11a8 8 0 1 0 0 10 6.5 6.5 0 1 1 0-10z' fill='%23fff'/%3E%3C/svg%3E" />
-  <title>monlite playground — a database in your browser</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/src/style.css" />
-</head>
-<body>
-  <div id="app">
-
-    <header class="header">
-      <div class="header-left">
-        <div class="logo">
-          <svg width="28" height="28" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-              <radialGradient id="mg" cx="30%" cy="30%" r="70%">
-                <stop offset="0%" stop-color="#f0f4ff"/>
-                <stop offset="100%" stop-color="#818cf8"/>
-              </radialGradient>
-              <mask id="cm">
-                <rect width="100" height="100" fill="black"/>
-                <circle cx="46" cy="52" r="30" fill="white"/>
-                <circle cx="58" cy="43" r="24" fill="black"/>
-              </mask>
-            </defs>
-            <circle cx="46" cy="52" r="30" fill="#4f46e5" opacity="0.25" style="filter:blur(8px)"/>
-            <circle cx="46" cy="52" r="30" fill="url(#mg)" mask="url(#cm)"/>
-            <circle cx="76" cy="27" r="3.5" fill="#c7d2fe" opacity="0.9"/>
-            <circle cx="83" cy="40" r="2" fill="#a5b4fc" opacity="0.7"/>
-          </svg>
-          <span class="logo-text">monlite</span>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%236366f1'/%3E%3Cpath d='M22 11a8 8 0 1 0 0 10 6.5 6.5 0 1 1 0-10z' fill='%23fff'/%3E%3C/svg%3E"
+    />
+    <title>monlite playground — a database in your browser</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="header">
+        <div class="header-left">
+          <div class="logo">
+            <svg
+              width="28"
+              height="28"
+              viewBox="0 0 100 100"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <defs>
+                <radialGradient id="mg" cx="30%" cy="30%" r="70%">
+                  <stop offset="0%" stop-color="#f0f4ff" />
+                  <stop offset="100%" stop-color="#818cf8" />
+                </radialGradient>
+                <mask id="cm">
+                  <rect width="100" height="100" fill="black" />
+                  <circle cx="46" cy="52" r="30" fill="white" />
+                  <circle cx="58" cy="43" r="24" fill="black" />
+                </mask>
+              </defs>
+              <circle
+                cx="46"
+                cy="52"
+                r="30"
+                fill="#4f46e5"
+                opacity="0.25"
+                style="filter: blur(8px)"
+              />
+              <circle cx="46" cy="52" r="30" fill="url(#mg)" mask="url(#cm)" />
+              <circle cx="76" cy="27" r="3.5" fill="#c7d2fe" opacity="0.9" />
+              <circle cx="83" cy="40" r="2" fill="#a5b4fc" opacity="0.7" />
+            </svg>
+            <span class="logo-text">monlite</span>
+          </div>
+          <span class="header-sub"
+            >a real database, running in your browser</span
+          >
         </div>
-        <span class="header-sub">a real database, running in your browser</span>
-      </div>
-      <div class="header-right">
-        <div class="stats">
-          <span class="stat" id="stat-docs">—</span>
-          <span class="stat-sep">·</span>
-          <span class="stat" id="stat-size">—</span>
-          <span class="stat-sep">·</span>
-          <span class="badge">● SQLite WASM</span>
+        <div class="header-right">
+          <div class="stats">
+            <span class="stat" id="stat-docs">—</span>
+            <span class="stat-sep">·</span>
+            <span class="stat" id="stat-size">—</span>
+            <span class="stat-sep">·</span>
+            <span class="badge">● SQLite WASM</span>
+          </div>
+          <a
+            class="gh-link"
+            href="https://github.com/qataruts/monlite"
+            target="_blank"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path
+                d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12c0-5.523-4.477-10-10-10z"
+              />
+            </svg>
+            GitHub
+          </a>
         </div>
-        <a class="gh-link" href="https://github.com/qataruts/monlite" target="_blank">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12c0-5.523-4.477-10-10-10z"/></svg>
-          GitHub
-        </a>
-      </div>
-    </header>
+      </header>
 
-    <nav class="tabs" id="tabs">
-      <button class="tab active" data-tab="docs">Documents</button>
-      <button class="tab" data-tab="search">Full-text</button>
-      <button class="tab" data-tab="vector">Vector</button>
-      <button class="tab" data-tab="kv">Cache</button>
-      <button class="tab" data-tab="queue">Queue</button>
-      <button class="tab" data-tab="cron">Cron</button>
-    </nav>
+      <nav class="tabs" id="tabs">
+        <button class="tab active" data-tab="docs">Documents</button>
+        <button class="tab" data-tab="search">Full-text</button>
+        <button class="tab" data-tab="vector">Vector</button>
+        <button class="tab" data-tab="kv">Cache</button>
+        <button class="tab" data-tab="queue">Queue</button>
+        <button class="tab" data-tab="cron">Cron</button>
+      </nav>
 
-    <div class="layout">
-      <div class="panel panel-main">
-
-        <!-- ── Documents (core) ── -->
-        <section class="tab-panel active" id="panel-docs">
-          <p class="tab-desc"><span class="pkg">@monlite/core</span> MongoDB-style document collections + typed queries + reactive <code>watch()</code>. This grid is live — add or delete and it updates instantly.</p>
-          <div class="row-form">
-            <input id="mem-title" class="input" placeholder="Title" />
-            <input id="mem-tags" class="input" placeholder="tags (space separated)" />
-          </div>
-          <textarea id="mem-content" class="input textarea" placeholder="Content…" rows="2"></textarea>
-          <button id="btn-add" class="btn btn-primary">+ Add document</button>
-          <div class="agg" id="agg"></div>
-          <div id="docs-grid" class="memory-grid"></div>
-        </section>
-
-        <!-- ── Full-text search (fts) ── -->
-        <section class="tab-panel" id="panel-search">
-          <p class="tab-desc"><span class="pkg">@monlite/fts</span> SQLite FTS5 full-text search — ranked, with highlights. Try <i>neural</i>, <i>sqlite</i>, <i>retrieval</i>.</p>
-          <div class="search-wrap">
-            <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-            <input id="search" type="text" class="search-input" placeholder="Search the documents with FTS5…" autocomplete="off" spellcheck="false" />
-            <span class="search-clear" id="search-clear" style="display:none">×</span>
-          </div>
-          <div class="panel-meta"><span id="result-count" class="result-count"></span><span class="fts-hint" id="fts-hint"></span></div>
-          <div id="search-grid" class="memory-grid"></div>
-        </section>
-
-        <!-- ── Vector (vector) ── -->
-        <section class="tab-panel" id="panel-vector">
-          <p class="tab-desc"><span class="pkg">@monlite/vector</span> Semantic search via <code>findSimilar()</code> — matches by <b>meaning</b>, not keywords. Embeddings are computed in your browser (Transformers.js, all-MiniLM-L6-v2).</p>
-          <div id="vector-setup" class="setup-box">
-            <div class="setup-text">Semantic search needs an embedding model (~23&nbsp;MB, one-time, cached). It runs entirely on-device.</div>
-            <button id="btn-load-model" class="btn btn-primary" style="width:auto">Load embedding model</button>
-            <div id="model-status" class="model-status"></div>
-          </div>
-          <div id="vector-ui" style="display:none">
-            <div class="search-wrap">
-              <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-              <input id="vec-search" type="text" class="search-input" placeholder="e.g. 'mysteries of outer space' or 'training AI models'…" autocomplete="off" />
+      <div class="layout">
+        <div class="panel panel-main">
+          <!-- ── Documents (core) ── -->
+          <section class="tab-panel active" id="panel-docs">
+            <p class="tab-desc">
+              <span class="pkg">@monlite/core</span> MongoDB-style document
+              collections + typed queries + reactive <code>watch()</code>. This
+              grid is live — add or delete and it updates instantly.
+            </p>
+            <div class="row-form">
+              <input id="mem-title" class="input" placeholder="Title" />
+              <input
+                id="mem-tags"
+                class="input"
+                placeholder="tags (space separated)"
+              />
             </div>
-            <div class="panel-meta"><span id="vec-count" class="result-count"></span><span class="fts-hint">cosine similarity · findSimilar()</span></div>
-            <div id="vector-grid" class="memory-grid"></div>
-          </div>
-        </section>
+            <textarea
+              id="mem-content"
+              class="input textarea"
+              placeholder="Content…"
+              rows="2"
+            ></textarea>
+            <button id="btn-add" class="btn btn-primary">+ Add document</button>
+            <div class="agg" id="agg"></div>
+            <div id="docs-grid" class="memory-grid"></div>
+          </section>
 
-        <!-- ── Cache (kv) ── -->
-        <section class="tab-panel" id="panel-kv">
-          <p class="tab-desc"><span class="pkg">@monlite/kv</span> Synchronous cache with TTLs &amp; atomic locks — Redis's local role, over the same file.</p>
-          <div class="card" style="max-width:440px">
-            <div class="card-title">Key / value</div>
-            <div class="kv-row"><input id="kv-key" class="input input-sm" placeholder="key" value="session:42" /><input id="kv-value" class="input input-sm" placeholder="value" value="hello-cache" /></div>
-            <div class="kv-row"><input id="kv-ttl" type="number" class="input input-sm" placeholder="TTL ms (optional)" value="5000" /></div>
-            <div class="kv-actions"><button id="btn-set" class="btn btn-sm">Set</button><button id="btn-get" class="btn btn-sm">Get</button><button id="btn-del" class="btn btn-sm btn-ghost">Delete</button></div>
-            <div id="kv-result" class="kv-result"></div>
-          </div>
-        </section>
+          <!-- ── Full-text search (fts) ── -->
+          <section class="tab-panel" id="panel-search">
+            <p class="tab-desc">
+              <span class="pkg">@monlite/fts</span> SQLite FTS5 full-text search
+              — ranked, with highlights. Try <i>neural</i>, <i>sqlite</i>,
+              <i>retrieval</i>.
+            </p>
+            <div class="search-wrap">
+              <svg
+                class="search-icon"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.35-4.35" />
+              </svg>
+              <input
+                id="search"
+                type="text"
+                class="search-input"
+                placeholder="Search the documents with FTS5…"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <span class="search-clear" id="search-clear" style="display: none"
+                >×</span
+              >
+            </div>
+            <div class="panel-meta">
+              <span id="result-count" class="result-count"></span
+              ><span class="fts-hint" id="fts-hint"></span>
+            </div>
+            <div id="search-grid" class="memory-grid"></div>
+          </section>
 
-        <!-- ── Queue (queue) ── -->
-        <section class="tab-panel" id="panel-queue">
-          <p class="tab-desc"><span class="pkg">@monlite/queue</span> Durable job queue — jobs persist in the DB, a worker claims &amp; runs them, with retries &amp; backoff (~30% of demo jobs fail once to show a retry).</p>
-          <div class="queue-toolbar">
-            <button id="btn-add-job" class="btn btn-primary" style="width:auto">+ Enqueue job</button>
-            <button id="btn-add-5" class="btn btn-sm" style="flex:0 0 auto">+ 5 jobs</button>
-            <button id="btn-clear-done" class="btn btn-sm btn-ghost" style="flex:0 0 auto">Clear completed</button>
-            <button id="btn-clear-all" class="btn btn-sm btn-ghost" style="flex:0 0 auto">Clear all</button>
-          </div>
-          <div class="counts" id="job-counts"></div>
-          <div id="job-list" class="job-list"></div>
-        </section>
+          <!-- ── Vector (vector) ── -->
+          <section class="tab-panel" id="panel-vector">
+            <p class="tab-desc">
+              <span class="pkg">@monlite/vector</span> Semantic search via
+              <code>findSimilar()</code> — matches by <b>meaning</b>, not
+              keywords. Embeddings are computed in your browser
+              (Transformers.js, all-MiniLM-L6-v2).
+            </p>
+            <div id="vector-setup" class="setup-box">
+              <div class="setup-text">
+                Semantic search needs an embedding model (~23&nbsp;MB, one-time,
+                cached). It runs entirely on-device.
+              </div>
+              <button
+                id="btn-load-model"
+                class="btn btn-primary"
+                style="width: auto"
+              >
+                Load embedding model
+              </button>
+              <div id="model-status" class="model-status"></div>
+            </div>
+            <div id="vector-ui" style="display: none">
+              <div class="search-wrap">
+                <svg
+                  class="search-icon"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <circle cx="11" cy="11" r="8" />
+                  <path d="m21 21-4.35-4.35" />
+                </svg>
+                <input
+                  id="vec-search"
+                  type="text"
+                  class="search-input"
+                  placeholder="e.g. 'mysteries of outer space' or 'training AI models'…"
+                  autocomplete="off"
+                />
+              </div>
+              <div class="panel-meta">
+                <span id="vec-count" class="result-count"></span
+                ><span class="fts-hint">cosine similarity · findSimilar()</span>
+              </div>
+              <div id="vector-grid" class="memory-grid"></div>
+            </div>
+          </section>
 
-        <!-- ── Cron (cron) ── -->
-        <section class="tab-panel" id="panel-cron">
-          <p class="tab-desc"><span class="pkg">@monlite/cron</span> Persisted scheduled jobs from cron expressions. We compute the next runs instantly; a live job ticks on the schedule.</p>
-          <div class="row-form">
-            <input id="cron-name" class="input" placeholder="name (e.g. cleanup)" style="max-width:220px" />
-            <input id="cron-expr" class="input" placeholder="* * * * *" value="* * * * *" style="font-family:var(--mono);max-width:170px" />
-            <button id="btn-cron" class="btn btn-primary" style="width:auto">+ Schedule</button>
-          </div>
-          <div class="cron-hint">5 fields: minute hour day-of-month month day-of-week. <code>* * * * *</code> = every minute · <code>*/5 * * * *</code> = every 5 min · <code>0 9 * * 1</code> = 9am Mondays</div>
-          <div id="cron-err" class="cron-err"></div>
-          <div id="cron-list" class="cron-list"></div>
-        </section>
-      </div>
+          <!-- ── Cache (kv) ── -->
+          <section class="tab-panel" id="panel-kv">
+            <p class="tab-desc">
+              <span class="pkg">@monlite/kv</span> Synchronous cache with TTLs
+              &amp; atomic locks — Redis's local role, over the same file.
+            </p>
+            <div class="card" style="max-width: 440px">
+              <div class="card-title">Key / value</div>
+              <div class="kv-row">
+                <input
+                  id="kv-key"
+                  class="input input-sm"
+                  placeholder="key"
+                  value="session:42"
+                /><input
+                  id="kv-value"
+                  class="input input-sm"
+                  placeholder="value"
+                  value="hello-cache"
+                />
+              </div>
+              <div class="kv-row">
+                <input
+                  id="kv-ttl"
+                  type="number"
+                  class="input input-sm"
+                  placeholder="TTL ms (optional)"
+                  value="5000"
+                />
+              </div>
+              <div class="kv-actions">
+                <button id="btn-set" class="btn btn-sm">Set</button
+                ><button id="btn-get" class="btn btn-sm">Get</button
+                ><button id="btn-del" class="btn btn-sm btn-ghost">
+                  Delete
+                </button>
+              </div>
+              <div id="kv-result" class="kv-result"></div>
+            </div>
+          </section>
 
-      <div class="panel panel-side">
-        <div class="card sql-log-card">
-          <div class="card-title">SQL log <span class="log-live">● live</span></div>
-          <div id="sql-log" class="sql-log"></div>
+          <!-- ── Queue (queue) ── -->
+          <section class="tab-panel" id="panel-queue">
+            <p class="tab-desc">
+              <span class="pkg">@monlite/queue</span> Durable job queue — jobs
+              persist in the DB, a worker claims &amp; runs them, with retries
+              &amp; backoff (~30% of demo jobs fail once to show a retry).
+            </p>
+            <div class="queue-toolbar">
+              <button
+                id="btn-add-job"
+                class="btn btn-primary"
+                style="width: auto"
+              >
+                + Enqueue job
+              </button>
+              <button id="btn-add-5" class="btn btn-sm" style="flex: 0 0 auto">
+                + 5 jobs
+              </button>
+              <button
+                id="btn-clear-done"
+                class="btn btn-sm btn-ghost"
+                style="flex: 0 0 auto"
+              >
+                Clear completed
+              </button>
+              <button
+                id="btn-clear-all"
+                class="btn btn-sm btn-ghost"
+                style="flex: 0 0 auto"
+              >
+                Clear all
+              </button>
+            </div>
+            <div class="counts" id="job-counts"></div>
+            <div id="job-list" class="job-list"></div>
+          </section>
+
+          <!-- ── Cron (cron) ── -->
+          <section class="tab-panel" id="panel-cron">
+            <p class="tab-desc">
+              <span class="pkg">@monlite/cron</span> Persisted scheduled jobs
+              from cron expressions. We compute the next runs instantly; a live
+              job ticks on the schedule.
+            </p>
+            <div class="row-form">
+              <input
+                id="cron-name"
+                class="input"
+                placeholder="name (e.g. cleanup)"
+                style="max-width: 220px"
+              />
+              <input
+                id="cron-expr"
+                class="input"
+                placeholder="* * * * *"
+                value="* * * * *"
+                style="font-family: var(--mono); max-width: 170px"
+              />
+              <button id="btn-cron" class="btn btn-primary" style="width: auto">
+                + Schedule
+              </button>
+            </div>
+            <div class="cron-hint">
+              5 fields: minute hour day-of-month month day-of-week.
+              <code>* * * * *</code> = every minute · <code>*/5 * * * *</code> =
+              every 5 min · <code>0 9 * * 1</code> = 9am Mondays
+            </div>
+            <div id="cron-err" class="cron-err"></div>
+            <div id="cron-list" class="cron-list"></div>
+          </section>
+        </div>
+
+        <div class="panel panel-side">
+          <div class="card sql-log-card">
+            <div class="card-title">
+              SQL log <span class="log-live">● live</span>
+            </div>
+            <div id="sql-log" class="sql-log"></div>
+          </div>
         </div>
       </div>
+
+      <footer class="footer">
+        👋 Everything here runs <b>100% in your browser</b> on SQLite-WASM —
+        <b>no server, no backend</b>. The data lives in one
+        <code>.db</code> file in this tab. Each tab is a different monlite
+        package, and every query shows live in the SQL&nbsp;log.
+      </footer>
     </div>
 
-    <footer class="footer">
-      👋 Everything here runs <b>100% in your browser</b> on SQLite-WASM — <b>no server, no backend</b>. The data lives in one <code>.db</code> file in this tab. Each tab is a different monlite package, and every query shows live in the SQL&nbsp;log.
-    </footer>
-  </div>
-
-  <div id="loading" class="loading-overlay">
-    <div class="loading-box">
-      <div class="moon-spin">◐</div>
-      <div id="loading-text" class="loading-text">Loading SQLite WASM…</div>
-      <div class="loading-sub">~1.2 MB, one-time download</div>
+    <div id="loading" class="loading-overlay">
+      <div class="loading-box">
+        <div class="moon-spin">◐</div>
+        <div id="loading-text" class="loading-text">Loading SQLite WASM…</div>
+        <div class="loading-sub">~1.2 MB, one-time download</div>
+      </div>
     </div>
-  </div>
 
-  <script type="module" src="/src/main.ts"></script>
-</body>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
 </html>

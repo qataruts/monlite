@@ -304,9 +304,11 @@ export class Monlite {
       const exec = () => this.driver.transactionAsync!(async () => fn(this));
       // Run inside an async-context scope so the transaction's own writes are
       // recognised (and foreign writes during its awaits are rejected).
-      return Promise.resolve(als ? als.run(token, exec) : exec()).finally(() => {
-        this.asyncTxDepth--;
-      });
+      return Promise.resolve(als ? als.run(token, exec) : exec()).finally(
+        () => {
+          this.asyncTxDepth--;
+        },
+      );
     });
     // Keep the queue alive even if this run rejects.
     this.txTail = run.then(

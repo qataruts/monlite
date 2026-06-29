@@ -30,7 +30,9 @@ describe("versionSeq resumes by insertion order (clock-jump safe)", () => {
     db = createDb(file, { sync: true });
     await db.collection("t").create({ data: { n: 1 } });
     const v: any = db.sqlite
-      .prepare("SELECT version FROM _monlite_changes WHERE doc_id NOT IN ('z') ORDER BY seq DESC LIMIT 1")
+      .prepare(
+        "SELECT version FROM _monlite_changes WHERE doc_id NOT IN ('z') ORDER BY seq DESC LIMIT 1",
+      )
       .get();
     const seq = parseInt(v.version.slice(v.version.lastIndexOf(":") + 1), 10);
     expect(seq).toBeGreaterThanOrEqual(10);

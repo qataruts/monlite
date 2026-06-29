@@ -245,7 +245,9 @@ function findSimilarBrute<T = Doc>(
   const def = spec[coll.name];
   if (!def) {
     return Promise.reject(
-      new Error(`Collection "${coll.name}" is not configured for vector search`),
+      new Error(
+        `Collection "${coll.name}" is not configured for vector search`,
+      ),
     );
   }
   if (!Array.isArray(opts.vector) || opts.vector.length !== def.dimensions) {

@@ -92,8 +92,13 @@ export function catchUp(
     )
     .all() as Array<{ rid: number; doc_id: string }>;
   const del = sqlite.prepare(`DELETE FROM "${ftsTable(coll)}" WHERE rowid = ?`);
-  const delMap = sqlite.prepare(`DELETE FROM ${IDMAP} WHERE coll = ? AND doc_id = ?`);
-  for (const o of orphans) { del.run(o.rid); delMap.run(coll, o.doc_id); }
+  const delMap = sqlite.prepare(
+    `DELETE FROM ${IDMAP} WHERE coll = ? AND doc_id = ?`,
+  );
+  for (const o of orphans) {
+    del.run(o.rid);
+    delMap.run(coll, o.doc_id);
+  }
   setHighWater(db, coll, max);
   return { indexed: docs.length, removed: orphans.length };
 }
@@ -126,10 +131,16 @@ function indexDoc(
   const prev = sqlite
     .prepare(`SELECT rid FROM ${IDMAP} WHERE coll = ? AND doc_id = ?`)
     .get(coll, id) as { rid: number } | undefined;
-  if (prev) sqlite.prepare(`DELETE FROM "${ftsTable(coll)}" WHERE rowid = ?`).run(prev.rid);
+  if (prev)
+    sqlite
+      .prepare(`DELETE FROM "${ftsTable(coll)}" WHERE rowid = ?`)
+      .run(prev.rid);
   const doc = db.collection(coll).getRaw(id);
   if (!doc) {
-    if (prev) sqlite.prepare(`DELETE FROM ${IDMAP} WHERE coll = ? AND doc_id = ?`).run(coll, id);
+    if (prev)
+      sqlite
+        .prepare(`DELETE FROM ${IDMAP} WHERE coll = ? AND doc_id = ?`)
+        .run(coll, id);
     return; // deleted
   }
   const cols = fields.map((_, i) => `"${col(i)}"`).join(", ");

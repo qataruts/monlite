@@ -18,12 +18,26 @@ describe("fts scale", () => {
       const db = createDb(":memory:", { plugins: [fts({ docs: ["body"] })] });
       dbs.push(db);
       const c = db.collection("docs");
-      const words = ["quantum", "vector", "search", "monlite", "sqlite", "index", "query", "fast", "local", "embed"];
+      const words = [
+        "quantum",
+        "vector",
+        "search",
+        "monlite",
+        "sqlite",
+        "index",
+        "query",
+        "fast",
+        "local",
+        "embed",
+      ];
       const N = 30_000;
       const t0 = Date.now();
       for (let b = 0; b < N; b += 10_000) {
         const data = Array.from({ length: 10_000 }, (_, i) => ({
-          body: Array.from({ length: 12 }, (_, k) => words[(b + i + k) % words.length]).join(" "),
+          body: Array.from(
+            { length: 12 },
+            (_, k) => words[(b + i + k) % words.length],
+          ).join(" "),
         }));
         await c.createMany({ data });
       }
@@ -33,7 +47,9 @@ describe("fts scale", () => {
       const queryMs = Date.now() - t1;
       expect(hits.length).toBeGreaterThan(0);
       // eslint-disable-next-line no-console
-      console.log(`30K fts ingest ${ingestMs}ms (${(ingestMs / N).toFixed(3)} ms/doc), search ${queryMs}ms`);
+      console.log(
+        `30K fts ingest ${ingestMs}ms (${(ingestMs / N).toFixed(3)} ms/doc), search ${queryMs}ms`,
+      );
     },
     120_000,
   );

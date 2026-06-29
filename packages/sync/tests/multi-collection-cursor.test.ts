@@ -10,7 +10,8 @@ function fakePool(data: Record<string, Row[]>): PgQueryable {
   return {
     async query(text: string, params: any[] = []) {
       // pull query: references _monlite_v and the cursor param $1 (now via COLLATE "C")
-      if (!(/_monlite_v/.test(text) && />\s*\$1/.test(text))) return { rows: [] }; // ensure/DDL
+      if (!(/_monlite_v/.test(text) && />\s*\$1/.test(text)))
+        return { rows: [] }; // ensure/DDL
       // table is schema-qualified: FROM "public"."posts" → capture the table.
       const table = text.match(/FROM\s+(?:"[^"]+"\.)?"([^"]+)"/)?.[1] ?? "";
       const since = String(params[0] ?? "");
@@ -45,7 +46,9 @@ describe("multi-collection sync cursor (no data loss)", () => {
       doc: { n: i },
       v: `v1${String(i).padStart(2, "0")}`,
     }));
-    const adapter = new PostgresAdapter({ pool: fakePool({ posts: A, tags: B }) });
+    const adapter = new PostgresAdapter({
+      pool: fakePool({ posts: A, tags: B }),
+    });
 
     const seen = new Set<string>();
     let cursor: string | null = null;

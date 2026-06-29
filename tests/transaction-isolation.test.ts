@@ -53,12 +53,19 @@ describe("transactionAsync rejects all foreign mutating paths", () => {
     dbs.push(db);
     const c = db.collection("t", { ttl: { field: "exp", seconds: 0 } });
     await c.create({ data: { _id: "a", status: "p", v: 0 } });
-    const tx = db.transactionAsync(async () => { await new Promise((r) => setTimeout(r, 50)); });
+    const tx = db.transactionAsync(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
     await new Promise((r) => setTimeout(r, 15));
     await expect(
-      c.findOneAndUpdate({ where: { _id: "a", status: "p" }, data: { $set: { status: "x" } } }),
+      c.findOneAndUpdate({
+        where: { _id: "a", status: "p" },
+        data: { $set: { status: "x" } },
+      }),
     ).rejects.toThrow(/transactionAsync/);
-    await expect(c.bulkWrite([{ insertOne: { document: { _id: "b" } } }])).rejects.toThrow(/transactionAsync/);
+    await expect(
+      c.bulkWrite([{ insertOne: { document: { _id: "b" } } }]),
+    ).rejects.toThrow(/transactionAsync/);
     await expect(c.purgeExpired()).rejects.toThrow(/transactionAsync/);
     await tx;
   });

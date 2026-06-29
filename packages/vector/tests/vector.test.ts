@@ -269,7 +269,9 @@ describe("createVectorStore (dynamic, programmatic)", () => {
 
 describe("findSimilar where recall (over-fetch then filter)", () => {
   it("returns a filtered match that ranks outside topK", async () => {
-    const c = open({ docs: { field: "e", dimensions: 8, distance: "cosine" } }).collection("docs");
+    const c = open({
+      docs: { field: "e", dimensions: 8, distance: "cosine" },
+    }).collection("docs");
     const data: any[] = [];
     for (let i = 0; i < 60; i++)
       data.push({
@@ -278,7 +280,11 @@ describe("findSimilar where recall (over-fetch then filter)", () => {
       });
     await c.createMany({ data });
     // The only flag=true doc is the farthest; with topK 3 it must still be found.
-    const hits = await c.findSimilar({ vector: [1, 0, 0, 0, 0, 0, 0, 0], topK: 3, where: { flag: true } });
+    const hits = await c.findSimilar({
+      vector: [1, 0, 0, 0, 0, 0, 0, 0],
+      topK: 3,
+      where: { flag: true },
+    });
     expect(hits).toHaveLength(1);
     expect((hits[0] as any).flag).toBe(true);
   });
@@ -286,7 +292,9 @@ describe("findSimilar where recall (over-fetch then filter)", () => {
 
 describe("findSimilar clamps k to sqlite-vec's limit", () => {
   it("a large topK + where does not throw (k capped at 4096)", async () => {
-    const c = open({ d: { field: "e", dimensions: 4, distance: "cosine" } }).collection("d");
+    const c = open({
+      d: { field: "e", dimensions: 4, distance: "cosine" },
+    }).collection("d");
     await c.createMany({
       data: Array.from({ length: 20 }, (_, i) => ({
         e: [Math.random(), Math.random(), Math.random(), Math.random()],

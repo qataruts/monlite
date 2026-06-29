@@ -4,7 +4,8 @@ import type * as Preset from "@docusaurus/preset-classic";
 
 const config: Config = {
   title: "monlite",
-  tagline: "The local-first database for TypeScript — documents, vectors, cache, queue, cron, in one .db",
+  tagline:
+    "The local-first database for TypeScript — documents, vectors, cache, queue, cron, in one .db",
   favicon: "img/favicon.svg",
 
   url: "https://qataruts.github.io",
@@ -39,7 +40,12 @@ const config: Config = {
       title: "monlite",
       logo: { alt: "monlite", src: "img/favicon.svg" },
       items: [
-        { type: "docSidebar", sidebarId: "docs", position: "left", label: "Docs" },
+        {
+          type: "docSidebar",
+          sidebarId: "docs",
+          position: "left",
+          label: "Docs",
+        },
         { to: "/packages/vector", label: "Packages", position: "left" },
         { to: "/guides/production", label: "Guides", position: "left" },
         {

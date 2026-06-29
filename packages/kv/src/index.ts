@@ -119,7 +119,8 @@ export function kv(db: Monlite, options: KVOptions = {}): KV {
       return del(key);
     },
     incr(key, by = 1) {
-      return driver.transaction(() => {  // IMMEDIATE: read-modify-write needs the write lock up front
+      return driver.transaction(() => {
+        // IMMEDIATE: read-modify-write needs the write lock up front
         const row = getRow(key);
         let n = 0;
         let expires: number | null = null;

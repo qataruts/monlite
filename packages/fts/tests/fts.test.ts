@@ -235,10 +235,17 @@ describe("search caps the where candidate pool", () => {
   it("a huge candidates value + where does not overflow SQL variables", async () => {
     const c = open({ d: ["body"] }).collection("d");
     await c.createMany({
-      data: Array.from({ length: 20 }, (_, i) => ({ body: "apple " + i, live: i % 2 === 0 })),
+      data: Array.from({ length: 20 }, (_, i) => ({
+        body: "apple " + i,
+        live: i % 2 === 0,
+      })),
     });
     await expect(
-      c.search("apple", { where: { live: true }, limit: 5, candidates: 50_000 }),
+      c.search("apple", {
+        where: { live: true },
+        limit: 5,
+        candidates: 50_000,
+      }),
     ).resolves.toBeDefined();
   });
 });

@@ -172,10 +172,16 @@ describe("visibility timeout (reaper + heartbeat)", () => {
 
     // a worker with a visibility timeout reaps the stale job and runs it
     let ran = false;
-    const w = q.process("t", async () => { ran = true; }, {
-      visibilityTimeout: 2000,
-      pollInterval: 100,
-    });
+    const w = q.process(
+      "t",
+      async () => {
+        ran = true;
+      },
+      {
+        visibilityTimeout: 2000,
+        pollInterval: 100,
+      },
+    );
     await sleep(2200); // reaper fires at ~vt/2 = 1000ms, then the job runs
     await w.stop();
 
@@ -192,8 +198,13 @@ describe("reaper is scoped to its own queue", () => {
     const jobB = q.add("B", { x: 1 });
     const claimed = (q as any).claimInternal("B"); // B has a stale active job
     expect(claimed?.id).toBe(jobB.id);
-    db.sqlite.prepare("UPDATE _jobs SET updated_at = ? WHERE id = ?").run(Date.now() - 30_000, jobB.id);
-    const w = q.process("A", async () => {}, { visibilityTimeout: 2000, pollInterval: 100 });
+    db.sqlite
+      .prepare("UPDATE _jobs SET updated_at = ? WHERE id = ?")
+      .run(Date.now() - 30_000, jobB.id);
+    const w = q.process("A", async () => {}, {
+      visibilityTimeout: 2000,
+      pollInterval: 100,
+    });
     await sleep(1500); // A's reaper fires (~1000ms)
     await w.stop();
     expect(q.getJob(jobB.id)?.status).toBe("active"); // untouched
@@ -209,7 +220,9 @@ describe("fencing: a reclaimed job rejects the original worker's stale write", (
     const a = (q as any).claimInternal("x"); // worker A claims (attempts=1)
     expect(a.attempts).toBe(1);
     // reaper resets A's stuck job; worker B reclaims it (attempts=2)
-    db.sqlite.prepare("UPDATE _jobs SET status='pending', locked_by=NULL WHERE id=?").run(added.id);
+    db.sqlite
+      .prepare("UPDATE _jobs SET status='pending', locked_by=NULL WHERE id=?")
+      .run(added.id);
     const b = (q as any).claimInternal("x");
     expect(b.attempts).toBe(2);
     // A revives → its stale completion is fenced out, B's lands

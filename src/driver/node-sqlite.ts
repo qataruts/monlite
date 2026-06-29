@@ -82,7 +82,8 @@ export class NodeSqliteDriver implements Driver {
 
   transaction<T>(fn: () => T, immediate = false): T {
     const savepoint = `monlite_sp_${this.depth}`;
-    if (this.depth === 0) this.raw.exec(immediate ? "BEGIN IMMEDIATE" : "BEGIN");
+    if (this.depth === 0)
+      this.raw.exec(immediate ? "BEGIN IMMEDIATE" : "BEGIN");
     else this.raw.exec(`SAVEPOINT ${savepoint}`);
     this.depth++;
 

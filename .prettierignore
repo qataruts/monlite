@@ -7,3 +7,7 @@ pnpm-lock.yaml
 *.json
 *.yaml
 *.yml
+
+# generated docusaurus output
+docs/build
+docs/.docusaurus

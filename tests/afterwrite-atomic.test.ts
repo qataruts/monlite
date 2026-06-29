@@ -20,7 +20,9 @@ describe("write + plugin indexing is atomic", () => {
     const db = createDb(":memory:", { plugins: [failOn("bad")] });
     dbs.push(db);
     const c = db.collection("t");
-    await expect(c.create({ data: { _id: "bad" } })).rejects.toThrow(/index fail/);
+    await expect(c.create({ data: { _id: "bad" } })).rejects.toThrow(
+      /index fail/,
+    );
     expect(await c.count()).toBe(0); // nothing committed
   });
 
@@ -64,7 +66,9 @@ describe("mutation + delete paths index atomically too", () => {
     await c.create({ data: { _id: "x", v: 0 } });
     state.armed = true;
 
-    await expect(c.update({ where: { _id: "x" }, data: { $set: { v: 1 } } })).rejects.toThrow(/index fail/);
+    await expect(
+      c.update({ where: { _id: "x" }, data: { $set: { v: 1 } } }),
+    ).rejects.toThrow(/index fail/);
     expect((await c.findById("x"))?.v).toBe(0);
 
     await expect(
@@ -73,16 +77,24 @@ describe("mutation + delete paths index atomically too", () => {
     expect((await c.findById("x"))?.v).toBe(0);
 
     await expect(
-      c.upsert({ where: { _id: "x" }, create: { _id: "x", v: 9 }, update: { $set: { v: 3 } } }),
+      c.upsert({
+        where: { _id: "x" },
+        create: { _id: "x", v: 9 },
+        update: { $set: { v: 3 } },
+      }),
     ).rejects.toThrow(/index fail/);
     expect((await c.findById("x"))?.v).toBe(0);
 
     await expect(
-      c.bulkWrite([{ updateOne: { where: { _id: "x" }, data: { $set: { v: 5 } } } }]),
+      c.bulkWrite([
+        { updateOne: { where: { _id: "x" }, data: { $set: { v: 5 } } } },
+      ]),
     ).rejects.toThrow(/index fail/);
     expect((await c.findById("x"))?.v).toBe(0);
 
-    await expect(c.delete({ where: { _id: "x" } })).rejects.toThrow(/index fail/);
+    await expect(c.delete({ where: { _id: "x" } })).rejects.toThrow(
+      /index fail/,
+    );
     expect(await c.count()).toBe(1); // still present
   });
 
@@ -125,10 +137,14 @@ describe("sync ingest indexes atomically too", () => {
     await c.create({ data: { _id: "x", v: 0 } });
     state.armed = true;
     // a remote upsert that fails to index must NOT change the row
-    expect(() => (c as any).applyRemoteWrite("upsert", "x", { v: 99 }, Date.now())).toThrow(/index fail/);
+    expect(() =>
+      (c as any).applyRemoteWrite("upsert", "x", { v: 99 }, Date.now()),
+    ).toThrow(/index fail/);
     expect((await c.findById("x"))?.v).toBe(0);
     // a remote delete that fails to index must NOT delete
-    expect(() => (c as any).applyRemoteWrite("delete", "x", undefined, Date.now())).toThrow(/index fail/);
+    expect(() =>
+      (c as any).applyRemoteWrite("delete", "x", undefined, Date.now()),
+    ).toThrow(/index fail/);
     expect(await c.count()).toBe(1);
   });
 });
