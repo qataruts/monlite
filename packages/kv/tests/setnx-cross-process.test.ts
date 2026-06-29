@@ -21,7 +21,9 @@ function acquire(file: string): Promise<string> {
     });
     let out = "";
     child.stdout.on("data", (d) => (out += d));
-    child.on("exit", () => resolve(out));
+    // `close` (not `exit`) waits for stdout to fully drain — otherwise the last
+    // chunk can arrive after `exit` and be lost, flaking the count on Windows.
+    child.on("close", () => resolve(out.trim()));
   });
 }
 
