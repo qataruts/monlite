@@ -1,6 +1,6 @@
 {
   "name": "@monlite/fts",
-  "version": "0.5.5",
+  "version": "0.6.0",
   "description": "Full-text search for monlite — SQLite FTS5 on @monlite/core, native tsvector on @monlite/postgres. Adds collection.search().",
   "type": "module",
   "main": "./dist/index.cjs",

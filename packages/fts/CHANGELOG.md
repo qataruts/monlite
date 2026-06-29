@@ -1,5 +1,13 @@
 # @monlite/fts
 
+## 0.6.0 — Postgres engine support (native tsvector)
+
+`collection.search()` now runs on the [`@monlite/postgres`](https://www.npmjs.com/package/@monlite/postgres)
+engine — same API. On Postgres the searchable text is a STORED generated `tsvector` column over the
+configured jsonb fields, with a GIN index, maintained by Postgres on every write (no indexer, no
+catch-up). Queries use `websearch_to_tsquery`, so user syntax (`-negation`, `"phrases"`) is parsed
+safely. The SQLite FTS5 path is unchanged. Requires `@monlite/core` ≥ 2.9.0 for the Postgres path.
+
 ## 0.5.5 — correctness fixes (bug hunt)
 
 - **createSearchIndex recovers the real schema on reopen.** A search()/delete() before

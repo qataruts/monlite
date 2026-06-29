@@ -1,5 +1,23 @@
 # @monlite/core
 
+## 2.9.0 — the Postgres engine (swap the backend, not your code)
+
+A new **async driver seam** lets the same `@monlite/core` collection API run on a networked engine.
+[`@monlite/postgres`](https://www.npmjs.com/package/@monlite/postgres) is the first: documents as
+JSONB, the full query language, aggregation, realtime `watch()` over `LISTEN/NOTIFY`, plus full-text
+(`tsvector`) and vector (pgvector) search via the same plugins, and the job queue via `SKIP LOCKED`.
+**No breaking changes** — the synchronous SQLite path is byte-for-byte untouched; this release is
+purely additive (the full suite stays green on both SQLite drivers).
+
+- New `AsyncDriver` interface (plus `isAsyncDriver`, `AsyncQueryResult`) and engine selection: pass
+  an async driver and the collection's data methods transparently run async.
+- The shared `buildWhere` gained a Postgres dialect (jsonb operators, strict type coercion); the
+  live-query delta engine was extracted into a pure `computeLiveEvent` shared by the synchronous
+  `LiveQuery` and an async `PgLiveQuery` (so the two reactors can never diverge).
+- Every core `Collection` method runs on Postgres except `explain()` (its `EXPLAIN` output is
+  engine-specific) — including `aggregate`/`groupBy`/`distinct`, `findOneAndUpdate`, `bulkWrite`,
+  `purgeExpired`, and cross-process `watch()`.
+
 ## 2.8.1 — reactivity correctness (post-commit delivery, projection-safe deltas)
 
 Bug fixes from an internal audit of the realtime stack. **No API changes** — these correct edge

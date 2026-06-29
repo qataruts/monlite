@@ -1,6 +1,6 @@
 {
   "name": "monlite",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "The whole monlite stack in one install: embedded SQLite document database + cache, queue, cron, full-text + vector search, sync, and realtime. One .db file replaces MongoDB, Redis, Qdrant, BullMQ and more.",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -8,47 +8,109 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
-      "require": { "types": "./dist/index.d.cts", "default": "./dist/index.cjs" }
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     },
     "./kv": {
-      "import": { "types": "./dist/kv.d.ts", "default": "./dist/kv.js" },
-      "require": { "types": "./dist/kv.d.cts", "default": "./dist/kv.cjs" }
+      "import": {
+        "types": "./dist/kv.d.ts",
+        "default": "./dist/kv.js"
+      },
+      "require": {
+        "types": "./dist/kv.d.cts",
+        "default": "./dist/kv.cjs"
+      }
     },
     "./queue": {
-      "import": { "types": "./dist/queue.d.ts", "default": "./dist/queue.js" },
-      "require": { "types": "./dist/queue.d.cts", "default": "./dist/queue.cjs" }
+      "import": {
+        "types": "./dist/queue.d.ts",
+        "default": "./dist/queue.js"
+      },
+      "require": {
+        "types": "./dist/queue.d.cts",
+        "default": "./dist/queue.cjs"
+      }
     },
     "./cron": {
-      "import": { "types": "./dist/cron.d.ts", "default": "./dist/cron.js" },
-      "require": { "types": "./dist/cron.d.cts", "default": "./dist/cron.cjs" }
+      "import": {
+        "types": "./dist/cron.d.ts",
+        "default": "./dist/cron.js"
+      },
+      "require": {
+        "types": "./dist/cron.d.cts",
+        "default": "./dist/cron.cjs"
+      }
     },
     "./fts": {
-      "import": { "types": "./dist/fts.d.ts", "default": "./dist/fts.js" },
-      "require": { "types": "./dist/fts.d.cts", "default": "./dist/fts.cjs" }
+      "import": {
+        "types": "./dist/fts.d.ts",
+        "default": "./dist/fts.js"
+      },
+      "require": {
+        "types": "./dist/fts.d.cts",
+        "default": "./dist/fts.cjs"
+      }
     },
     "./vector": {
-      "import": { "types": "./dist/vector.d.ts", "default": "./dist/vector.js" },
-      "require": { "types": "./dist/vector.d.cts", "default": "./dist/vector.cjs" }
+      "import": {
+        "types": "./dist/vector.d.ts",
+        "default": "./dist/vector.js"
+      },
+      "require": {
+        "types": "./dist/vector.d.cts",
+        "default": "./dist/vector.cjs"
+      }
     },
     "./sync": {
-      "import": { "types": "./dist/sync.d.ts", "default": "./dist/sync.js" },
-      "require": { "types": "./dist/sync.d.cts", "default": "./dist/sync.cjs" }
+      "import": {
+        "types": "./dist/sync.d.ts",
+        "default": "./dist/sync.js"
+      },
+      "require": {
+        "types": "./dist/sync.d.cts",
+        "default": "./dist/sync.cjs"
+      }
     },
     "./realtime": {
-      "import": { "types": "./dist/realtime.d.ts", "default": "./dist/realtime.js" },
-      "require": { "types": "./dist/realtime.d.cts", "default": "./dist/realtime.cjs" }
+      "import": {
+        "types": "./dist/realtime.d.ts",
+        "default": "./dist/realtime.js"
+      },
+      "require": {
+        "types": "./dist/realtime.d.cts",
+        "default": "./dist/realtime.cjs"
+      }
     },
     "./realtime/client": {
-      "import": { "types": "./dist/realtime-client.d.ts", "default": "./dist/realtime-client.js" },
-      "require": { "types": "./dist/realtime-client.d.cts", "default": "./dist/realtime-client.cjs" }
+      "import": {
+        "types": "./dist/realtime-client.d.ts",
+        "default": "./dist/realtime-client.js"
+      },
+      "require": {
+        "types": "./dist/realtime-client.d.cts",
+        "default": "./dist/realtime-client.cjs"
+      }
     },
     "./wasm": {
-      "import": { "types": "./dist/wasm.d.ts", "default": "./dist/wasm.js" },
-      "require": { "types": "./dist/wasm.d.cts", "default": "./dist/wasm.cjs" }
+      "import": {
+        "types": "./dist/wasm.d.ts",
+        "default": "./dist/wasm.js"
+      },
+      "require": {
+        "types": "./dist/wasm.d.cts",
+        "default": "./dist/wasm.cjs"
+      }
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "sideEffects": false,
   "scripts": {
     "build": "tsup",
@@ -77,9 +139,15 @@
     "directory": "packages/monlite"
   },
   "homepage": "https://github.com/qataruts/monlite/tree/main/packages/monlite#readme",
-  "bugs": { "url": "https://github.com/qataruts/monlite/issues" },
-  "publishConfig": { "access": "public" },
-  "engines": { "node": ">=18" },
+  "bugs": {
+    "url": "https://github.com/qataruts/monlite/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "@monlite/core": "workspace:^",
     "@monlite/kv": "workspace:^",
@@ -94,7 +162,9 @@
     "@monlite/wasm": "^0.2.2"
   },
   "peerDependenciesMeta": {
-    "@monlite/wasm": { "optional": true }
+    "@monlite/wasm": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@monlite/wasm": "workspace:^",

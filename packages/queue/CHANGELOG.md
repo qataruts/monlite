@@ -1,5 +1,17 @@
 # @monlite/queue
 
+## 0.6.0 — Postgres engine support (FOR UPDATE SKIP LOCKED)
+
+The queue now runs on the [`@monlite/postgres`](https://www.npmjs.com/package/@monlite/postgres)
+engine via a new async `PgQueue` (`createPgQueue(db)` / `new PgQueue(db)`). It claims the next due
+job with `FOR UPDATE SKIP LOCKED`, so workers across processes never contend — and mirrors the full
+model: priorities, delays, retries + backoff, dedupe, concurrency, rate limiting, adaptive idle
+backoff, and visibility-timeout reclaim. Its methods are async (`await q.add(...)`); same
+`"completed"`/`"failed"` events.
+
+The synchronous SQLite `Queue`/`createQueue` is unchanged; `new Queue(pgDb)` now throws a clear
+redirect to `PgQueue`. Requires `@monlite/core` ≥ 2.9.0 for the Postgres path.
+
 ## 0.5.0 — per-worker rate limiting
 
 - **`process(name, handler, { rateLimit: { count, windowMs } })`** throttles a worker to at most

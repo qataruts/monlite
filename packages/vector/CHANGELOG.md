@@ -1,5 +1,13 @@
 # @monlite/vector
 
+## 0.6.0 — Postgres engine support (native pgvector)
+
+`collection.findSimilar()` now runs on the [`@monlite/postgres`](https://www.npmjs.com/package/@monlite/postgres)
+engine — same API. On Postgres the embedding is a STORED generated `vector(dim)` column projecting
+the configured jsonb field, with an HNSW index (**pgvector**), maintained by Postgres on every write.
+KNN uses `<->` (L2) or `<=>` (cosine) per the configured distance. The `sqlite-vec` path is unchanged.
+Requires `@monlite/core` ≥ 2.9.0 for the Postgres path.
+
 ## 0.5.6 — correctness fixes (bug hunt)
 
 `createVectorStore` (the dynamic store) fixes:
