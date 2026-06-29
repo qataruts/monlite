@@ -32,12 +32,17 @@ function translateObject(where: WhereInput, ctx: WhereContext): string {
     if (value === undefined) continue;
 
     if (key === "AND" || key === "OR") {
-      const subs = asArray(value)
+      const arr = asArray(value);
+      const subs = arr
         .map((w: WhereInput) => translateObject(w, ctx))
         .filter(Boolean);
       if (subs.length) {
         const join = key === "AND" ? " AND " : " OR ";
         parts.push("(" + subs.join(join) + ")");
+      } else if (key === "OR" && arr.length === 0) {
+        // An empty OR is an unsatisfiable disjunction — it matches NOTHING (an
+        // empty AND, by contrast, is vacuously true and imposes no constraint).
+        parts.push("0");
       }
     } else if (key === "NOT") {
       const subs = asArray(value)
@@ -124,6 +129,12 @@ function translateField(
         );
         break;
       case "endsWith":
+        if (v === "") {
+          // every string ends with "" — match all non-null values, consistent
+          // with startsWith:""/contains:"" (substr(x,-0) otherwise matches nothing).
+          clauses.push(`${expr} IS NOT NULL`);
+          break;
+        }
         ctx.params.push(bindable(v));
         ctx.params.push(bindable(v));
         clauses.push(
@@ -282,14 +293,25 @@ function inExpr(
     throw new MonliteQueryError(`${negate ? "notIn" : "in"} expects an array`);
   }
   if (arr.length === 0) return negate ? "1" : "0";
-  const placeholders = arr
+  // A NULL inside a SQL IN / NOT IN makes the whole predicate NULL for every other
+  // row (three-valued logic), silently dropping legitimate matches. Bind only the
+  // non-null values and handle null membership explicitly.
+  const hasNull = arr.some((v) => v === null);
+  const nonNull = arr.filter((v) => v !== null);
+  const placeholders = nonNull
     .map((v) => {
       ctx.params.push(bindable(v));
       return "?";
     })
     .join(", ");
-  return negate
-    ? `(${expr} IS NULL OR ${expr} NOT IN (${placeholders}))`
+  if (negate) {
+    // notIn includes null/missing rows (Prisma/Mongo); a list-null never corrupts it.
+    if (!nonNull.length) return hasNull ? `${expr} IS NOT NULL` : "1";
+    return `(${expr} IS NULL OR ${expr} NOT IN (${placeholders}))`;
+  }
+  if (!nonNull.length) return hasNull ? `${expr} IS NULL` : "0";
+  return hasNull
+    ? `(${expr} IN (${placeholders}) OR ${expr} IS NULL)`
     : `${expr} IN (${placeholders})`;
 }
 
@@ -308,12 +330,18 @@ function containsExpr(
   const sub = ci
     ? `instr(lower(${expr}), lower(?)) > 0`
     : `instr(${expr}, ?) > 0`;
+  const member = ci ? `lower(value) = lower(?)` : `value = ?`;
   if (isColumn(field, ctx.columns)) {
-    ctx.params.push(bindable(v));
-    return sub;
+    // A declared column may hold a JSON array (membership) or a string (substring).
+    ctx.params.push(bindable(v)); // array branch
+    ctx.params.push(bindable(v)); // string branch
+    return (
+      `(CASE WHEN json_valid(${expr}) AND json_type(${expr}) = 'array' ` +
+      `THEN EXISTS (SELECT 1 FROM json_each(${expr}) WHERE ${member}) ` +
+      `ELSE ${sub} END)`
+    );
   }
   const path = pathLiteral(field);
-  const member = ci ? `lower(value) = lower(?)` : `value = ?`;
   ctx.params.push(bindable(v)); // array branch
   ctx.params.push(bindable(v)); // string branch
   return (
@@ -329,8 +357,17 @@ function hasExpr(
   v: any,
   ctx: WhereContext,
 ): string {
+  if (isColumn(field, ctx.columns)) {
+    // A declared column may hold a JSON array (membership) or a scalar (equality).
+    ctx.params.push(bindable(v)); // membership branch
+    ctx.params.push(bindable(v)); // scalar fallback
+    return (
+      `(CASE WHEN json_valid(${expr}) AND json_type(${expr}) = 'array' ` +
+      `THEN EXISTS (SELECT 1 FROM json_each(${expr}) WHERE value = ?) ` +
+      `ELSE ${expr} = ? END)`
+    );
+  }
   ctx.params.push(bindable(v));
-  if (isColumn(field, ctx.columns)) return `${expr} = ?`;
   return `EXISTS (SELECT 1 FROM json_each(data, ${pathLiteral(field)}) WHERE value = ?)`;
 }
 

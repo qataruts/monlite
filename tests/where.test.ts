@@ -167,3 +167,61 @@ describe("NOT matches null/missing-field documents (regression: fuzz-found)", ()
     await db2.$disconnect();
   });
 });
+
+describe("operator edge cases (swarm-found)", () => {
+  it("empty OR matches nothing; empty AND matches all", async () => {
+    const db2 = openDb();
+    const c = db2.collection("e");
+    await c.createMany({ data: [{ n: 1 }, { n: 2 }, { n: 3 }] });
+    expect((await c.findMany({ where: { OR: [] } })).length).toBe(0);
+    expect((await c.findMany({ where: { AND: [] } })).length).toBe(3);
+    expect((await c.findMany({ where: { OR: [{}] } })).length).toBe(3);
+    await db2.$disconnect();
+  });
+  it("in/notIn with a null in the list does not corrupt non-null rows", async () => {
+    const db2 = openDb();
+    const c = db2.collection("e");
+    await c.createMany({
+      data: [{ _id: "a", n: 5 }, { _id: "b", n: 9 }, { _id: "c" }],
+    });
+    const ids = async (w: any) =>
+      (await c.findMany({ where: w })).map((d: any) => d._id).sort();
+    expect(await ids({ n: { notIn: [5, null] } })).toEqual(["b", "c"]);
+    expect(await ids({ n: { in: [5, null] } })).toEqual(["a", "c"]);
+    expect(await ids({ n: { notIn: [null] } })).toEqual(["a", "b"]);
+    await db2.$disconnect();
+  });
+  it("endsWith '' matches every string (like startsWith/contains '')", async () => {
+    const db2 = openDb();
+    const c = db2.collection("e");
+    await c.createMany({ data: [{ s: "abc" }, { s: "" }, { s: "x" }] });
+    expect((await c.findMany({ where: { s: { endsWith: "" } } })).length).toBe(
+      3,
+    );
+    await db2.$disconnect();
+  });
+  it("has/contains do array membership on a declared JSON column", async () => {
+    const db2 = openDb();
+    const c = db2.collection("e", { schema: { tags: { type: "JSON" } } });
+    await c.createMany({
+      data: [
+        { _id: "x", tags: ["a", "b"] },
+        { _id: "y", tags: ["c"] },
+      ],
+    });
+    expect(
+      (await c.findMany({ where: { tags: { has: "a" } } })).map(
+        (d: any) => d._id,
+      ),
+    ).toEqual(["x"]);
+    expect((await c.findMany({ where: { tags: { has: "z" } } })).length).toBe(
+      0,
+    );
+    expect(
+      (await c.findMany({ where: { tags: { contains: "c" } } })).map(
+        (d: any) => d._id,
+      ),
+    ).toEqual(["y"]);
+    await db2.$disconnect();
+  });
+});
