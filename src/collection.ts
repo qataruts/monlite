@@ -1231,12 +1231,215 @@ export class Collection<T = Doc> {
     });
   }
 
+  // ── Postgres aggregation ──────────────────────────────────────────────────
+  private isSysOrColumn(field: string): boolean {
+    return (
+      field === "_id" ||
+      field === "created_at" ||
+      field === "updated_at" ||
+      this.columns.has(field)
+    );
+  }
+
+  /** Numeric projection of a field for SUM/AVG/MIN/MAX. */
+  private pgAggField(field: string): string {
+    if (this.isSysOrColumn(field)) return `("${field}")::numeric`;
+    const segs = field.split(".").map((s) => s.replace(/'/g, "''"));
+    const txt =
+      segs.length === 1 ? `data->>'${segs[0]}'` : `data#>>'{${segs.join(",")}}'`;
+    return `(${txt})::numeric`;
+  }
+
+  /** jsonb projection of a field for GROUP BY / DISTINCT (returns the parsed value). */
+  private pgGroupField(field: string): string {
+    if (this.isSysOrColumn(field)) return `"${field}"`;
+    const segs = field.split(".").map((s) => s.replace(/'/g, "''"));
+    return segs.length === 1 ? `data->'${segs[0]}'` : `data#>'{${segs.join(",")}}'`;
+  }
+
+  private static readonly PG_AGG_FN: Record<string, string> = {
+    _sum: "SUM",
+    _avg: "AVG",
+    _min: "MIN",
+    _max: "MAX",
+  };
+
+  private async aggregatePg(
+    args: AggregateArgs<T>,
+  ): Promise<AggregateResult> {
+    await this.ensureTablePg();
+    const params: any[] = [];
+    const where = buildWhere(args.where, {
+      params,
+      columns: this.columns,
+      dialect: "postgres",
+    });
+    const selects = ["COUNT(*) AS agg_count"];
+    const cols: Array<{ alias: string; kind: string; field: string }> = [];
+    let i = 0;
+    for (const kind of ["_sum", "_avg", "_min", "_max"]) {
+      const sel = (args as any)[kind];
+      if (!sel) continue;
+      for (const field of Object.keys(sel)) {
+        if (!sel[field]) continue;
+        const alias = `agg_${kind.slice(1)}_${i++}`;
+        selects.push(`${Collection.PG_AGG_FN[kind]}(${this.pgAggField(field)}) AS ${alias}`);
+        cols.push({ alias, kind, field });
+      }
+    }
+    const r = await this.mon.asyncDriver!.query(
+      `SELECT ${selects.join(", ")} FROM "${this.name}" WHERE ${where}`,
+      params,
+    );
+    const row = (r.rows[0] ?? {}) as Record<string, any>;
+    const result: AggregateResult = {};
+    if (args._count) result._count = Number(row.agg_count ?? 0);
+    for (const col of cols) {
+      const v = row[col.alias];
+      ((result as any)[col.kind] ??= {})[col.field] = v == null ? null : Number(v);
+    }
+    return result;
+  }
+
+  private async groupByPg(args: GroupByArgs<T>): Promise<GroupByResult[]> {
+    if (!Array.isArray(args.by) || args.by.length === 0)
+      throw new MonliteQueryError("groupBy requires a non-empty `by` array");
+    await this.ensureTablePg();
+    const params: any[] = [];
+    const where = buildWhere(args.where, {
+      params,
+      columns: this.columns,
+      dialect: "postgres",
+    });
+    const groupExprs: string[] = [];
+    const groupCols: Array<{ alias: string; field: string }> = [];
+    const selects: string[] = [];
+    (args.by as string[]).forEach((field, gi) => {
+      const expr = this.pgGroupField(field);
+      groupExprs.push(expr);
+      selects.push(`${expr} AS grp_${gi}`);
+      groupCols.push({ alias: `grp_${gi}`, field });
+    });
+    selects.push("COUNT(*) AS agg_count");
+    const cols: Array<{ alias: string; kind: string; field: string }> = [];
+    let i = 0;
+    for (const kind of ["_sum", "_avg", "_min", "_max"]) {
+      const sel = (args as any)[kind];
+      if (!sel) continue;
+      for (const field of Object.keys(sel)) {
+        if (!sel[field]) continue;
+        const alias = `agg_${kind.slice(1)}_${i++}`;
+        selects.push(`${Collection.PG_AGG_FN[kind]}(${this.pgAggField(field)}) AS ${alias}`);
+        cols.push({ alias, kind, field });
+      }
+    }
+    let sql = `SELECT ${selects.join(", ")} FROM "${this.name}" WHERE ${where} GROUP BY ${groupExprs.join(", ")}`;
+
+    if (args.having) {
+      const hp: string[] = [];
+      const cmp = (expr: string, c: any): void => {
+        for (const [k, op] of [
+          ["equals", "="],
+          ["not", "<>"],
+          ["gt", ">"],
+          ["gte", ">="],
+          ["lt", "<"],
+          ["lte", "<="],
+        ] as const) {
+          if (c[k] === undefined) continue;
+          params.push(c[k]);
+          hp.push(`${expr} ${op} ?`);
+        }
+      };
+      const having = args.having as any;
+      if (having._count) cmp("COUNT(*)", having._count);
+      for (const kind of ["_sum", "_avg", "_min", "_max"]) {
+        const sel = having[kind];
+        if (!sel) continue;
+        for (const field of Object.keys(sel))
+          cmp(`${Collection.PG_AGG_FN[kind]}(${this.pgAggField(field)})`, sel[field]);
+      }
+      if (hp.length) sql += ` HAVING ${hp.join(" AND ")}`;
+    }
+
+    if (args.orderBy) {
+      const parts: string[] = [];
+      for (const key of Object.keys(args.orderBy)) {
+        const val = (args.orderBy as any)[key];
+        if (key === "_count") {
+          parts.push(`agg_count ${String(val).toLowerCase() === "desc" ? "DESC" : "ASC"}`);
+        } else if (
+          ["_sum", "_avg", "_min", "_max"].includes(key) &&
+          val &&
+          typeof val === "object"
+        ) {
+          for (const field of Object.keys(val)) {
+            const dir = String(val[field]).toLowerCase() === "desc" ? "DESC" : "ASC";
+            parts.push(`${Collection.PG_AGG_FN[key]}(${this.pgAggField(field)}) ${dir}`);
+          }
+        } else {
+          parts.push(`${this.pgGroupField(key)} ${String(val).toLowerCase() === "desc" ? "DESC" : "ASC"}`);
+        }
+      }
+      if (parts.length) sql += ` ORDER BY ${parts.join(", ")}`;
+    }
+    if (args.take != null) {
+      sql += " LIMIT ?";
+      params.push(args.take);
+    }
+    if (args.skip != null) {
+      sql += " OFFSET ?";
+      params.push(args.skip);
+    }
+
+    const r = await this.mon.asyncDriver!.query(sql, params);
+    return r.rows.map((row: any) => {
+      const out: GroupByResult = {};
+      for (const { alias, field } of groupCols) (out as any)[field] = row[alias];
+      if (args._count) (out as any)._count = Number(row.agg_count);
+      for (const col of cols) {
+        const v = row[col.alias];
+        ((out as any)[col.kind] ??= {})[col.field] = v == null ? null : Number(v);
+      }
+      return out;
+    });
+  }
+
+  private async distinctPg(
+    field: string,
+    where?: WhereInput<T>,
+  ): Promise<any[]> {
+    await this.ensureTablePg();
+    const params: any[] = [];
+    const clause = buildWhere(where, {
+      params,
+      columns: this.columns,
+      dialect: "postgres",
+    });
+    let sql: string;
+    if (this.isSysOrColumn(field)) {
+      sql = `SELECT DISTINCT "${field}" AS v FROM "${this.name}" WHERE ${clause} ORDER BY v`;
+    } else {
+      const segs = field.split(".").map((s) => s.replace(/'/g, "''"));
+      const jsn =
+        segs.length === 1 ? `data->'${segs[0]}'` : `data#>'{${segs.join(",")}}'`;
+      // Distinct ELEMENTS for array fields, the value otherwise (matches SQLite json_each).
+      sql =
+        `SELECT DISTINCT CASE WHEN jsonb_typeof(${jsn})='array' THEN ae.elem ELSE ${jsn} END AS v ` +
+        `FROM "${this.name}" LEFT JOIN LATERAL jsonb_array_elements(` +
+        `CASE WHEN jsonb_typeof(${jsn})='array' THEN ${jsn} ELSE '[]'::jsonb END` +
+        `) AS ae(elem) ON true WHERE ${clause} ORDER BY v`;
+    }
+    const r = await this.mon.asyncDriver!.query(sql, params);
+    return r.rows.map((row: any) => row.v);
+  }
+
   /**
    * Return the distinct values of a field. Array fields stored in JSON are
    * unwound (each element counts as a value), matching MongoDB's `distinct`.
    */
   async distinct(field: string, where?: WhereInput<T>): Promise<any[]> {
-    if (this.mon.asyncDriver) return this.pgUnsupported("distinct()");
+    if (this.mon.asyncDriver) return this.distinctPg(field, where);
     this.ensureTable();
     const params: any[] = [];
     const clause = buildWhere(where, {
@@ -1644,7 +1847,7 @@ export class Collection<T = Doc> {
   /* --------------------------- aggregation -------------------------- */
 
   async aggregate(args: AggregateArgs<T> = {}): Promise<AggregateResult> {
-    if (this.mon.asyncDriver) return this.pgUnsupported("aggregate()");
+    if (this.mon.asyncDriver) return this.aggregatePg(args);
     this.ensureTable();
     return this.guard(() =>
       aggregate(
@@ -1661,7 +1864,7 @@ export class Collection<T = Doc> {
   }
 
   async groupBy(args: GroupByArgs<T>): Promise<GroupByResult[]> {
-    if (this.mon.asyncDriver) return this.pgUnsupported("groupBy()");
+    if (this.mon.asyncDriver) return this.groupByPg(args);
     this.ensureTable();
     return this.guard(() =>
       groupBy(

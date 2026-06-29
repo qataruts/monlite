@@ -72,6 +72,7 @@ try {
       await client.query(`DROP TABLE IF EXISTS users CASCADE`);
       await client.query(`DROP TABLE IF EXISTS posts CASCADE`);
       await client.query(`DROP TABLE IF EXISTS crud CASCADE`);
+      await client.query(`DROP TABLE IF EXISTS sales CASCADE`);
       await client.query(
         `CREATE TABLE "users" (_id text PRIMARY KEY, data jsonb NOT NULL, created_at bigint NOT NULL, updated_at bigint NOT NULL)`,
       );
@@ -173,12 +174,59 @@ try {
       expect(await c.count()).toBe(1); // only "c" (kind:y) remains
     });
 
-    it("not-yet-supported methods throw a clear error on Postgres (never silent)", async () => {
+    it("aggregation on Postgres: aggregate / groupBy (+having, orderBy) / distinct", async () => {
+      const s = db.collection("sales");
+      await s.createMany({
+        data: [
+          { _id: "1", region: "us", amt: 10, tags: ["a", "b"] },
+          { _id: "2", region: "us", amt: 30, tags: ["b"] },
+          { _id: "3", region: "eu", amt: 20, tags: ["a", "c"] },
+        ],
+      });
+      const agg = await s.aggregate({
+        _count: true,
+        _sum: { amt: true },
+        _avg: { amt: true },
+        _min: { amt: true },
+        _max: { amt: true },
+      } as any);
+      expect(agg._count).toBe(3);
+      expect(agg._sum?.amt).toBe(60);
+      expect(agg._avg?.amt).toBe(20);
+      expect(agg._min?.amt).toBe(10);
+      expect(agg._max?.amt).toBe(30);
+
+      const g = await s.groupBy({
+        by: ["region"],
+        _count: true,
+        _sum: { amt: true },
+        orderBy: { _sum: { amt: "desc" } },
+      } as any);
+      const byRegion: any = Object.fromEntries(g.map((r: any) => [r.region, r]));
+      expect(byRegion.us._count).toBe(2);
+      expect(byRegion.us._sum.amt).toBe(40);
+      expect(byRegion.eu._sum.amt).toBe(20);
+      expect((g[0] as any).region).toBe("us"); // ordered by _sum desc
+
+      const gh = await s.groupBy({
+        by: ["region"],
+        _sum: { amt: true },
+        having: { _sum: { amt: { gt: 30 } } },
+      } as any);
+      expect(gh.map((r: any) => r.region)).toEqual(["us"]);
+
+      expect((await s.distinct("region")).sort()).toEqual(["eu", "us"]);
+      expect((await s.distinct("tags")).sort()).toEqual(["a", "b", "c"]); // array elements
+    });
+
+    it("still-unsupported methods throw a clear error on Postgres (never silent)", async () => {
       const c = db.collection("crud");
-      await expect(c.aggregate({ _count: true } as any)).rejects.toThrow(/not yet supported on the postgres engine/);
-      await expect(c.groupBy({ by: ["kind"] } as any)).rejects.toThrow(/postgres engine/);
-      await expect(c.distinct("kind")).rejects.toThrow(/postgres engine/);
       expect(() => c.watch({}, () => {})).toThrow(/postgres engine/);
+      await expect(c.explain({})).rejects.toThrow(/postgres engine/);
+      await expect(c.bulkWrite([])).rejects.toThrow(/postgres engine/);
+      await expect(
+        c.findOneAndUpdate({ where: { _id: "x" }, data: {} } as any),
+      ).rejects.toThrow(/postgres engine/);
     });
   },
 );
