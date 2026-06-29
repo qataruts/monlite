@@ -135,3 +135,35 @@ describe("logical operators", () => {
     expect(await names({ role: "admin", age: { gt: 30 } })).toEqual(["Omar"]);
   });
 });
+
+describe("NOT matches null/missing-field documents (regression: fuzz-found)", () => {
+  it("{ NOT: {...} } is equivalent to the not operator and includes missing/null", async () => {
+    const db2 = openDb();
+    const c = db2.collection("nn");
+    await c.createMany({
+      data: [
+        { _id: "has5", n: 5 },
+        { _id: "missing" },
+        { _id: "other", n: 3 },
+        { _id: "nul", n: null },
+      ],
+    });
+    const ids = async (w: any) =>
+      (await c.findMany({ where: w })).map((d: any) => d._id).sort();
+    // a missing/null `n` IS "not 5" — NOT must include them, like the not operator
+    expect(await ids({ NOT: { n: 5 } })).toEqual(["missing", "nul", "other"]);
+    expect(await ids({ n: { not: 5 } })).toEqual(["missing", "nul", "other"]);
+    // comparison-based inner predicates too
+    expect(await ids({ NOT: { n: { gt: 4 } } })).toEqual([
+      "missing",
+      "nul",
+      "other",
+    ]);
+    // nested combinators
+    expect(await ids({ AND: [{ NOT: { n: 5 } }, { NOT: { n: 3 } }] })).toEqual([
+      "missing",
+      "nul",
+    ]);
+    await db2.$disconnect();
+  });
+});

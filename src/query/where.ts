@@ -43,7 +43,12 @@ function translateObject(where: WhereInput, ctx: WhereContext): string {
       const subs = asArray(value)
         .map((w: WhereInput) => translateObject(w, ctx))
         .filter(Boolean);
-      if (subs.length) parts.push("NOT (" + subs.join(" AND ") + ")");
+      // COALESCE(..., 0): a missing/null field makes the inner predicate NULL in
+      // SQL, and `NOT NULL` is NULL (the row is dropped). Treat a NULL inner as
+      // FALSE so NOT still matches missing/null-field docs — consistent with the
+      // `not` field operator and document-DB semantics (a missing `n` IS "not 5").
+      if (subs.length)
+        parts.push("NOT COALESCE((" + subs.join(" AND ") + "), 0)");
     } else {
       const clause = translateField(key, value, ctx);
       if (clause) parts.push(clause);

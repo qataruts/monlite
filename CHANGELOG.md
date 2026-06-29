@@ -1,5 +1,16 @@
 # @monlite/core
 
+## 2.6.11 — `NOT` matches null/missing-field documents
+
+- **`{ NOT: { field: value } }` now matches documents where `field` is missing or
+  null** — consistent with the `{ field: { not: value } }` operator and document-DB
+  semantics (a missing `field` IS "not value"). Previously the SQL `NOT (field = value)`
+  evaluated to NULL for such rows (three-valued logic) and silently dropped them, so the
+  `NOT` combinator and the `not` operator disagreed. Found by a differential fuzz audit
+  of the query layer (24,000 random queries — this was the only divergence; the
+  aggregation layer was clean over 15,000 ops). **Behavior note:** `NOT` queries now also
+  return documents that lack the field.
+
 ## 2.6.10 — groupBy ordering by an accumulator
 
 - **`groupBy({ orderBy })` now sorts by an accumulator** — e.g.
