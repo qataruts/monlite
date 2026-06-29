@@ -1,5 +1,11 @@
 # @monlite/core
 
+## 2.6.16 — typecheck fix for the 2.6.15 run() coercion
+
+- Types-only follow-up to 2.6.15: the node:sqlite `run()` wrapper is now typed as `RunResult`
+  (`changes: number`) so downstream packages' `tsc` typecheck passes. 2.6.15's runtime behavior
+  was already correct — this just fixes the declared types.
+
 ## 2.6.15 — node:sqlite write-result coercion (fixes 2.6.14 regression)
 
 - **`run()` result counts are coerced to plain numbers under node:sqlite.** 2.6.14 enabled

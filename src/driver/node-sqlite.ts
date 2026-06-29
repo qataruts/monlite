@@ -1,6 +1,11 @@
 import { MonliteError } from "../errors.js";
 import { REGEXP_FN, monliteRegexp } from "./regexp.js";
-import type { Driver, DriverOpenOptions, PreparedStatement } from "./types.js";
+import type {
+  Driver,
+  DriverOpenOptions,
+  PreparedStatement,
+  RunResult,
+} from "./types.js";
 
 const STMT_CACHE_MAX = 256;
 
@@ -88,18 +93,18 @@ export class NodeSqliteDriver implements Driver {
       : <R>(run: () => R): R => run();
     const wrapped: PreparedStatement = {
       run: (...p: any[]) =>
-        time(() => {
+        time((): RunResult => {
           // readBigInts also makes run()'s changes/lastInsertRowid BigInt — coerce
           // them to Number so callers (e.g. `.changes`) get the same shape as
           // better-sqlite3 (which returns numbers).
-          const r = stmt.run(...p) as {
-            changes: number | bigint;
-            lastInsertRowid: number | bigint;
+          const r = stmt.run(...p) as RunResult;
+          return {
+            changes: Number(r.changes),
+            lastInsertRowid:
+              typeof r.lastInsertRowid === "bigint"
+                ? Number(r.lastInsertRowid)
+                : r.lastInsertRowid,
           };
-          if (typeof r.changes === "bigint") r.changes = Number(r.changes);
-          if (typeof r.lastInsertRowid === "bigint")
-            r.lastInsertRowid = Number(r.lastInsertRowid);
-          return r;
         }),
       get: (...p: any[]) => time(() => coerceBigInts(stmt.get(...p))),
       all: (...p: any[]) =>
