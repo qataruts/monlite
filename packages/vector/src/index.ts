@@ -288,11 +288,120 @@ function findSimilarBrute<T = Doc>(
   return Promise.resolve(out);
 }
 
+// ── Postgres engine: native pgvector (no incremental indexer needed) ──────────
+//
+// On Postgres the embedding lives in a STORED generated `vector(dim)` column that
+// projects the configured jsonb field, with an HNSW index. Postgres maintains it on
+// every write (from any connection); docs without the field are NULL and excluded.
+const pgReadyByDb = new WeakMap<Monlite, Map<string, Promise<void>>>();
+
+/** jsonb text projection of a (possibly dotted) field path. */
+function pgFieldText(field: string): string {
+  const segs = field.split(".").map((s) => s.replace(/'/g, "''"));
+  return segs.length === 1
+    ? `data->>'${segs[0]}'`
+    : `data#>>'{${segs.join(",")}}'`;
+}
+
+/** Lazily add the generated vector column + HNSW index for a collection (idempotent). */
+function pgEnsureVector(
+  db: Monlite,
+  coll: string,
+  def: VectorField,
+): Promise<void> {
+  let m = pgReadyByDb.get(db);
+  if (!m) pgReadyByDb.set(db, (m = new Map()));
+  const cached = m.get(coll);
+  if (cached) return cached;
+  const drv = db.asyncDriver!;
+  const dim = def.dimensions;
+  const ops = def.distance === "cosine" ? "vector_cosine_ops" : "vector_l2_ops";
+  const p = (async () => {
+    await drv.exec(`CREATE EXTENSION IF NOT EXISTS vector`);
+    await drv.exec(
+      `CREATE TABLE IF NOT EXISTS "${coll}" (_id text PRIMARY KEY, data jsonb NOT NULL, ` +
+        `created_at bigint NOT NULL, updated_at bigint NOT NULL)`,
+    );
+    await drv.exec(
+      `ALTER TABLE "${coll}" ADD COLUMN IF NOT EXISTS _vec vector(${dim}) ` +
+        `GENERATED ALWAYS AS ((${pgFieldText(def.field)})::vector(${dim})) STORED`,
+    );
+    try {
+      await drv.exec(
+        `CREATE INDEX IF NOT EXISTS "${coll}_vec_idx" ON "${coll}" USING hnsw (_vec ${ops})`,
+      );
+    } catch {
+      // HNSW caps dimensions (~2000); without the index, KNN still works (exact scan).
+    }
+  })();
+  m.set(coll, p);
+  return p;
+}
+
+async function pgFindSimilar<T = Doc>(
+  db: Monlite,
+  coll: Collection<T>,
+  spec: VectorSpec,
+  opts: FindSimilarOptions<T>,
+): Promise<SimilarResult<T>[]> {
+  const def = spec[coll.name];
+  if (!def)
+    throw new Error(
+      `Collection "${coll.name}" is not configured for vector search`,
+    );
+  if (!Array.isArray(opts.vector) || opts.vector.length !== def.dimensions)
+    throw new Error(
+      `findSimilar expects a ${def.dimensions}-dimension vector for "${coll.name}"`,
+    );
+  await pgEnsureVector(db, coll.name, def);
+  const topK = opts.topK ?? 10;
+  const op = def.distance === "cosine" ? "<=>" : "<->"; // cosine vs L2 distance
+  const fetch = opts.where
+    ? Math.min(Math.max(opts.candidates ?? topK * 10, 200), 10_000)
+    : topK;
+  const vec = `[${opts.vector.join(",")}]`;
+  const rows = (
+    await db.asyncDriver!.query(
+      `SELECT _id, data, created_at, updated_at, ` +
+        `(_vec ${op} $1::vector(${def.dimensions})) AS _distance ` +
+        `FROM "${coll.name}" WHERE _vec IS NOT NULL ` +
+        `ORDER BY _distance LIMIT ${Math.max(0, Math.floor(fetch))}`,
+      [vec],
+    )
+  ).rows as Array<Record<string, any>>;
+
+  let allowed: Set<string> | null = null;
+  if (opts.where) {
+    const ids = rows.map((r) => r._id);
+    const matching = await coll.findMany({
+      where: { AND: [opts.where, { _id: { in: ids } }] } as WhereInput<T>,
+    });
+    allowed = new Set(matching.map((d) => d._id));
+  }
+
+  const out: SimilarResult<T>[] = [];
+  for (const r of rows) {
+    if (out.length >= topK) break;
+    if (allowed && !allowed.has(r._id)) continue;
+    out.push({
+      ...r.data,
+      _id: r._id,
+      created_at: Number(r.created_at),
+      updated_at: Number(r.updated_at),
+      _distance: Number(r._distance),
+    } as SimilarResult<T>);
+  }
+  return out;
+}
+
 /**
- * Vector / semantic search plugin (sqlite-vec). Open the database with
- * `{ allowExtensions: true }` and pass this plugin with a map of collection →
- * `{ field, dimensions }`. Adds `collection.findSimilar({ vector, topK, where })`,
- * keeps the index current on writes, and backfills on open.
+ * Vector / semantic search plugin. Adds `collection.findSimilar({ vector, topK, where })` — the
+ * **same API on either engine**:
+ *
+ * - **SQLite** (`@monlite/core`, `{ allowExtensions: true }`): a `sqlite-vec` index (or a
+ *   brute-force JS fallback when the extension can't load), kept current on writes.
+ * - **Postgres** (`@monlite/postgres`): a native generated `vector(dim)` column + HNSW index
+ *   (**pgvector**), maintained by Postgres itself — no indexer, no catch-up.
  *
  * ```ts
  * const db = createDb("./app.db", {
@@ -381,6 +490,7 @@ export function vector(spec: VectorSpec): MonlitePlugin {
     name: "vector",
     init(db) {
       database = db;
+      if (db.asyncDriver) return; // Postgres: the vector column is set up lazily on findSimilar
       try {
         db.sqlite.loadExtension(sqliteVec.getLoadablePath());
       } catch {
@@ -412,6 +522,7 @@ export function vector(spec: VectorSpec): MonlitePlugin {
       }
     },
     afterWrite(db, { collection, ids }) {
+      if (db.asyncDriver) return; // Postgres: the generated vector column auto-maintains
       const def = spec[collection];
       if (!def) return;
       for (const id of ids) indexDoc(db, collection, def, id);
@@ -419,13 +530,17 @@ export function vector(spec: VectorSpec): MonlitePlugin {
     },
     collectionMethods: {
       findSimilar: (coll, opts: FindSimilarOptions) =>
-        bruteForce
-          ? findSimilarBrute(database, coll, spec, opts)
-          : findSimilar(database, coll, spec, opts),
+        database.asyncDriver
+          ? pgFindSimilar(database, coll, spec, opts)
+          : bruteForce
+            ? findSimilarBrute(database, coll, spec, opts)
+            : findSimilar(database, coll, spec, opts),
       catchUp: (coll) =>
-        spec[coll.name]
-          ? catchUp(database, coll.name, spec[coll.name])
-          : { indexed: 0, removed: 0 },
+        database.asyncDriver
+          ? { indexed: 0, removed: 0 } // nothing to catch up — Postgres maintains it
+          : spec[coll.name]
+            ? catchUp(database, coll.name, spec[coll.name])
+            : { indexed: 0, removed: 0 },
     },
   };
 }

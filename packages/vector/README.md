@@ -1,11 +1,15 @@
 # @monlite/vector
 
-Local vector / semantic search for [`@monlite/core`](https://www.npmjs.com/package/@monlite/core),
-powered by [`sqlite-vec`](https://github.com/asg017/sqlite-vec). Adds `collection.findSimilar()`
-— RAG and AI-agent memory, all in your local `.db`.
+Vector / semantic search for monlite — RAG and AI-agent memory. Adds `collection.findSimilar()`,
+the **same API on either engine**:
 
-A monlite plugin. Store documents with an embedding field, and search by nearest neighbour. The
-index is maintained automatically on every write, including changes applied by `@monlite/sync`.
+- **SQLite** ([`@monlite/core`](https://www.npmjs.com/package/@monlite/core)) — powered by
+  [`sqlite-vec`](https://github.com/asg017/sqlite-vec) (with a brute-force JS fallback), all in
+  your local `.db`. Index maintained on every write, including `@monlite/sync` changes.
+- **Postgres** ([`@monlite/postgres`](https://www.npmjs.com/package/@monlite/postgres)) — a native
+  generated `vector(dim)` column + **HNSW** index (**pgvector**), maintained by Postgres itself.
+
+A monlite plugin. Store documents with an embedding field, search by nearest neighbour.
 
 ```ts
 import { createDb } from "@monlite/core";

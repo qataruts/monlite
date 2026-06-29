@@ -1,7 +1,7 @@
 {
   "name": "@monlite/vector",
   "version": "0.5.6",
-  "description": "Local vector / semantic search for @monlite/core, powered by sqlite-vec. Adds collection.findSimilar().",
+  "description": "Vector / semantic search for monlite — sqlite-vec on @monlite/core, native pgvector on @monlite/postgres. Adds collection.findSimilar().",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -60,8 +60,11 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "@types/pg": "^8.11.10",
     "@monlite/fts": "workspace:^",
+    "@monlite/postgres": "workspace:^",
     "better-sqlite3": "^11.8.0",
+    "pg": "^8.13.0",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
