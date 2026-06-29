@@ -1,5 +1,14 @@
 # @monlite/fts
 
+## 0.5.5 — correctness fixes (bug hunt)
+
+- **createSearchIndex recovers the real schema on reopen.** A search()/delete() before
+  ensureCollection() cached empty fields, making every later upsert insert an unsearchable
+  (empty) row — now the schema is read back from the fts5 table definition.
+- **catchUp() also indexes documents missing from the index**, so a doc synced in with a
+  past (below-high-water) timestamp no longer stays permanently unsearchable.
+- **search({ limit: 0 }) returns 0 results** (was an off-by-one returning 1).
+
 ## 0.5.4 — repackage (dependency fix)
 
 - Republished because 0.5.3 shipped with an unresolved `@monlite/core: "workspace:^"` dependency

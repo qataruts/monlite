@@ -77,9 +77,15 @@ export function catchUp(
   const sqlite = db.sqlite;
   ensureState(db);
   const hw = getHighWater(db, coll);
+  // `updated_at >= hw` catches recent writes, but a document synced in with an
+  // older (past) timestamp sits BELOW the high-water — also index anything missing
+  // from the index entirely, so cross-process/past-dated writes don't go unsearchable.
   const docs = sqlite
-    .prepare(`SELECT _id, updated_at FROM "${coll}" WHERE updated_at >= ?`)
-    .all(hw) as Array<{ _id: string; updated_at: number }>;
+    .prepare(
+      `SELECT _id, updated_at FROM "${coll}" WHERE updated_at >= ? ` +
+        `OR _id NOT IN (SELECT doc_id FROM ${IDMAP} WHERE coll = ?)`,
+    )
+    .all(hw, coll) as Array<{ _id: string; updated_at: number }>;
   let max = hw;
   for (const d of docs) {
     indexDoc(db, coll, fields, d._id);
@@ -239,10 +245,10 @@ function search<T = Doc>(
 
   const out: SearchResult<T>[] = [];
   for (const r of rows) {
+    if (out.length >= limit) break; // check BEFORE pushing (limit:0 → 0 results)
     if (allowed && !allowed.has(r.doc_id)) continue;
     const doc = coll.getRaw(r.doc_id);
     if (doc) out.push({ ...doc, _score: -r.rank } as SearchResult<T>);
-    if (out.length >= limit) break;
   }
   return Promise.resolve(out);
 }
@@ -388,13 +394,30 @@ export function createSearchIndex(db: Monlite): SearchIndex {
   const known = (name: string) => {
     if (configs.has(name)) return configs.get(name)!;
     const row = db.sqlite
-      .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name = ?`)
-      .get(name);
-    if (row) {
-      configs.set(name, { fields: [], filterFields: [] });
-      return configs.get(name)!;
+      .prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name = ?`)
+      .get(name) as { sql?: string } | undefined;
+    if (!row?.sql) return undefined;
+    // Recover the REAL schema from the fts5 table definition so a reopened index
+    // can index/search correctly. Caching empty fields here silently made every
+    // later upsert insert an unsearchable row. doc_id is skipped; UNINDEXED columns
+    // are filterFields, the rest are searchable fields.
+    const cols = row.sql.match(/fts5\s*\(([\s\S]*)\)/i);
+    const fields: string[] = [];
+    const filterFields: string[] = [];
+    if (cols) {
+      for (const raw of cols[1].split(",")) {
+        const part = raw.trim();
+        const unindexed = /\bUNINDEXED\b/i.test(part);
+        const colName = part
+          .replace(/\bUNINDEXED\b/i, "")
+          .trim()
+          .replace(/^"(.*)"$/, "$1");
+        if (!colName || colName === "doc_id") continue;
+        (unindexed ? filterFields : fields).push(colName);
+      }
     }
-    return undefined;
+    configs.set(name, { fields, filterFields });
+    return configs.get(name)!;
   };
 
   return {

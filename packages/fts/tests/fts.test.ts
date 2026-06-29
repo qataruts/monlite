@@ -249,3 +249,31 @@ describe("search caps the where candidate pool", () => {
     ).resolves.toBeDefined();
   });
 });
+
+describe("fts edge cases (swarm-found)", () => {
+  it("search limit:0 returns 0 (with and without where)", async () => {
+    const c = open({ d: ["body"] }).collection("d");
+    await c.createMany({
+      data: [
+        { body: "apple", live: true },
+        { body: "apple", live: true },
+      ],
+    });
+    expect((await c.search("apple", { limit: 0 })).length).toBe(0);
+    expect(
+      (await c.search("apple", { limit: 0, where: { live: true } })).length,
+    ).toBe(0);
+  });
+  it("catchUp indexes documents written with a past timestamp (cross-process)", async () => {
+    const db = open({ p: ["body"] });
+    const p = db.collection("p");
+    await p.createMany({ data: [{ _id: "x", body: "alpha" }] });
+    db.sqlite
+      .prepare(
+        "INSERT INTO p (_id, data, created_at, updated_at) VALUES ('y', ?, 1, 1)",
+      )
+      .run(JSON.stringify({ body: "beta" }));
+    p.catchUp();
+    expect((await p.search("beta")).length).toBe(1);
+  });
+});
