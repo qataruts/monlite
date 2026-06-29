@@ -27,7 +27,8 @@ const adults = await users.findMany({ where: { age: { gte: 18 } }, orderBy: { ag
 ## The package family
 
 The core is lean and dependency-free. Each additional capability is an **opt-in package** —
-install only what you need.
+install only what you need. Or grab them all at once with the
+[all-in-one **`monlite`**](/packages/monlite) bundle (`npm install monlite`).
 
 | Package | Replaces | What it gives you |
 |---|---|---|

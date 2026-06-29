@@ -1,0 +1,107 @@
+{
+  "name": "monlite",
+  "version": "0.1.0",
+  "description": "The whole monlite stack in one install: embedded SQLite document database + cache, queue, cron, full-text + vector search, sync, and realtime. One .db file replaces MongoDB, Redis, Qdrant, BullMQ and more.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+      "require": { "types": "./dist/index.d.cts", "default": "./dist/index.cjs" }
+    },
+    "./kv": {
+      "import": { "types": "./dist/kv.d.ts", "default": "./dist/kv.js" },
+      "require": { "types": "./dist/kv.d.cts", "default": "./dist/kv.cjs" }
+    },
+    "./queue": {
+      "import": { "types": "./dist/queue.d.ts", "default": "./dist/queue.js" },
+      "require": { "types": "./dist/queue.d.cts", "default": "./dist/queue.cjs" }
+    },
+    "./cron": {
+      "import": { "types": "./dist/cron.d.ts", "default": "./dist/cron.js" },
+      "require": { "types": "./dist/cron.d.cts", "default": "./dist/cron.cjs" }
+    },
+    "./fts": {
+      "import": { "types": "./dist/fts.d.ts", "default": "./dist/fts.js" },
+      "require": { "types": "./dist/fts.d.cts", "default": "./dist/fts.cjs" }
+    },
+    "./vector": {
+      "import": { "types": "./dist/vector.d.ts", "default": "./dist/vector.js" },
+      "require": { "types": "./dist/vector.d.cts", "default": "./dist/vector.cjs" }
+    },
+    "./sync": {
+      "import": { "types": "./dist/sync.d.ts", "default": "./dist/sync.js" },
+      "require": { "types": "./dist/sync.d.cts", "default": "./dist/sync.cjs" }
+    },
+    "./realtime": {
+      "import": { "types": "./dist/realtime.d.ts", "default": "./dist/realtime.js" },
+      "require": { "types": "./dist/realtime.d.cts", "default": "./dist/realtime.cjs" }
+    },
+    "./realtime/client": {
+      "import": { "types": "./dist/realtime-client.d.ts", "default": "./dist/realtime-client.js" },
+      "require": { "types": "./dist/realtime-client.d.cts", "default": "./dist/realtime-client.cjs" }
+    },
+    "./wasm": {
+      "import": { "types": "./dist/wasm.d.ts", "default": "./dist/wasm.js" },
+      "require": { "types": "./dist/wasm.d.cts", "default": "./dist/wasm.cjs" }
+    }
+  },
+  "files": ["dist"],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "node ../../scripts/guard-publish.cjs"
+  },
+  "keywords": [
+    "monlite",
+    "sqlite",
+    "database",
+    "document-database",
+    "embedded",
+    "all-in-one",
+    "local-first",
+    "mongodb",
+    "redis",
+    "vector-search",
+    "ai-agent"
+  ],
+  "license": "MIT",
+  "author": "Emad Jumaah <emadjumaah@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/qataruts/monlite.git",
+    "directory": "packages/monlite"
+  },
+  "homepage": "https://github.com/qataruts/monlite/tree/main/packages/monlite#readme",
+  "bugs": { "url": "https://github.com/qataruts/monlite/issues" },
+  "publishConfig": { "access": "public" },
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "@monlite/core": "workspace:^",
+    "@monlite/kv": "workspace:^",
+    "@monlite/queue": "workspace:^",
+    "@monlite/cron": "workspace:^",
+    "@monlite/fts": "workspace:^",
+    "@monlite/vector": "workspace:^",
+    "@monlite/sync": "workspace:^",
+    "@monlite/realtime": "workspace:^"
+  },
+  "peerDependencies": {
+    "@monlite/wasm": "^0.2.2"
+  },
+  "peerDependenciesMeta": {
+    "@monlite/wasm": { "optional": true }
+  },
+  "devDependencies": {
+    "@monlite/wasm": "workspace:^",
+    "@types/node": "^22.10.0",
+    "better-sqlite3": "^11.8.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

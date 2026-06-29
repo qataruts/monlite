@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "declaration": true,
+    "strict": true,
+    "noImplicitOverride": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "outDir": "dist",
+    "paths": {
+      "@monlite/core": ["../../src/index.ts"],
+      "@monlite/kv": ["../kv/src/index.ts"],
+      "@monlite/queue": ["../queue/src/index.ts"],
+      "@monlite/cron": ["../cron/src/index.ts"],
+      "@monlite/fts": ["../fts/src/index.ts"],
+      "@monlite/vector": ["../vector/src/index.ts"],
+      "@monlite/sync": ["../sync/src/index.ts"],
+      "@monlite/realtime": ["../realtime/src/index.ts"],
+      "@monlite/realtime/client": ["../realtime/src/client.ts"],
+      "@monlite/wasm": ["../wasm/src/index.ts"]
+    }
+  },
+  "include": ["src", "tests"],
+  "exclude": ["node_modules", "dist"]
+}

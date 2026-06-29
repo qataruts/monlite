@@ -26,6 +26,7 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "Packages",
       items: [
+        "packages/monlite",
         "packages/sync",
         "packages/realtime",
         "packages/fts",

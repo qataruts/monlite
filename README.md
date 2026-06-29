@@ -225,6 +225,19 @@ One file. Two runtimes. Zero translation layer.
 
 ## Install
 
+Two ways in. **Batteries-included** — the whole stack in one install (database + cache, queue,
+cron, full-text + vector search, sync, realtime):
+
+```bash
+npm install monlite
+```
+
+```ts
+import { createDb, kv, createQueue, fts, vector } from "monlite";
+```
+
+Or the **minimal, zero-dependency core** and add packages à la carte:
+
 ```bash
 # Zero-dependency: uses Node's built-in node:sqlite (Node >= 22.5)
 npm install @monlite/core
@@ -286,7 +299,8 @@ Runnable demos are in [`examples/`](examples/).
 Production-ready and published. Current versions: `@monlite/core` **2.8.1**, `@monlite/sync`
 **1.3.4**, `@monlite/realtime` **0.2.0**, `@monlite/vector` **0.5.6**, `@monlite/fts` **0.5.5**,
 `@monlite/kv` **0.4.1**, `@monlite/queue` **0.5.0**, `@monlite/cron` **0.2.1**, `@monlite/wasm`
-**0.2.2**, `@monlite/electron` **0.1.1**, `@monlite/studio` **0.1.1**. The 2.x API is frozen.
+**0.2.2**, `@monlite/electron` **0.1.1**, `@monlite/studio` **0.1.1**, and the all-in-one
+`monlite` **0.1.0**. The 2.x API is frozen.
 
 Vector and full-text indexing are **linear at scale** — verified ingesting 100K documents
 in ~0.8s and 50K vectors in ~8s (no O(n²) re-index), so it comfortably backs 10K–100K-document

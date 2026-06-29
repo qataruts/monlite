@@ -7,6 +7,12 @@ title: Getting started
 
 ## Install
 
+Want everything at once? `npm install monlite` is the batteries-included bundle — the database
+plus cache, queue, cron, full-text + vector search, sync, and realtime (`import { createDb, kv,
+vector } from "monlite"`). See [the all-in-one package](/packages/monlite).
+
+For the minimal, zero-dependency path, install just the core:
+
 ```bash
 # Zero-dependency: uses Node's built-in node:sqlite (Node >= 22.5)
 npm install @monlite/core
