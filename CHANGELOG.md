@@ -1,5 +1,14 @@
 # @monlite/core
 
+## 2.6.15 — node:sqlite write-result coercion (fixes 2.6.14 regression)
+
+- **`run()` result counts are coerced to plain numbers under node:sqlite.** 2.6.14 enabled
+  `readBigInts` on node:sqlite (so large-integer reads don't throw), which also made
+  `changes` / `lastInsertRowid` come back as `BigInt` — so `deleteMany().count`,
+  `queue.recover()`, etc. returned `1n` instead of `1` on that backend. They are now coerced
+  to `Number`, matching better-sqlite3. (Row reads were already coerced in 2.6.14; this covers
+  the write path.) Found by CI running the suite against the real `node:sqlite` backend.
+
 ## 2.6.14 — driver parity: large integers + NUL bytes
 
 Closes the two driver-parity edge cases from the bug hunt (better-sqlite3 vs node:sqlite):

@@ -136,6 +136,11 @@ describe("driver parity: large integers + NUL bytes (swarm-found)", () => {
     const d = await c.create({ data: { _id: "b", big: 9007199254740993n } });
     // reads back as a JS number on BOTH drivers (node:sqlite no longer throws)
     expect(typeof (await c.findById(d._id))!.big).toBe("number");
+    // write result counts are plain numbers on BOTH drivers (not BigInt under
+    // node:sqlite's readBigInts) — guards the 2.6.14→2.6.15 run() coercion.
+    const res = await c.deleteMany({ where: { _id: "ok" } });
+    expect(typeof res.count).toBe("number");
+    expect(res.count).toBe(1);
   });
 
   it("rejects a NUL byte in a raw TEXT column (driver-divergent truncation)", async () => {
