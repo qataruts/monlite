@@ -1,5 +1,12 @@
 # @monlite/queue
 
+## 0.5.0 — per-worker rate limiting
+
+- **`process(name, handler, { rateLimit: { count, windowMs } })`** throttles a worker to at most
+  `count` jobs per `windowMs` (sliding window) — for respecting an external API's limit, etc. The
+  worker stops claiming when the window is full and resumes the instant a slot frees. Per-worker
+  (run a single worker for a global limit). Additive — off by default.
+
 ## 0.4.1 — idle poll on the shared heartbeat
 
 - A worker's idle poll now registers on the database's shared `Heartbeat` (`@monlite/core` ≥ 2.8.0)

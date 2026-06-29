@@ -316,3 +316,33 @@ describe("queue adaptive idle backoff (paradigm improvements)", () => {
     expect(done).toBe(1);
   });
 });
+
+describe("queue rate limiting (paradigm improvements)", () => {
+  it("throttles to count per window, then drains", async () => {
+    const q = makeQueue(open());
+    let done = 0;
+    q.process(
+      "t",
+      async () => {
+        done++;
+      },
+      { rateLimit: { count: 2, windowMs: 200 } },
+    );
+    for (let i = 0; i < 6; i++) q.add("t", {});
+    await sleep(120);
+    expect(done).toBeLessThanOrEqual(3); // throttled (not all 6)
+    await waitFor(() => done === 6, 2000); // all drain eventually
+    expect(done).toBe(6);
+  });
+
+  it("no rate limit processes a burst immediately", async () => {
+    const q = makeQueue(open());
+    let done = 0;
+    q.process("t", async () => {
+      done++;
+    });
+    for (let i = 0; i < 6; i++) q.add("t", {});
+    await waitFor(() => done === 6);
+    expect(done).toBe(6);
+  });
+});

@@ -50,6 +50,13 @@ export interface ProcessOptions {
    */
   maxPollInterval?: number;
   /**
+   * Throttle this worker to at most `count` jobs per `windowMs` (sliding window).
+   * The worker stops claiming when the window is full and resumes the instant a
+   * slot frees. **Per-worker** — multiple workers / processes each get their own
+   * budget (for a global limit, run a single worker). Off by default.
+   */
+  rateLimit?: { count: number; windowMs: number };
+  /**
    * Visibility timeout (ms). If set, a crashed worker's job is automatically
    * reclaimed: a job that stays `active` without a heartbeat for this long is
    * returned to `pending`. While a handler runs, its job is heartbeated so a
@@ -144,6 +151,9 @@ class WorkerImpl implements Worker {
   private idleInterval: number;
   private readonly visibilityTimeout: number;
   private reaper: ReturnType<typeof setInterval> | undefined;
+  private readonly rateLimit?: { count: number; windowMs: number };
+  /** Recent job-start timestamps within the rate-limit window. */
+  private starts: number[] = [];
 
   constructor(
     private readonly q: Queue,
@@ -153,6 +163,10 @@ class WorkerImpl implements Worker {
   ) {
     this.concurrency = Math.max(1, opts.concurrency ?? 1);
     this.pollInterval = opts.pollInterval ?? 500;
+    this.rateLimit =
+      opts.rateLimit && opts.rateLimit.count > 0 && opts.rateLimit.windowMs > 0
+        ? opts.rateLimit
+        : undefined;
     this.maxPollInterval = Math.max(
       this.pollInterval,
       opts.maxPollInterval ?? this.pollInterval,
@@ -175,9 +189,22 @@ class WorkerImpl implements Worker {
   kick(): void {
     if (!this.running) return;
     let claimedAny = false;
+    let rateWaitMs = 0;
     while (this.running && this.inFlight < this.concurrency) {
+      if (this.rateLimit) {
+        const t = Date.now();
+        const cutoff = t - this.rateLimit.windowMs;
+        if (this.starts.length)
+          this.starts = this.starts.filter((s) => s > cutoff);
+        if (this.starts.length >= this.rateLimit.count) {
+          // Window full — stop claiming; wake when the oldest start ages out.
+          rateWaitMs = this.starts[0] + this.rateLimit.windowMs - t;
+          break;
+        }
+      }
       const job = this.q.claimInternal(this.name);
       if (!job) break;
+      if (this.rateLimit) this.starts.push(Date.now());
       claimedAny = true;
       this.inFlight++;
       // Heartbeat the job while it runs so the reaper's visibility timeout won't
@@ -215,16 +242,18 @@ class WorkerImpl implements Worker {
     this.idleInterval = claimedAny
       ? this.pollInterval
       : Math.min(this.idleInterval * 2, this.maxPollInterval);
-    // Schedule the idle poll on the database's shared heartbeat (one timer for all
+    // If rate-limited, wake exactly when the window frees a slot (overrides idle
+    // backoff); otherwise use the (backed-off) idle interval.
+    const nextInterval =
+      rateWaitMs > 0 ? Math.max(1, rateWaitMs) : this.idleInterval;
+    // Schedule the next poll on the database's shared heartbeat (one timer for all
     // workers + the reactor/kv/cron). Same-process add() and job completion still
     // call kick() directly for instant pickup.
-    if (this.running && this.inFlight < this.concurrency) {
+    if (this.running && (rateWaitMs > 0 || this.inFlight < this.concurrency)) {
       if (!this.task) {
-        this.task = this.q.heartbeat.every(this.idleInterval, () =>
-          this.kick(),
-        );
+        this.task = this.q.heartbeat.every(nextInterval, () => this.kick());
       } else {
-        this.task.setInterval(this.idleInterval);
+        this.task.setInterval(nextInterval);
       }
     }
   }
