@@ -55,8 +55,12 @@ export function applyUpdate(
   const ops = data as Record<string, Record<string, any>>;
 
   if (ops.$set) {
-    for (const [path, value] of Object.entries(ops.$set))
+    for (const [path, value] of Object.entries(ops.$set)) {
+      if (path === "_id") {
+        throw new MonliteQueryError("Cannot $set the immutable _id field");
+      }
       setPath(next, path, value);
+    }
   }
   if (ops.$inc) {
     for (const [path, by] of Object.entries(ops.$inc)) {
@@ -66,12 +70,22 @@ export function applyUpdate(
         );
       }
       const cur = getPath(next, path);
+      if (cur != null && typeof cur !== "number") {
+        throw new MonliteQueryError(
+          `$inc on "${path}" requires a numeric target, but it holds ${JSON.stringify(cur)}`,
+        );
+      }
       setPath(next, path, (typeof cur === "number" ? cur : 0) + by);
     }
   }
   if (ops.$push) {
     for (const [path, value] of Object.entries(ops.$push)) {
       const cur = getPath(next, path);
+      if (cur != null && !Array.isArray(cur)) {
+        throw new MonliteQueryError(
+          `$push on "${path}" requires an array target, but it holds ${JSON.stringify(cur)}`,
+        );
+      }
       const arr = Array.isArray(cur) ? cur.slice() : [];
       // `{ $each: [...] }` pushes multiple values.
       if (
@@ -89,6 +103,11 @@ export function applyUpdate(
   if (ops.$addToSet) {
     for (const [path, value] of Object.entries(ops.$addToSet)) {
       const cur = getPath(next, path);
+      if (cur != null && !Array.isArray(cur)) {
+        throw new MonliteQueryError(
+          `$addToSet on "${path}" requires an array target, but it holds ${JSON.stringify(cur)}`,
+        );
+      }
       const arr = Array.isArray(cur) ? cur.slice() : [];
       const toAdd =
         value &&

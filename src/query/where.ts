@@ -74,11 +74,28 @@ function isFilterObject(v: any): v is FieldFilter {
   );
 }
 
+// Coerce numeric `_id` query operands to strings (scalar, equals/not/gt/…, in/notIn).
+function coerceId(c: any): any {
+  const s = (x: any) => (typeof x === "number" ? String(x) : x);
+  if (c === null || typeof c !== "object" || c instanceof Date || isBuffer(c)) {
+    return s(c);
+  }
+  if (Array.isArray(c)) return c.map(s);
+  const out: Record<string, any> = {};
+  for (const [op, v] of Object.entries(c)) {
+    out[op] = Array.isArray(v) ? v.map(s) : s(v);
+  }
+  return out;
+}
+
 function translateField(
   field: string,
   condition: any,
   ctx: WhereContext,
 ): string {
+  // `_id` is always stored as a string, so coerce numeric query values to match
+  // (create() accepts `_id: 123` and stores "123"; this makes queries find it).
+  if (field === "_id") condition = coerceId(condition);
   if (ctx.onPath && !isColumn(field, ctx.columns)) ctx.onPath(field);
   const expr = fieldExpr(field, ctx.columns);
 

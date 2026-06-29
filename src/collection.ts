@@ -896,9 +896,11 @@ export class Collection<T = Doc> {
 
   async findById(id: string): Promise<WithId<T> | null> {
     this.ensureTable();
+    // _id is stored as a string; coerce so findById(123) matches create({_id:123}).
+    const key = typeof id === "number" ? String(id) : id;
     const row = this.db
       .prepare(`SELECT * FROM "${this.name}" WHERE _id = ?`)
-      .get(id) as Row | undefined;
+      .get(key) as Row | undefined;
     return row ? this.rowToDoc(row) : null;
   }
 
@@ -1043,7 +1045,21 @@ export class Collection<T = Doc> {
             updated_at: now,
           } as WithId<T>;
         } else {
-          const ins = this.buildInsert(args.create);
+          // Seed the new document with the where's equality fields (Prisma/Mongo
+          // upsert semantics) so a repeated upsert stays idempotent instead of
+          // inserting a duplicate; explicit `create` fields win on conflict.
+          const seed: Record<string, any> = {};
+          for (const [k, v] of Object.entries(args.where ?? {})) {
+            if (k === "AND" || k === "OR" || k === "NOT") continue;
+            if (v === null || typeof v !== "object" || Array.isArray(v))
+              seed[k] = v;
+            else if (
+              Object.keys(v as object).length === 1 &&
+              "equals" in (v as object)
+            )
+              seed[k] = (v as any).equals;
+          }
+          const ins = this.buildInsert({ ...seed, ...args.create } as any);
           this.db.prepare(this.insertSql()).run(...ins.values);
           recorder?.recordLocal(this.name, ins._id, "upsert", ins.created_at);
           res = ins.returned;

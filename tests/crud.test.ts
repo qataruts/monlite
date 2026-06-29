@@ -177,3 +177,54 @@ describe("update / upsert / delete", () => {
     expect(await users.count()).toBe(0);
   });
 });
+
+describe("write/update edge cases (swarm-found)", () => {
+  it("upsert seeds where equality fields into the created doc (idempotent)", async () => {
+    const db = openDb();
+    const u = db.collection("u");
+    await u.upsert({
+      where: { email: "a@x.com" },
+      create: { name: "Ali" },
+      update: { $set: { seen: 1 } },
+    });
+    await u.upsert({
+      where: { email: "a@x.com" },
+      create: { name: "Ali" },
+      update: { $set: { seen: 2 } },
+    });
+    expect(await u.count()).toBe(1);
+    const d = await u.findFirst({});
+    expect(d.email).toBe("a@x.com");
+    expect(d.seen).toBe(2);
+    await db.$disconnect();
+  });
+  it("numeric _id is matched by findById / where / in", async () => {
+    const db = openDb();
+    const c = db.collection("c");
+    await c.create({ data: { _id: 123, v: "x" } });
+    expect((await c.findById(123))?.v).toBe("x");
+    expect((await c.findMany({ where: { _id: 123 } })).length).toBe(1);
+    expect(
+      (await c.findMany({ where: { _id: { in: [123, 456] } } })).length,
+    ).toBe(1);
+    await db.$disconnect();
+  });
+  it("$inc/$push/$addToSet on a non-conforming target and $set _id throw", async () => {
+    const db = openDb();
+    const c = db.collection("c");
+    await c.create({ data: { _id: "a", n: "str", tags: "str" } });
+    await expect(
+      c.update({ where: { _id: "a" }, data: { $inc: { n: 1 } } }),
+    ).rejects.toThrow();
+    await expect(
+      c.update({ where: { _id: "a" }, data: { $push: { tags: "y" } } }),
+    ).rejects.toThrow();
+    await expect(
+      c.update({ where: { _id: "a" }, data: { $addToSet: { tags: "y" } } }),
+    ).rejects.toThrow();
+    await expect(
+      c.update({ where: { _id: "a" }, data: { $set: { _id: "b" } } }),
+    ).rejects.toThrow();
+    await db.$disconnect();
+  });
+});
