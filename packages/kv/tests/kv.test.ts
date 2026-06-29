@@ -18,13 +18,16 @@ const waitFor = async (fn: () => boolean, ms = 3000): Promise<void> => {
 };
 
 const dbs: Monlite[] = [];
+const dirs: string[] = [];
 function open(): Monlite {
   const d = createDb(":memory:", driver ? { driver } : {});
   dbs.push(d);
   return d;
 }
 afterEach(async () => {
+  // Disconnect first so Windows releases the file handle before we unlink.
   while (dbs.length) await dbs.pop()!.$disconnect();
+  while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true });
 });
 
 describe("@monlite/kv", () => {
@@ -162,6 +165,7 @@ describe("kv pub/sub (paradigm improvements)", () => {
 
   it("delivers across processes (separate connections, same file)", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kvps-"));
+    dirs.push(dir); // cleaned in afterEach, after the dbs are disconnected
     const file = join(dir, "ps.db");
     const dbA = createDb(file, driver ? { driver } : {});
     const dbB = createDb(file, driver ? { driver } : {});
@@ -176,6 +180,5 @@ describe("kv pub/sub (paradigm improvements)", () => {
     expect(recv).toEqual([{ from: "B" }]);
     A.stop();
     B.stop();
-    rmSync(dir, { recursive: true, force: true });
   });
 });
