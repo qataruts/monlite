@@ -1,5 +1,19 @@
 # @monlite/core
 
+## 2.8.0 — shared heartbeat (one coalesced timer)
+
+Additive. A new `Heartbeat` — a single coalescing scheduler exposed as `db.heartbeat` — that
+every subsystem's periodic poll registers with, so a database runs **one timer instead of many**.
+
+- **`db.heartbeat.every(intervalMs, fn)`** returns a handle (`setInterval`, `cancel`). One timer
+  is armed for the soonest-due task; each task keeps its own cadence (no global fixed rate); there
+  is **no timer at all when nothing is registered**, and it is `unref`'d.
+- The cross-process reactor poll now runs on the heartbeat. `@monlite/kv` pub/sub, the
+  `@monlite/queue` idle poll, and `@monlite/cron` register on it too — so the reactor + cache +
+  queue + cron share a single coalesced wakeup instead of four independent intervals.
+- **No behavior change**: same cadences, same instant same-process paths — just fewer event-loop
+  wakeups. All existing tests pass unchanged on both drivers.
+
 ## 2.7.0 — realtime: change feed + deeper watch() + cross-process reactivity
 
 All additive — the 2.x API is unchanged; new options/methods only. Off by default (zero overhead).

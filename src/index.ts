@@ -74,6 +74,10 @@ export type {
 } from "./driver/types.js";
 export type { MonlitePlugin, PluginChange } from "./plugin.js";
 
+// Shared coalescing scheduler — subsystems register periodic polls via `db.heartbeat`.
+export { Heartbeat } from "./heartbeat.js";
+export type { HeartbeatTask } from "./heartbeat.js";
+
 // Sync primitives (used by @monlite/sync; advanced).
 export { SyncStore } from "./sync/store.js";
 export { makeVersion, compareVersions, versionTs } from "./sync/version.js";

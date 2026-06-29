@@ -1,5 +1,11 @@
 # @monlite/queue
 
+## 0.4.1 — idle poll on the shared heartbeat
+
+- A worker's idle poll now registers on the database's shared `Heartbeat` (`@monlite/core` ≥ 2.8.0)
+  instead of a per-worker `setTimeout`, so multiple workers + the reactor/kv/cron share one timer.
+  Same-process `add()` and job completion still call `kick()` directly (instant). No behavior change.
+
 ## 0.4.0 — adaptive idle backoff (opt-in)
 
 - **`maxPollInterval` (per `process()`)** enables adaptive idle backoff: an idle worker doubles

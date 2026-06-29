@@ -1,5 +1,11 @@
 # @monlite/kv
 
+## 0.3.1 — pub/sub poll on the shared heartbeat
+
+- The cross-process pub/sub poll now registers on the database's shared `Heartbeat`
+  (`@monlite/core` ≥ 2.8.0) instead of its own `setInterval`, so it coalesces with the reactor,
+  queue and cron into a single timer. No behavior change.
+
 ## 0.3.0 — pub/sub
 
 - **`publish(channel, message)` / `subscribe(channel, cb)`** (Redis-style PUBLISH/SUBSCRIBE).

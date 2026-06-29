@@ -1,5 +1,11 @@
 # @monlite/cron
 
+## 0.1.3 — tick on the shared heartbeat
+
+- The scheduler tick now registers on the database's shared `Heartbeat` (`@monlite/core` ≥ 2.8.0)
+  instead of its own `setInterval`, coalescing with the reactor, kv pub/sub and queue into one
+  timer. No behavior change.
+
 ## 0.1.2 — correctness fixes (bug hunt)
 
 - **`N/step` expands correctly.** `5/15` now means "from 5 to max, every 15" (→ 5, 20, 35, 50)

@@ -1,4 +1,4 @@
-import type { Monlite } from "@monlite/core";
+import type { Monlite, HeartbeatTask } from "@monlite/core";
 
 export interface KVOptions {
   /** Logical namespace so multiple caches can share one database. Default "default". */
@@ -111,7 +111,7 @@ export function kv(db: Monlite, options: KVOptions = {}): KV {
   // ── pub/sub ──────────────────────────────────────────────────────────────
   type Sub = { channel: string; cb: (m: any) => void; cursor: number };
   const subs = new Set<Sub>();
-  let psTimer: ReturnType<typeof setInterval> | undefined;
+  let psTask: HeartbeatTask | undefined;
 
   const psMaxSeq = (): number =>
     (
@@ -268,23 +268,24 @@ export function kv(db: Monlite, options: KVOptions = {}): KV {
     subscribe(channel, cb) {
       const sub: Sub = { channel, cb, cursor: psMaxSeq() }; // start at "now" — no replay
       subs.add(sub);
-      if (!psTimer) {
-        psTimer = setInterval(drainPubsub, pubsubPollMs);
-        psTimer.unref?.();
-      }
+      // Register the cross-process poll on the shared heartbeat (one timer for the
+      // whole db), started on first subscribe and dropped when the last unsubscribes.
+      if (!psTask) psTask = db.heartbeat.every(pubsubPollMs, drainPubsub);
       return () => {
         subs.delete(sub);
-        if (subs.size === 0 && psTimer) {
-          clearInterval(psTimer);
-          psTimer = undefined;
+        if (subs.size === 0 && psTask) {
+          psTask.cancel();
+          psTask = undefined;
         }
       };
     },
     stop() {
       if (timer) clearInterval(timer);
       timer = undefined;
-      if (psTimer) clearInterval(psTimer);
-      psTimer = undefined;
+      if (psTask) {
+        psTask.cancel();
+        psTask = undefined;
+      }
     },
   };
 

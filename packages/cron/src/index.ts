@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import type { Monlite } from "@monlite/core";
+import type { Monlite, HeartbeatTask } from "@monlite/core";
 
 export interface CronOptions {
   /** How often the scheduler checks for due jobs (ms). Default 1000. */
@@ -118,16 +118,18 @@ const nowMs = () => Date.now();
  */
 export class Cron extends EventEmitter {
   private readonly driver: Monlite["driver"];
+  private readonly heartbeat: Monlite["heartbeat"];
   private readonly checkInterval: number;
   private readonly handlers = new Map<
     string,
     { c: ParsedCron; fn: CronHandler }
   >();
-  private timer: ReturnType<typeof setInterval> | undefined;
+  private task: HeartbeatTask | undefined;
 
   constructor(db: Monlite, opts: CronOptions = {}) {
     super();
     this.driver = db.driver;
+    this.heartbeat = db.heartbeat;
     this.checkInterval = opts.checkInterval ?? 1000;
     if (!ensured.has(db)) {
       this.driver.exec(
@@ -160,9 +162,10 @@ export class Cron extends EventEmitter {
       )
       .run(name, expr, next);
     this.handlers.set(name, { c, fn: handler });
-    if (!this.timer) {
-      this.timer = setInterval(() => this.tick(), this.checkInterval);
-      this.timer.unref?.();
+    // One poll on the database's shared heartbeat (coalesced with the reactor,
+    // kv pub/sub and queue) instead of a dedicated interval.
+    if (!this.task) {
+      this.task = this.heartbeat.every(this.checkInterval, () => this.tick());
     }
   }
 
@@ -206,8 +209,8 @@ export class Cron extends EventEmitter {
 
   /** Stop the scheduler (schedules remain persisted). */
   stop(): void {
-    if (this.timer) clearInterval(this.timer);
-    this.timer = undefined;
+    if (this.task) this.task.cancel();
+    this.task = undefined;
   }
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "@monlite/queue",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Durable job queue for @monlite/core: retries, backoff, delayed jobs, concurrency — on SQLite.",
   "type": "module",
   "main": "./dist/index.cjs",

@@ -15,6 +15,7 @@ import { createDriver } from "./driver/index.js";
 import type { Driver } from "./driver/types.js";
 import { SyncStore } from "./sync/store.js";
 import { Reactor } from "./reactive.js";
+import { Heartbeat, type HeartbeatTask } from "./heartbeat.js";
 import type { MonlitePlugin } from "./plugin.js";
 
 function validateName(name: string): void {
@@ -86,9 +87,13 @@ export class Monlite {
   private asyncTxDepth = 0;
   private als: any;
   private alsLoaded = false;
+  /** @internal Shared coalescing scheduler — every subsystem's periodic poll
+   *  (reactor, kv pub/sub, queue idle poll, cron) registers here so the database
+   *  runs ONE timer instead of many. */
+  readonly heartbeat = new Heartbeat();
   /** Cross-process reactivity: feed `seq` already delivered to the reactor. */
   private reactorCursor = 0;
-  private reactorTimer?: ReturnType<typeof setInterval>;
+  private reactorTask?: HeartbeatTask;
   private readonly reactorPollMs: number;
 
   private getAls(): any {
@@ -473,15 +478,13 @@ export class Monlite {
    * writes from other processes. No-op unless the change feed is enabled.
    */
   ensureReactorPolling(): void {
-    if (!this.$sync || this.reactorTimer) return;
+    if (!this.$sync || this.reactorTask) return;
     // Only changes recorded AFTER watching starts should fire watchers; the
     // initial snapshot already reflects everything up to here.
     this.reactorCursor = this.$sync.currentSeq();
-    this.reactorTimer = setInterval(
-      () => this.drainReactor(),
-      this.reactorPollMs,
+    this.reactorTask = this.heartbeat.every(this.reactorPollMs, () =>
+      this.drainReactor(),
     );
-    this.reactorTimer.unref?.();
   }
 
   /** Deliver every feed change since the cursor to the reactor (local + remote). */
@@ -615,7 +618,7 @@ export class Monlite {
   $disconnect(): Promise<void> {
     if (!this.closed) {
       this.closed = true;
-      if (this.reactorTimer) clearInterval(this.reactorTimer);
+      this.heartbeat.stop();
       this.driver.close();
     }
     return Promise.resolve();

@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import type { Monlite } from "@monlite/core";
+import type { Monlite, HeartbeatTask } from "@monlite/core";
 
 export type JobStatus = "pending" | "active" | "done" | "failed";
 
@@ -134,7 +134,7 @@ function deserialize(row: Row): Job {
 class WorkerImpl implements Worker {
   private running = true;
   private inFlight = 0;
-  private timer: ReturnType<typeof setTimeout> | undefined;
+  private task: HeartbeatTask | undefined;
   private drainResolve: (() => void) | undefined;
   private drainPromise: Promise<void> | undefined;
   private readonly concurrency: number;
@@ -174,10 +174,6 @@ class WorkerImpl implements Worker {
   /** Fill spare capacity with claimable jobs; otherwise schedule a poll. */
   kick(): void {
     if (!this.running) return;
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = undefined;
-    }
     let claimedAny = false;
     while (this.running && this.inFlight < this.concurrency) {
       const job = this.q.claimInternal(this.name);
@@ -219,9 +215,17 @@ class WorkerImpl implements Worker {
     this.idleInterval = claimedAny
       ? this.pollInterval
       : Math.min(this.idleInterval * 2, this.maxPollInterval);
+    // Schedule the idle poll on the database's shared heartbeat (one timer for all
+    // workers + the reactor/kv/cron). Same-process add() and job completion still
+    // call kick() directly for instant pickup.
     if (this.running && this.inFlight < this.concurrency) {
-      this.timer = setTimeout(() => this.kick(), this.idleInterval);
-      this.timer.unref?.();
+      if (!this.task) {
+        this.task = this.q.heartbeat.every(this.idleInterval, () =>
+          this.kick(),
+        );
+      } else {
+        this.task.setInterval(this.idleInterval);
+      }
     }
   }
 
@@ -235,7 +239,10 @@ class WorkerImpl implements Worker {
 
   async stop(): Promise<void> {
     this.running = false;
-    if (this.timer) clearTimeout(this.timer);
+    if (this.task) {
+      this.task.cancel();
+      this.task = undefined;
+    }
     if (this.reaper) clearInterval(this.reaper);
     if (this.inFlight === 0) return;
     // Share ONE drain promise across concurrent stop()/close() calls — overwriting
@@ -256,6 +263,8 @@ class WorkerImpl implements Worker {
  */
 export class Queue extends EventEmitter {
   private readonly driver: Monlite["driver"];
+  /** @internal Shared heartbeat — workers register their idle poll here. */
+  readonly heartbeat: Monlite["heartbeat"];
   private readonly maxAttempts: number;
   private readonly backoff: (attempt: number) => number;
   private readonly removeOnComplete: boolean;
@@ -265,6 +274,7 @@ export class Queue extends EventEmitter {
   constructor(db: Monlite, opts: QueueOptions = {}) {
     super();
     this.driver = db.driver;
+    this.heartbeat = db.heartbeat;
     this.maxAttempts = opts.maxAttempts ?? 1;
     this.backoff = opts.backoff ?? defaultBackoff;
     this.removeOnComplete = opts.removeOnComplete ?? false;
