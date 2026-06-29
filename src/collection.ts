@@ -724,6 +724,7 @@ export class Collection<T = Doc> {
   }
 
   async createMany(args: CreateManyArgs<T>): Promise<{ count: number }> {
+    if (this.mon.asyncDriver) return this.createManyPg(args);
     this.ensureTable();
     this.mon.assertWriteAllowed();
     const stmt = this.db.prepare(this.insertSql());
@@ -906,6 +907,7 @@ export class Collection<T = Doc> {
 
   /** True if at least one document matches. */
   async exists(where?: WhereInput<T>): Promise<boolean> {
+    if (this.mon.asyncDriver) return this.existsPg(where);
     return this.existsCore(where);
   }
 
@@ -919,6 +921,7 @@ export class Collection<T = Doc> {
     args: WatchArgs<T> = {},
     cb: (event: LiveEvent<T>) => void,
   ): WatchHandle<T> {
+    if (this.mon.asyncDriver) return this.pgUnsupported("watch()");
     this.ensureTable();
     const lq = new LiveQuery<T>(this, args, cb);
     const reactor = this.mon.reactor;
@@ -955,6 +958,7 @@ export class Collection<T = Doc> {
 
   /** Show SQLite's query plan for a `findMany`, and whether it uses an index. */
   async explain(args: FindManyArgs<T> = {}): Promise<ExplainResult> {
+    if (this.mon.asyncDriver) return this.pgUnsupported("explain()");
     this.ensureTable();
     const { sql, params } = this.buildFindSql(args);
     const plan = this.db
@@ -967,9 +971,11 @@ export class Collection<T = Doc> {
   }
 
   async findById(id: string): Promise<WithId<T> | null> {
-    this.ensureTable();
     // _id is stored as a string; coerce so findById(123) matches create({_id:123}).
     const key = typeof id === "number" ? String(id) : id;
+    if (this.mon.asyncDriver)
+      return this.findFirst({ where: { _id: key } as WhereInput<T> });
+    this.ensureTable();
     const row = this.db
       .prepare(`SELECT * FROM "${this.name}" WHERE _id = ?`)
       .get(key) as Row | undefined;
@@ -1085,13 +1091,144 @@ export class Collection<T = Doc> {
   private async createPg(args: CreateArgs<T>): Promise<WithId<T>> {
     this.mon.assertWriteAllowed();
     if (this.mode !== "document")
-      throw new MonliteQueryError(
-        "structured collections are not yet supported on the postgres engine",
-      );
+      return this.pgUnsupported("structured collections");
     await this.ensureTablePg();
     const row = this.buildInsert(args.data);
     await this.mon.asyncDriver!.query(this.insertSql(), row.values);
     return row.returned;
+  }
+
+  /** A feature not yet wired for the Postgres engine — fail loudly, never silently. */
+  private pgUnsupported(op: string): never {
+    throw new MonliteQueryError(
+      `${op} is not yet supported on the postgres engine`,
+    );
+  }
+
+  private async existsPg(where: WhereInput<T> | undefined): Promise<boolean> {
+    await this.ensureTablePg();
+    const params: any[] = [];
+    const clause = buildWhere(where, {
+      params,
+      columns: this.columns,
+      dialect: "postgres",
+    });
+    const r = await this.mon.asyncDriver!.query(
+      `SELECT 1 FROM "${this.name}" WHERE ${clause} LIMIT 1`,
+      params,
+    );
+    return r.rows.length > 0;
+  }
+
+  private async createManyPg(
+    args: CreateManyArgs<T>,
+  ): Promise<{ count: number }> {
+    this.mon.assertWriteAllowed();
+    if (this.mode !== "document") return this.pgUnsupported("structured collections");
+    await this.ensureTablePg();
+    await this.mon.asyncDriver!.transactionAsync(async () => {
+      for (const item of args.data) {
+        const row = this.buildInsert(item);
+        await this.mon.asyncDriver!.query(this.insertSql(), row.values);
+      }
+    });
+    return { count: args.data.length };
+  }
+
+  /** Postgres path for update/updateMany: find → applyUpdate (shared) → rewrite `data`. */
+  private async runUpdatePg(
+    where: WhereInput<T> | undefined,
+    data: UpdateData<T>,
+    single: boolean,
+  ): Promise<WithId<T>[]> {
+    this.mon.assertWriteAllowed();
+    if (this.mode !== "document") return this.pgUnsupported("structured collections");
+    await this.ensureTablePg();
+    return this.mon.asyncDriver!.transactionAsync(async () => {
+      const docs = await this.findManyPg({
+        where,
+        ...(single ? { take: 1 } : {}),
+      } as FindManyArgs<T>);
+      const out: WithId<T>[] = [];
+      for (const doc of docs) {
+        const now = Date.now();
+        const id = (doc as any)._id;
+        const updated = stripSystem(applyUpdate(stripSystem(doc), data));
+        await this.mon.asyncDriver!.query(
+          `UPDATE "${this.name}" SET data = ?, updated_at = ? WHERE _id = ?`,
+          [JSON.stringify(updated), now, id],
+        );
+        out.push({
+          ...updated,
+          _id: id,
+          created_at: (doc as any).created_at,
+          updated_at: now,
+        } as WithId<T>);
+      }
+      return out;
+    });
+  }
+
+  /** Postgres path for delete/deleteMany. */
+  private async runDeletePg(
+    where: WhereInput<T> | undefined,
+    single: boolean,
+  ): Promise<WithId<T>[]> {
+    this.mon.assertWriteAllowed();
+    await this.ensureTablePg();
+    return this.mon.asyncDriver!.transactionAsync(async () => {
+      const docs = await this.findManyPg({
+        where,
+        ...(single ? { take: 1 } : {}),
+      } as FindManyArgs<T>);
+      if (!docs.length) return [];
+      const ids = docs.map((d) => (d as any)._id);
+      await this.mon.asyncDriver!.query(
+        `DELETE FROM "${this.name}" WHERE _id IN (${ids.map(() => "?").join(", ")})`,
+        ids,
+      );
+      return docs;
+    });
+  }
+
+  /** Postgres path for {@link upsert} (Prisma/Mongo seed-from-where semantics). */
+  private async upsertPg(args: UpsertArgs<T>): Promise<WithId<T>> {
+    this.mon.assertWriteAllowed();
+    if (this.mode !== "document") return this.pgUnsupported("structured collections");
+    await this.ensureTablePg();
+    return this.mon.asyncDriver!.transactionAsync(async () => {
+      const existing = (
+        await this.findManyPg({ where: args.where, take: 1 } as FindManyArgs<T>)
+      )[0];
+      if (existing) {
+        const now = Date.now();
+        const id = (existing as any)._id;
+        const updated = stripSystem(applyUpdate(stripSystem(existing), args.update));
+        await this.mon.asyncDriver!.query(
+          `UPDATE "${this.name}" SET data = ?, updated_at = ? WHERE _id = ?`,
+          [JSON.stringify(updated), now, id],
+        );
+        return {
+          ...updated,
+          _id: id,
+          created_at: (existing as any).created_at,
+          updated_at: now,
+        } as WithId<T>;
+      }
+      const seed: Record<string, any> = {};
+      for (const [k, v] of Object.entries(args.where ?? {})) {
+        if (k === "AND" || k === "OR" || k === "NOT") continue;
+        if (v === null || typeof v !== "object" || Array.isArray(v)) seed[k] = v;
+        else if (
+          Object.keys(v as object).length === 1 &&
+          "equals" in (v as object)
+        )
+          seed[k] = (v as any).equals;
+      }
+      const row = this.buildInsert({ ...seed, ...args.create } as any);
+      await this.mon.asyncDriver!.query(this.insertSql(), row.values);
+      return row.returned;
+    });
   }
 
   /**
@@ -1099,6 +1236,7 @@ export class Collection<T = Doc> {
    * unwound (each element counts as a value), matching MongoDB's `distinct`.
    */
   async distinct(field: string, where?: WhereInput<T>): Promise<any[]> {
+    if (this.mon.asyncDriver) return this.pgUnsupported("distinct()");
     this.ensureTable();
     const params: any[] = [];
     const clause = buildWhere(where, {
@@ -1182,14 +1320,19 @@ export class Collection<T = Doc> {
   }
 
   async update(args: UpdateArgs<T>): Promise<WithId<T> | null> {
+    if (this.mon.asyncDriver)
+      return (await this.runUpdatePg(args.where, args.data, true))[0] ?? null;
     return this.runUpdate(args.where, args.data, true)[0] ?? null;
   }
 
   async updateMany(args: UpdateArgs<T>): Promise<{ count: number }> {
+    if (this.mon.asyncDriver)
+      return { count: (await this.runUpdatePg(args.where, args.data, false)).length };
     return { count: this.runUpdate(args.where, args.data, false).length };
   }
 
   async upsert(args: UpsertArgs<T>): Promise<WithId<T>> {
+    if (this.mon.asyncDriver) return this.upsertPg(args);
     this.ensureTable();
     this.mon.assertWriteAllowed();
     // Find + create/update run inside ONE transaction so concurrent/interleaved
@@ -1260,6 +1403,7 @@ export class Collection<T = Doc> {
   async findOneAndUpdate(
     args: FindOneAndUpdateArgs<T>,
   ): Promise<WithId<T> | null> {
+    if (this.mon.asyncDriver) return this.pgUnsupported("findOneAndUpdate()");
     this.ensureTable();
     this.mon.assertWriteAllowed();
     const params: any[] = [];
@@ -1323,6 +1467,7 @@ export class Collection<T = Doc> {
    * `deleteMany` operations in **one transaction** (all-or-nothing).
    */
   async bulkWrite(operations: BulkWriteOp<T>[]): Promise<BulkWriteResult> {
+    if (this.mon.asyncDriver) return this.pgUnsupported("bulkWrite()");
     this.ensureTable();
     this.mon.assertWriteAllowed();
     const ids: string[] = [];
@@ -1415,6 +1560,7 @@ export class Collection<T = Doc> {
    * Call periodically (e.g. from a cron tick). Returns the number removed.
    */
   async purgeExpired(): Promise<{ count: number }> {
+    if (this.mon.asyncDriver) return this.pgUnsupported("purgeExpired()");
     if (!this.ttl) {
       throw new MonliteError(
         "purgeExpired() requires the `ttl` collection option.",
@@ -1482,18 +1628,23 @@ export class Collection<T = Doc> {
   }
 
   async delete(args: DeleteArgs<T>): Promise<WithId<T> | null> {
+    if (this.mon.asyncDriver)
+      return (await this.runDeletePg(args.where, true))[0] ?? null;
     return this.runDelete(args.where, true)[0] ?? null;
   }
 
   async deleteMany(
     args: DeleteArgs<T> = { where: undefined as any },
   ): Promise<{ count: number }> {
+    if (this.mon.asyncDriver)
+      return { count: (await this.runDeletePg(args.where, false)).length };
     return { count: this.runDelete(args.where, false).length };
   }
 
   /* --------------------------- aggregation -------------------------- */
 
   async aggregate(args: AggregateArgs<T> = {}): Promise<AggregateResult> {
+    if (this.mon.asyncDriver) return this.pgUnsupported("aggregate()");
     this.ensureTable();
     return this.guard(() =>
       aggregate(
@@ -1510,6 +1661,7 @@ export class Collection<T = Doc> {
   }
 
   async groupBy(args: GroupByArgs<T>): Promise<GroupByResult[]> {
+    if (this.mon.asyncDriver) return this.pgUnsupported("groupBy()");
     this.ensureTable();
     return this.guard(() =>
       groupBy(

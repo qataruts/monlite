@@ -71,6 +71,7 @@ try {
       await client.connect();
       await client.query(`DROP TABLE IF EXISTS users CASCADE`);
       await client.query(`DROP TABLE IF EXISTS posts CASCADE`);
+      await client.query(`DROP TABLE IF EXISTS crud CASCADE`);
       await client.query(
         `CREATE TABLE "users" (_id text PRIMARY KEY, data jsonb NOT NULL, created_at bigint NOT NULL, updated_at bigint NOT NULL)`,
       );
@@ -130,6 +131,54 @@ try {
       // project() keeps only the selected keys (no implicit _id) — same as SQLite
       const projected = await posts.findMany({ where: { _id: "p1" }, select: { title: true } });
       expect(projected[0]).toEqual({ title: "SQLite" });
+    });
+
+    it("full CRUD on Postgres: createMany/findById/exists/update/updateMany/upsert/delete/deleteMany", async () => {
+      const c = db.collection("crud");
+      await c.createMany({
+        data: [
+          { _id: "a", n: 1, kind: "x" },
+          { _id: "b", n: 2, kind: "x" },
+          { _id: "c", n: 3, kind: "y" },
+        ],
+      });
+      expect(await c.count()).toBe(3);
+
+      expect((await c.findById("b"))?.n).toBe(2);
+      expect(await c.findById("zzz")).toBeNull();
+      expect(await c.exists({ kind: "y" })).toBe(true);
+      expect(await c.exists({ kind: "z" })).toBe(false);
+
+      // update: $inc + $set (applyUpdate shared with SQLite)
+      const up = await c.update({ where: { _id: "a" }, data: { $inc: { n: 10 }, $set: { kind: "z" } } });
+      expect(up?.n).toBe(11);
+      expect(up?.kind).toBe("z");
+      expect((await c.findById("a"))?.n).toBe(11);
+
+      // updateMany (only "b" is still kind:x — "a" became "z")
+      expect((await c.updateMany({ where: { kind: "x" }, data: { $set: { tagged: true } } })).count).toBe(1);
+      expect((await c.findById("b"))?.tagged).toBe(true);
+
+      // upsert: update existing + insert new (seeded from where)
+      expect((await c.upsert({ where: { _id: "c" }, create: { n: 99 }, update: { $set: { n: 33 } } })).n).toBe(33);
+      const u2 = await c.upsert({ where: { _id: "d" }, create: { n: 4, kind: "new" }, update: { $set: { n: 0 } } });
+      expect(u2._id).toBe("d");
+      expect(u2.n).toBe(4);
+      expect(await c.count()).toBe(4);
+
+      // delete + deleteMany
+      expect((await c.delete({ where: { _id: "a" } }))?._id).toBe("a");
+      expect(await c.count()).toBe(3);
+      expect((await c.deleteMany({ where: { kind: { in: ["x", "new"] } } })).count).toBe(2);
+      expect(await c.count()).toBe(1); // only "c" (kind:y) remains
+    });
+
+    it("not-yet-supported methods throw a clear error on Postgres (never silent)", async () => {
+      const c = db.collection("crud");
+      await expect(c.aggregate({ _count: true } as any)).rejects.toThrow(/not yet supported on the postgres engine/);
+      await expect(c.groupBy({ by: ["kind"] } as any)).rejects.toThrow(/postgres engine/);
+      await expect(c.distinct("kind")).rejects.toThrow(/postgres engine/);
+      expect(() => c.watch({}, () => {})).toThrow(/postgres engine/);
     });
   },
 );
