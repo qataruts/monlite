@@ -6,6 +6,21 @@ export interface CronOptions {
   checkInterval?: number;
 }
 
+/** Per-schedule options. */
+export interface ScheduleOptions {
+  /**
+   * IANA time zone (e.g. `"Europe/Istanbul"`) the cron expression is evaluated
+   * in, DST included. Default: the server's local time.
+   */
+  tz?: string;
+  /**
+   * Add a random delay of up to this many ms to each firing — spreads a
+   * thundering herd of schedules that would otherwise fire at the same instant.
+   * Default `0`.
+   */
+  jitter?: number;
+}
+
 export type CronHandler = () => void | Promise<void>;
 
 export interface ParsedCron {
@@ -73,36 +88,100 @@ export function parseCron(expr: string): ParsedCron {
   };
 }
 
-function dayMatches(c: ParsedCron, d: Date): boolean {
-  const dom = c.dom.has(d.getDate());
-  const dow = c.dow.has(d.getDay()); // 0 = Sunday
-  // POSIX: when both day-of-month and day-of-week are restricted, either matches.
-  if (c.domRestricted && c.dowRestricted) return dom || dow;
-  return dom && dow;
+/** Wall-clock fields `c` matches against — day-of-month / day-of-week handled per POSIX. */
+interface WallParts {
+  minute: number;
+  hour: number;
+  day: number;
+  month: number;
+  dow: number;
 }
 
-/** The next time (strictly after `from`, local time) a cron expression fires. */
+function partsMatch(c: ParsedCron, p: WallParts): boolean {
+  if (!c.minute.has(p.minute) || !c.hour.has(p.hour) || !c.month.has(p.month))
+    return false;
+  const dom = c.dom.has(p.day);
+  const dow = c.dow.has(p.dow);
+  // POSIX: when both day-of-month and day-of-week are restricted, either matches.
+  return c.domRestricted && c.dowRestricted ? dom || dow : dom && dow;
+}
+
+const localParts = (d: Date): WallParts => ({
+  minute: d.getMinutes(),
+  hour: d.getHours(),
+  day: d.getDate(),
+  month: d.getMonth() + 1,
+  dow: d.getDay(),
+});
+
+const DOW: Record<string, number> = {
+  Sun: 0,
+  Mon: 1,
+  Tue: 2,
+  Wed: 3,
+  Thu: 4,
+  Fri: 5,
+  Sat: 6,
+};
+const tzFmtCache = new Map<string, Intl.DateTimeFormat>();
+function tzFormatter(tz: string): Intl.DateTimeFormat {
+  let f = tzFmtCache.get(tz);
+  if (!f) {
+    // Throws "Invalid time zone" on a bad tz — surfaces a clear error to the caller.
+    f = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      hour12: false,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      weekday: "short",
+    });
+    tzFmtCache.set(tz, f);
+  }
+  return f;
+}
+
+/** The wall-clock fields of instant `d` as seen in IANA time zone `tz`. */
+function tzParts(d: Date, tz: string): WallParts {
+  const map: Record<string, string> = {};
+  for (const part of tzFormatter(tz).formatToParts(d))
+    map[part.type] = part.value;
+  let hour = parseInt(map.hour, 10);
+  if (hour === 24) hour = 0; // some engines render midnight as "24"
+  return {
+    minute: parseInt(map.minute, 10),
+    hour,
+    day: parseInt(map.day, 10),
+    month: parseInt(map.month, 10),
+    dow: DOW[map.weekday] ?? 0,
+  };
+}
+
+/**
+ * The next time (strictly after `from`) a cron expression fires. Evaluated in
+ * local time by default, or in `opts.tz` (an IANA zone like `"Europe/Istanbul"`)
+ * — handling that zone's DST transitions.
+ */
 export function nextCronRun(
   expr: string | ParsedCron,
   from: Date = new Date(),
+  opts: { tz?: string } = {},
 ): Date {
   const c = typeof expr === "string" ? parseCron(expr) : expr;
+  const tz = opts.tz;
   const d = new Date(from.getTime());
   d.setSeconds(0, 0);
   d.setMinutes(d.getMinutes() + 1);
   // Search up to ~5 years so a leap-day-only schedule (`* * 29 2 *`) still resolves
-  // across the 4-year gap instead of throwing. JS Date arithmetic below skips
-  // non-existent days (Feb 29 in common years) and handles DST transitions natively.
+  // across the 4-year gap instead of throwing. Local iteration uses Date arithmetic
+  // (skips non-existent days / handles DST natively); the tz path advances absolute
+  // time by a minute and reads the zone's wall clock (DST handled by `Intl`).
   for (let i = 0; i < 5 * 366 * 24 * 60; i++) {
-    if (
-      c.minute.has(d.getMinutes()) &&
-      c.hour.has(d.getHours()) &&
-      c.month.has(d.getMonth() + 1) &&
-      dayMatches(c, d)
-    ) {
-      return d;
-    }
-    d.setMinutes(d.getMinutes() + 1);
+    if (partsMatch(c, tz ? tzParts(d, tz) : localParts(d))) return d;
+    if (tz) d.setTime(d.getTime() + 60_000);
+    else d.setMinutes(d.getMinutes() + 1);
   }
   throw new Error(`Could not compute next run for cron "${expr}"`);
 }
@@ -122,7 +201,7 @@ export class Cron extends EventEmitter {
   private readonly checkInterval: number;
   private readonly handlers = new Map<
     string,
-    { c: ParsedCron; fn: CronHandler }
+    { c: ParsedCron; fn: CronHandler; tz?: string; jitter?: number }
   >();
   private task: HeartbeatTask | undefined;
 
@@ -142,9 +221,28 @@ export class Cron extends EventEmitter {
     }
   }
 
+  /** Compute the next firing (epoch ms) for a schedule, applying tz + jitter. */
+  private computeNext(
+    c: ParsedCron,
+    from: Date,
+    tz?: string,
+    jitter?: number,
+  ): number {
+    const base = nextCronRun(c, from, { tz }).getTime();
+    return jitter && jitter > 0
+      ? base + Math.floor(Math.random() * jitter)
+      : base;
+  }
+
   /** Register (or update) a schedule and start the scheduler. */
-  schedule(name: string, expr: string, handler: CronHandler): void {
+  schedule(
+    name: string,
+    expr: string,
+    handler: CronHandler,
+    opts: ScheduleOptions = {},
+  ): void {
     const c = parseCron(expr);
+    const { tz, jitter } = opts;
     const existing = this.driver
       .prepare(`SELECT next_run, cron FROM _schedules WHERE name = ?`)
       .get(name) as { next_run: number; cron: string } | undefined;
@@ -154,14 +252,14 @@ export class Cron extends EventEmitter {
     const next =
       existing && existing.cron === expr
         ? existing.next_run
-        : nextCronRun(c).getTime();
+        : this.computeNext(c, new Date(), tz, jitter);
     this.driver
       .prepare(
         `INSERT INTO _schedules (name, cron, next_run, last_run) VALUES (?, ?, ?, NULL)
          ON CONFLICT(name) DO UPDATE SET cron = excluded.cron, next_run = excluded.next_run`,
       )
       .run(name, expr, next);
-    this.handlers.set(name, { c, fn: handler });
+    this.handlers.set(name, { c, fn: handler, tz, jitter });
     // One poll on the database's shared heartbeat (coalesced with the reactor,
     // kv pub/sub and queue) instead of a dedicated interval.
     if (!this.task) {
@@ -191,7 +289,7 @@ export class Cron extends EventEmitter {
         .prepare(`SELECT next_run FROM _schedules WHERE name = ?`)
         .get(name) as { next_run: number } | undefined;
       if (!row || row.next_run > t) continue;
-      const next = nextCronRun(reg.c, new Date(t)).getTime();
+      const next = this.computeNext(reg.c, new Date(t), reg.tz, reg.jitter);
       // Atomic claim: only the process that flips next_run gets to fire.
       const claimed =
         this.driver

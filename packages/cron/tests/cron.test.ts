@@ -121,3 +121,37 @@ describe("cron edge cases (swarm-found)", () => {
     expect(cron.next("j")).toBe(stable);
   });
 });
+
+describe("cron timezones + jitter (paradigm improvements)", () => {
+  it("evaluates a schedule in an IANA time zone (DST-aware)", () => {
+    const from = new Date("2026-03-02T00:00:00Z");
+    const tk = nextCronRun("30 14 * * *", from, { tz: "Asia/Tokyo" }); // UTC+9
+    expect(tk.getUTCHours()).toBe(5);
+    expect(tk.getUTCMinutes()).toBe(30);
+    const ny = nextCronRun("0 9 * * *", new Date("2026-01-15T00:00:00Z"), {
+      tz: "America/New_York", // EST = UTC-5 in January
+    });
+    expect(ny.getUTCHours()).toBe(14);
+  });
+
+  it("is backward-compatible without a tz, and rejects a bad tz", () => {
+    expect(nextCronRun("0 0 * * *", new Date()) instanceof Date).toBe(true);
+    expect(() =>
+      nextCronRun("0 0 * * *", new Date(), { tz: "Not/AZone" }),
+    ).toThrow();
+  });
+
+  it("applies jitter within the window and respects tz on a schedule", () => {
+    const cron = makeCron(open());
+    cron.schedule("j", "0 0 * * *", () => {}, { jitter: 60_000 });
+    const base = nextCronRun("0 0 * * *", new Date()).getTime();
+    const n = cron.next("j")!;
+    expect(n).toBeGreaterThanOrEqual(base);
+    expect(n).toBeLessThan(base + 60_000 + 2000);
+
+    cron.schedule("tk", "30 14 * * *", () => {}, { tz: "Asia/Tokyo" });
+    const tn = new Date(cron.next("tk")!);
+    expect(tn.getUTCHours()).toBe(5);
+    expect(tn.getUTCMinutes()).toBe(30);
+  });
+});

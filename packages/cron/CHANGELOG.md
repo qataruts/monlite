@@ -1,5 +1,14 @@
 # @monlite/cron
 
+## 0.2.0 — time zones + jitter
+
+- **Per-schedule time zones**: `schedule(name, expr, fn, { tz: "Europe/Istanbul" })` evaluates the
+  cron expression in that IANA zone (DST included) instead of the server's local time.
+  `nextCronRun(expr, from, { tz })` gains the same option. Built on `Intl` — zero new dependencies.
+- **Jitter**: `{ jitter: ms }` adds a random delay of up to `ms` to each firing, to spread a
+  thundering herd of schedules that would otherwise fire at the same instant.
+- Both are additive — existing `schedule()` / `nextCronRun()` calls are unchanged.
+
 ## 0.1.3 — tick on the shared heartbeat
 
 - The scheduler tick now registers on the database's shared `Heartbeat` (`@monlite/core` ≥ 2.8.0)
