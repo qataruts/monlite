@@ -1,5 +1,37 @@
 # @monlite/core
 
+## 2.6.12 — correctness sweep (repo-wide bug hunt)
+
+A concentrated multi-agent bug hunt + differential fuzzing surfaced a batch of real,
+reproduced correctness bugs across the query, write, transaction, structured-column and
+aggregation layers. Each fix ships with a regression test.
+
+**Query operators**
+- `{ OR: [] }` matched ALL rows → now matches none (empty `AND` still matches all).
+- `in`/`notIn` with a `null` in the list no longer drops legitimate non-null rows.
+- `endsWith: ""` matched only the empty string → now matches every string.
+- `has`/`contains` on a declared JSON-array column now do array membership (were scalar/substring).
+- Dotted paths whose root is a declared JSON column now read that column (were reading `data`).
+- Field names containing `"` or `\` are now queryable (JSON-string path escaping).
+- `_id` queries accept numbers (`findById(123)` matches `create({ _id: 123 })`).
+
+**Writes / updates**
+- `upsert` seeds the created doc with the `where` equality fields (idempotent; was duplicating).
+- `$inc`/`$push`/`$addToSet` on a non-conforming target now throw (were silently overwriting);
+  `$set` on `_id` now throws.
+
+**Transactions**
+- Concurrent `findOneAndUpdate` (multi-worker CAS) no longer throws "no such savepoint" —
+  it routes through the serialized async-transaction queue.
+- Nested `transactionAsync` no longer deadlocks/bricks the connection — it is now re-entrant.
+
+**Structured columns**
+- Column `default`s are applied for omitted fields (incl. `notNull` + default); a unique index
+  over pre-existing duplicates surfaces a typed `MonliteError`.
+
+**Aggregation**
+- `distinct`/`groupBy`/`_min`/`_max` decode JSON columns to objects (matching `findMany`).
+
 ## 2.6.11 — `NOT` matches null/missing-field documents
 
 - **`{ NOT: { field: value } }` now matches documents where `field` is missing or
