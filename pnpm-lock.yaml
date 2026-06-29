@@ -225,6 +225,31 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.20.0)
 
+  packages/postgres:
+    dependencies:
+      '@monlite/core':
+        specifier: workspace:^
+        version: link:../..
+      pg:
+        specifier: ^8.13.0
+        version: 8.22.0
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.20.0
+      '@types/pg':
+        specifier: ^8.11.10
+        version: 8.20.0
+      tsup:
+        specifier: ^8.3.5
+        version: 8.5.1(postcss@8.5.15)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.0)
+
   packages/queue:
     dependencies:
       '@monlite/core':

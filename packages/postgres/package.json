@@ -1,0 +1,54 @@
+{
+  "name": "@monlite/postgres",
+  "version": "0.1.0",
+  "description": "Postgres engine for @monlite/core — the same monlite API, on a networked Postgres (JSONB) instead of a local SQLite file. Swap the engine, not your code.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+      "require": { "types": "./dist/index.d.cts", "default": "./dist/index.cjs" }
+    }
+  },
+  "files": ["dist"],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "node ../../scripts/guard-publish.cjs"
+  },
+  "keywords": [
+    "monlite",
+    "postgres",
+    "postgresql",
+    "jsonb",
+    "pgvector",
+    "document-database",
+    "engine"
+  ],
+  "license": "MIT",
+  "author": "Emad Jumaah <emadjumaah@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/qataruts/monlite.git",
+    "directory": "packages/postgres"
+  },
+  "homepage": "https://github.com/qataruts/monlite/tree/main/packages/postgres#readme",
+  "bugs": { "url": "https://github.com/qataruts/monlite/issues" },
+  "publishConfig": { "access": "public" },
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "@monlite/core": "workspace:^",
+    "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.11.10",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

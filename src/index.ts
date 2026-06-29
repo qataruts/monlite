@@ -68,10 +68,13 @@ export type {
 } from "./types.js";
 export type {
   Driver,
+  AsyncDriver,
+  AsyncQueryResult,
   PreparedStatement,
   RunResult,
   DriverOpenOptions,
 } from "./driver/types.js";
+export { isAsyncDriver } from "./driver/types.js";
 export type { MonlitePlugin, PluginChange } from "./plugin.js";
 
 // Shared coalescing scheduler — subsystems register periodic polls via `db.heartbeat`.
