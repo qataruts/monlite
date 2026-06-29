@@ -25,7 +25,7 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - run: pnpm -r build
+      - run: pnpm -r --filter='!monlite-demo' build
 
       - run: pnpm -r test
 

@@ -35,7 +35,7 @@ jobs:
       # -r runs across BOTH packages (core + sync), topologically ordered.
       - run: pnpm -r typecheck
 
-      - run: pnpm -r build
+      - run: pnpm -r --filter='!monlite-demo' build
 
       - name: Test (default / better-sqlite3)
         run: pnpm -r test
@@ -74,7 +74,7 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - run: pnpm -r build
+      - run: pnpm -r --filter='!monlite-demo' build
 
       - name: Test (default / better-sqlite3)
         run: pnpm -r test
@@ -100,7 +100,7 @@ jobs:
         with:
           python-version: "3.11"
       - run: pnpm install --frozen-lockfile
-      - run: pnpm -r build # build @monlite/core + @monlite/kv for the interop tests
+      - run: pnpm -r --filter='!monlite-demo' build # build @monlite/core + @monlite/kv for the interop tests
       - name: Python tests (core + kv + Node↔Python interop)
         working-directory: python
         run: PYTHONPATH=src python -m unittest discover -s tests -v
