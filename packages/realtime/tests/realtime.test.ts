@@ -201,7 +201,9 @@ describe("@monlite/realtime (SSE gateway + client)", () => {
       res.write("data: " + JSON.stringify({ error: "watch failed" }) + "\r\n\r\n");
     });
     await new Promise<void>((r) => server.listen(0, r));
-    cleanups.push(() => server.close());
+    cleanups.push(() => {
+      server.close();
+    });
     const stubUrl = `http://127.0.0.1:${(server.address() as any).port}`;
 
     const errors: unknown[] = [];

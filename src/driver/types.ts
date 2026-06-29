@@ -55,6 +55,43 @@ export interface Driver {
   readonly sqlite?: any;
 }
 
+/** One row-set result from an async backend (the async analogue of PreparedStatement). */
+export interface AsyncQueryResult {
+  rows: any[];
+  /** Affected-row count for writes (0 for reads). */
+  changes: number;
+  lastInsertRowid?: number | bigint;
+}
+
+/**
+ * The async counterpart of {@link Driver}, for networked engines that can't block
+ * on I/O (e.g. Postgres). It is a SEPARATE interface — the sync `Driver` and both
+ * SQLite backends are untouched. The execution boundary branches on `"async" in driver`;
+ * the SQLite path stays fully synchronous, so enabling this changes nothing for SQLite.
+ *
+ * The public Collection API is already `async`, so an async driver is invisible above
+ * this seam. Note: the synchronous-only surface (`findManyCore`/`existsCore`/sync
+ * `$transaction`) is unavailable on an async driver — use `findMany`/`transactionAsync`.
+ */
+export interface AsyncDriver {
+  /** Backend identifier, e.g. "postgres". */
+  readonly name: string;
+  /** Discriminant: distinguishes an AsyncDriver from a sync {@link Driver}. */
+  readonly async: true;
+  exec(sql: string): Promise<void>;
+  query(sql: string, params?: any[]): Promise<AsyncQueryResult>;
+  /** Run `fn` in one transaction (BEGIN … COMMIT), rolling back + rethrowing on error. */
+  transactionAsync<T>(fn: () => Promise<T>): Promise<T>;
+  /** Run `cb` after the outermost commit; discarded on rollback (see {@link Driver.afterCommit}). */
+  afterCommit?(cb: () => void): void;
+  close(): Promise<void>;
+}
+
+/** True when `d` is an {@link AsyncDriver} (networked engine) rather than a sync {@link Driver}. */
+export function isAsyncDriver(d: Driver | AsyncDriver): d is AsyncDriver {
+  return (d as AsyncDriver).async === true;
+}
+
 export interface DriverOpenOptions {
   readonly?: boolean;
   wal?: boolean;
