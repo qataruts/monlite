@@ -1,11 +1,16 @@
 # @monlite/fts
 
-Full-text search for [`@monlite/core`](https://www.npmjs.com/package/@monlite/core), powered by
-SQLite's built-in **FTS5**. Adds `collection.search()`.
+Full-text search for monlite. Adds `collection.search()` — and the **same API runs on either
+engine**:
 
-A monlite plugin — pass it to `createDb`, point it at the fields you want indexed, and it
-maintains an FTS5 index automatically on every write, including changes applied by
-`@monlite/sync`.
+- **SQLite** ([`@monlite/core`](https://www.npmjs.com/package/@monlite/core)) — an **FTS5** index,
+  maintained on every write (including changes applied by `@monlite/sync`).
+- **Postgres** ([`@monlite/postgres`](https://www.npmjs.com/package/@monlite/postgres)) — a native
+  generated **`tsvector`** column + GIN index, maintained by Postgres itself (no indexer, no
+  catch-up). Queries use `websearch_to_tsquery`, so user syntax like `-negation` and `"phrases"`
+  just works.
+
+A monlite plugin — pass it to `createDb`, point it at the fields you want indexed.
 
 ```ts
 import { createDb } from "@monlite/core";

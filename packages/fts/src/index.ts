@@ -253,10 +253,112 @@ function search<T = Doc>(
   return Promise.resolve(out);
 }
 
+// ── Postgres engine: native tsvector (no incremental indexer needed) ──────────
+//
+// On the Postgres engine the searchable text lives in a STORED generated column —
+// `to_tsvector(...)` over the configured jsonb fields, with a GIN index. Postgres
+// maintains it on every write (from any connection), so there is no separate index
+// table, no afterWrite hook and no catch-up: just a column that's always current.
+const pgReadyByDb = new WeakMap<Monlite, Map<string, Promise<void>>>();
+
+/** jsonb text projection of a (possibly dotted) field path. */
+function pgFieldText(field: string): string {
+  const segs = field.split(".").map((s) => s.replace(/'/g, "''"));
+  return segs.length === 1
+    ? `data->>'${segs[0]}'`
+    : `data#>>'{${segs.join(",")}}'`;
+}
+
+/** Lazily add the generated tsvector column + GIN index for a collection (idempotent). */
+function pgEnsureFts(
+  db: Monlite,
+  coll: string,
+  fields: string[],
+): Promise<void> {
+  let m = pgReadyByDb.get(db);
+  if (!m) pgReadyByDb.set(db, (m = new Map()));
+  const cached = m.get(coll);
+  if (cached) return cached;
+  const drv = db.asyncDriver!;
+  const expr = fields
+    .map((f) => `coalesce(${pgFieldText(f)}, '')`)
+    .join(" || ' ' || ");
+  const p = (async () => {
+    await drv.exec(
+      `CREATE TABLE IF NOT EXISTS "${coll}" (_id text PRIMARY KEY, data jsonb NOT NULL, ` +
+        `created_at bigint NOT NULL, updated_at bigint NOT NULL)`,
+    );
+    await drv.exec(
+      `ALTER TABLE "${coll}" ADD COLUMN IF NOT EXISTS _fts tsvector ` +
+        `GENERATED ALWAYS AS (to_tsvector('english', ${expr})) STORED`,
+    );
+    await drv.exec(
+      `CREATE INDEX IF NOT EXISTS "${coll}_fts_idx" ON "${coll}" USING GIN (_fts)`,
+    );
+  })();
+  m.set(coll, p);
+  return p;
+}
+
+async function pgSearch<T = Doc>(
+  db: Monlite,
+  coll: Collection<T>,
+  spec: FtsSpec,
+  query: string,
+  opts?: SearchOptions<T>,
+): Promise<SearchResult<T>[]> {
+  const fields = spec[coll.name];
+  if (!fields)
+    throw new Error(
+      `Collection "${coll.name}" is not configured for full-text search`,
+    );
+  await pgEnsureFts(db, coll.name, fields);
+  const limit = opts?.limit ?? 50;
+  // websearch_to_tsquery parses user input safely (quotes, OR, -negation) — never throws.
+  const fetch = opts?.where
+    ? Math.min(Math.max(opts.candidates ?? limit * 10, 200), 10_000)
+    : limit;
+  const rows = (
+    await db.asyncDriver!.query(
+      `SELECT _id, data, created_at, updated_at, ` +
+        `ts_rank(_fts, websearch_to_tsquery('english', ?)) AS _rank ` +
+        `FROM "${coll.name}" WHERE _fts @@ websearch_to_tsquery('english', ?) ` +
+        `ORDER BY _rank DESC LIMIT ${Math.max(0, Math.floor(fetch))}`,
+      [query, query],
+    )
+  ).rows as Array<Record<string, any>>;
+
+  let allowed: Set<string> | null = null;
+  if (opts?.where) {
+    const ids = rows.map((r) => r._id);
+    const matching = await coll.findMany({
+      where: { AND: [opts.where, { _id: { in: ids } }] } as WhereInput<T>,
+    });
+    allowed = new Set(matching.map((d) => d._id));
+  }
+
+  const out: SearchResult<T>[] = [];
+  for (const r of rows) {
+    if (out.length >= limit) break; // BEFORE pushing (limit:0 → 0 results)
+    if (allowed && !allowed.has(r._id)) continue;
+    out.push({
+      ...r.data,
+      _id: r._id,
+      created_at: Number(r.created_at),
+      updated_at: Number(r.updated_at),
+      _score: Number(r._rank),
+    } as SearchResult<T>);
+  }
+  return out;
+}
+
 /**
- * Full-text search plugin (SQLite FTS5). Pass it to `createDb({ plugins: [...] })`
- * with a map of collection → searchable fields. Adds `collection.search()`, keeps
- * the index in sync on every write, and backfills existing documents on open.
+ * Full-text search plugin. Pass it to `createDb({ plugins: [...] })` with a map of
+ * collection → searchable fields; adds `collection.search()`.
+ *
+ * - **SQLite** (`@monlite/core`): an FTS5 index kept in sync on every write, backfilled on open.
+ * - **Postgres** (`@monlite/postgres`): a native generated `tsvector` column + GIN index,
+ *   maintained by Postgres itself (no indexer, no catch-up). Same `search()` API.
  *
  * ```ts
  * const db = createDb("./app.db", { plugins: [fts({ posts: ["title", "body"] })] });
@@ -269,6 +371,7 @@ export function fts(spec: FtsSpec): MonlitePlugin {
     name: "fts",
     init(db) {
       database = db;
+      if (db.asyncDriver) return; // Postgres: the tsvector column is set up lazily on search
       ensureState(db);
       for (const [coll, fields] of Object.entries(spec)) {
         const cols = fields.map((_, i) => `"${col(i)}"`).join(", ");
@@ -294,6 +397,7 @@ export function fts(spec: FtsSpec): MonlitePlugin {
       }
     },
     afterWrite(db, { collection, ids }) {
+      if (db.asyncDriver) return; // Postgres: the generated tsvector column auto-maintains
       const fields = spec[collection];
       if (!fields) return;
       for (const id of ids) indexDoc(db, collection, fields, id);
@@ -301,9 +405,13 @@ export function fts(spec: FtsSpec): MonlitePlugin {
     },
     collectionMethods: {
       search: (collection, query: string, opts?: SearchOptions) =>
-        search(database, collection, spec, query, opts),
+        database.asyncDriver
+          ? pgSearch(database, collection, spec, query, opts)
+          : search(database, collection, spec, query, opts),
       catchUp: (collection) =>
-        catchUp(database, collection.name, spec[collection.name] ?? []),
+        database.asyncDriver
+          ? { indexed: 0, removed: 0 } // nothing to catch up — Postgres maintains it
+          : catchUp(database, collection.name, spec[collection.name] ?? []),
     },
   };
 }
