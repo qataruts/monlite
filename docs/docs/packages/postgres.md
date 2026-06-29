@@ -60,8 +60,11 @@ The whole **data surface** runs on Postgres:
 - **Vector search** — [`@monlite/vector`](./vector) on a native generated `vector` column + HNSW
   index (**pgvector**).
 
-**Not yet:** `explain()` (Postgres' `EXPLAIN` output is engine-specific — it throws a clear error),
-and the [`@monlite/queue`](./queue) job queue (a `SKIP LOCKED` port is pending).
+Job queue too — [`@monlite/queue`](./queue)'s `createPgQueue(db)` claims with `FOR UPDATE SKIP
+LOCKED` so workers across processes never contend.
+
+**Not yet:** only `explain()` (Postgres' `EXPLAIN` output is engine-specific — it throws a clear
+error).
 
 ## The Docker image
 

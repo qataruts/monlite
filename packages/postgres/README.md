@@ -49,8 +49,10 @@ deploy to Postgres, don't rewrite a line.
 - **Vector search** — [`@monlite/vector`](https://www.npmjs.com/package/@monlite/vector) on a
   native generated `vector` column + HNSW index (**pgvector**).
 
-**Not yet:** `explain()` (Postgres' `EXPLAIN` output is engine-specific — throws a clear error),
-and the `@monlite/queue` job queue (`SKIP LOCKED` port pending).
+- **Job queue** — [`@monlite/queue`](https://www.npmjs.com/package/@monlite/queue)'s
+  `createPgQueue(db)`, claiming with `FOR UPDATE SKIP LOCKED`.
+
+**Not yet:** only `explain()` (Postgres' `EXPLAIN` output is engine-specific — throws a clear error).
 
 ## Notes
 

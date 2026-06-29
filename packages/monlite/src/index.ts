@@ -18,10 +18,12 @@ export * from "@monlite/core";
 // Cache + atomic locks + TTLs + pub/sub + sorted sets.
 export { kv, type KV, type KVOptions } from "@monlite/kv";
 
-// Durable job queue.
+// Durable job queue (SQLite: Queue/createQueue; Postgres: PgQueue/createPgQueue).
 export {
   createQueue,
   Queue,
+  createPgQueue,
+  PgQueue,
   type Job,
   type JobStatus,
   type Worker,

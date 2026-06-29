@@ -1,8 +1,13 @@
 # @monlite/queue
 
-A durable job queue for [`@monlite/core`](https://www.npmjs.com/package/@monlite/core), backed
-by SQLite — retries, backoff, delayed jobs, priorities, dedupe, and concurrency, with no
-separate server. The BullMQ/Redis role, locally.
+A durable job queue for monlite — retries, backoff, delayed jobs, priorities, dedupe, and
+concurrency, with no separate server. The BullMQ/Redis role, without Redis.
+
+- **SQLite** ([`@monlite/core`](https://www.npmjs.com/package/@monlite/core)) — `createQueue(db)`,
+  a synchronous API on one file.
+- **Postgres** ([`@monlite/postgres`](https://www.npmjs.com/package/@monlite/postgres)) —
+  `createPgQueue(db)`, claiming with `FOR UPDATE SKIP LOCKED` so workers across processes never
+  contend. Same model; the methods are **async** (`await q.add(...)`).
 
 ```bash
 npm install @monlite/core @monlite/queue

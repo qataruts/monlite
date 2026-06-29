@@ -5,7 +5,10 @@ title: "@monlite/queue"
 
 # @monlite/queue — durable job queue
 
-A BullMQ-style job queue over SQLite — durable, transactional, multi-process safe.
+A BullMQ-style job queue — durable, transactional, multi-process safe. On
+[`@monlite/core`](./postgres) it's `createQueue(db)` (synchronous, SQLite); on
+[`@monlite/postgres`](./postgres) it's `createPgQueue(db)` (async, claiming with
+`FOR UPDATE SKIP LOCKED` so workers across processes never contend).
 
 ```bash
 npm install @monlite/queue

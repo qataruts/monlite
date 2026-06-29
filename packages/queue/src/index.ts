@@ -302,6 +302,12 @@ export class Queue extends EventEmitter {
 
   constructor(db: Monlite, opts: QueueOptions = {}) {
     super();
+    if (db.asyncDriver)
+      throw new Error(
+        "@monlite/queue: the Postgres engine is asynchronous — use `new PgQueue(db)` " +
+          "or `createPgQueue(db)` (its methods return Promises). `Queue`/`createQueue()` " +
+          "are the synchronous SQLite engine.",
+      );
     this.driver = db.driver;
     this.heartbeat = db.heartbeat;
     this.maxAttempts = opts.maxAttempts ?? 1;
@@ -522,7 +528,411 @@ export class Queue extends EventEmitter {
   }
 }
 
-/** Create a job queue over a monlite database. */
+// ── Postgres engine: async queue over FOR UPDATE SKIP LOCKED ──────────────────
+//
+// The Queue above is synchronous (one connection, RETURNING claims). On the Postgres
+// engine the same model runs over a networked, multi-writer table: the claim is
+// `FOR UPDATE SKIP LOCKED`, so N workers across N processes each grab a different job
+// with zero contention. The database methods are async — `await` them.
+const pgEnsured = new WeakMap<object, Promise<void>>();
+
+/** Postgres returns BIGINT/BIGSERIAL columns as strings — coerce the numerics. */
+function deserializePg(row: any): Job {
+  return {
+    id: Number(row.id),
+    queue: row.queue,
+    jobId: row.job_id ?? undefined,
+    status: row.status,
+    priority: Number(row.priority),
+    payload: JSON.parse(row.payload),
+    attempts: Number(row.attempts),
+    maxAttempts: Number(row.max_attempts),
+    runAt: Number(row.run_at),
+    result: row.result != null ? JSON.parse(row.result) : undefined,
+    error: row.error ?? undefined,
+    createdAt: Number(row.created_at),
+    updatedAt: Number(row.updated_at),
+  };
+}
+
+class PgWorkerImpl implements Worker {
+  private running = true;
+  private inFlight = 0;
+  private kicking = false;
+  private task: HeartbeatTask | undefined;
+  private drainResolve: (() => void) | undefined;
+  private drainPromise: Promise<void> | undefined;
+  private readonly concurrency: number;
+  private readonly pollInterval: number;
+  private readonly maxPollInterval: number;
+  private idleInterval: number;
+  private readonly visibilityTimeout: number;
+  private reaper: ReturnType<typeof setInterval> | undefined;
+  private readonly rateLimit?: { count: number; windowMs: number };
+  private starts: number[] = [];
+
+  constructor(
+    private readonly q: PgQueue,
+    readonly name: string,
+    private readonly handler: Handler,
+    opts: ProcessOptions,
+  ) {
+    this.concurrency = Math.max(1, opts.concurrency ?? 1);
+    this.pollInterval = opts.pollInterval ?? 500;
+    this.rateLimit =
+      opts.rateLimit && opts.rateLimit.count > 0 && opts.rateLimit.windowMs > 0
+        ? opts.rateLimit
+        : undefined;
+    this.maxPollInterval = Math.max(
+      this.pollInterval,
+      opts.maxPollInterval ?? this.pollInterval,
+    );
+    this.idleInterval = this.pollInterval;
+    this.visibilityTimeout = Math.max(0, opts.visibilityTimeout ?? 0);
+    if (this.visibilityTimeout > 0) {
+      this.reaper = setInterval(
+        () => {
+          if (this.running) void this.q.recover(this.visibilityTimeout, this.name);
+        },
+        Math.max(1000, Math.floor(this.visibilityTimeout / 2)),
+      );
+      this.reaper.unref?.();
+    }
+    void this.kick();
+  }
+
+  /** Fill spare capacity with claimable jobs; otherwise schedule a poll. Re-entrant-safe. */
+  async kick(): Promise<void> {
+    if (!this.running || this.kicking) return;
+    this.kicking = true;
+    let claimedAny = false;
+    let rateWaitMs = 0;
+    try {
+      while (this.running && this.inFlight < this.concurrency) {
+        if (this.rateLimit) {
+          const t = Date.now();
+          const cutoff = t - this.rateLimit.windowMs;
+          if (this.starts.length)
+            this.starts = this.starts.filter((s) => s > cutoff);
+          if (this.starts.length >= this.rateLimit.count) {
+            rateWaitMs = this.starts[0] + this.rateLimit.windowMs - t;
+            break;
+          }
+        }
+        const job = await this.q.claimInternal(this.name);
+        if (!job) break;
+        if (this.rateLimit) this.starts.push(Date.now());
+        claimedAny = true;
+        this.inFlight++;
+        this.runJob(job);
+      }
+    } finally {
+      this.kicking = false;
+    }
+    this.idleInterval = claimedAny
+      ? this.pollInterval
+      : Math.min(this.idleInterval * 2, this.maxPollInterval);
+    const nextInterval =
+      rateWaitMs > 0 ? Math.max(1, rateWaitMs) : this.idleInterval;
+    if (this.running && (rateWaitMs > 0 || this.inFlight < this.concurrency)) {
+      if (!this.task) {
+        this.task = this.q.heartbeat.every(nextInterval, () => void this.kick());
+      } else {
+        this.task.setInterval(nextInterval);
+      }
+    }
+  }
+
+  private runJob(job: Job): void {
+    let hb: ReturnType<typeof setInterval> | undefined;
+    if (this.visibilityTimeout > 0) {
+      hb = setInterval(
+        () => void this.q.heartbeatInternal(job.id, job.attempts),
+        Math.max(1000, Math.floor(this.visibilityTimeout / 2)),
+      );
+      hb.unref?.();
+    }
+    Promise.resolve()
+      .then(() => this.handler(job))
+      .then(
+        async (result) => {
+          if (await this.q.completeInternal(job, result))
+            this.q.emit("completed", job, result);
+        },
+        async (err) => {
+          if (await this.q.failInternal(job, err))
+            this.q.emit("failed", job, err);
+        },
+      )
+      .finally(() => {
+        if (hb) clearInterval(hb);
+        this.inFlight--;
+        if (this.running) void this.kick();
+        else this.checkDrained();
+      });
+  }
+
+  private checkDrained(): void {
+    if (!this.running && this.inFlight === 0 && this.drainResolve) {
+      this.drainResolve();
+      this.drainResolve = undefined;
+      this.drainPromise = undefined;
+    }
+  }
+
+  async stop(): Promise<void> {
+    this.running = false;
+    if (this.task) {
+      this.task.cancel();
+      this.task = undefined;
+    }
+    if (this.reaper) clearInterval(this.reaper);
+    if (this.inFlight === 0) return;
+    if (!this.drainPromise) {
+      this.drainPromise = new Promise<void>((resolve) => {
+        this.drainResolve = resolve;
+      });
+    }
+    return this.drainPromise;
+  }
+}
+
+/**
+ * A durable, multi-process job queue on the **Postgres** engine — the same model as
+ * {@link Queue}, claiming the next due job with `FOR UPDATE SKIP LOCKED` (so workers across
+ * processes never contend). Database methods are async — `await` them. Emits `"completed"`
+ * (job, result) and `"failed"` (job, error).
+ */
+export class PgQueue extends EventEmitter {
+  private readonly driver: NonNullable<Monlite["asyncDriver"]>;
+  /** @internal Shared heartbeat — workers register their idle poll here. */
+  readonly heartbeat: Monlite["heartbeat"];
+  private readonly ready: Promise<void>;
+  private readonly maxAttempts: number;
+  private readonly backoff: (attempt: number) => number;
+  private readonly removeOnComplete: boolean;
+  readonly workerId: string;
+  private readonly workers: PgWorkerImpl[] = [];
+
+  constructor(db: Monlite, opts: QueueOptions = {}) {
+    super();
+    if (!db.asyncDriver)
+      throw new Error(
+        "@monlite/queue: PgQueue requires the Postgres engine — use `new Queue(db)` " +
+          "/ `createQueue(db)` on the SQLite engine.",
+      );
+    this.driver = db.asyncDriver;
+    this.heartbeat = db.heartbeat;
+    this.maxAttempts = opts.maxAttempts ?? 1;
+    this.backoff = opts.backoff ?? defaultBackoff;
+    this.removeOnComplete = opts.removeOnComplete ?? false;
+    this.workerId =
+      opts.workerId ??
+      `w-${typeof process !== "undefined" && process.pid ? process.pid : Math.floor(Math.random() * 1e6)}`;
+    if (!pgEnsured.has(db)) {
+      const drv = this.driver;
+      pgEnsured.set(
+        db,
+        (async () => {
+          await drv.exec(
+            `CREATE TABLE IF NOT EXISTS _jobs (
+              id BIGSERIAL PRIMARY KEY,
+              queue TEXT NOT NULL, status TEXT NOT NULL, priority INTEGER NOT NULL,
+              run_at BIGINT NOT NULL, attempts INTEGER NOT NULL, max_attempts INTEGER NOT NULL,
+              payload TEXT NOT NULL, result TEXT, error TEXT, locked_by TEXT, job_id TEXT,
+              created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL)`,
+          );
+          await drv.exec(
+            `CREATE INDEX IF NOT EXISTS _jobs_claim ON _jobs (queue, status, priority, run_at)`,
+          );
+          await drv.exec(
+            `CREATE INDEX IF NOT EXISTS _jobs_jobid ON _jobs (job_id)`,
+          );
+        })(),
+      );
+    }
+    this.ready = pgEnsured.get(db)!;
+  }
+
+  /** Enqueue a job. Pass `opts.jobId` to dedupe (see {@link Queue.add}). */
+  async add<T = any>(
+    name: string,
+    payload: T,
+    opts: AddOptions = {},
+  ): Promise<Job<T>> {
+    await this.ready;
+    const t = now();
+    if (opts.jobId) {
+      const existing = (
+        await this.driver.query(
+          `SELECT * FROM _jobs WHERE job_id = ? AND queue = ? AND status IN ('pending','active') LIMIT 1`,
+          [opts.jobId, name],
+        )
+      ).rows[0] as Row | undefined;
+      if (existing) return deserializePg(existing) as Job<T>;
+    }
+    const runAt = opts.runAt ?? (opts.delay ? t + opts.delay : t);
+    const row = (
+      await this.driver.query(
+        `INSERT INTO _jobs (queue, status, priority, run_at, attempts, max_attempts, payload, job_id, created_at, updated_at)
+         VALUES (?, 'pending', ?, ?, 0, ?, ?, ?, ?, ?) RETURNING *`,
+        [
+          name,
+          opts.priority ?? 0,
+          runAt,
+          opts.maxAttempts ?? this.maxAttempts,
+          JSON.stringify(payload ?? null),
+          opts.jobId ?? null,
+          t,
+          t,
+        ],
+      )
+    ).rows[0] as Row;
+    const job = deserializePg(row) as Job<T>;
+    for (const w of this.workers) if (w.name === name) void w.kick();
+    return job;
+  }
+
+  /** Register a worker for a queue. Returns a handle with `stop()`. */
+  process<T = any, R = any>(
+    name: string,
+    handler: Handler<T, R>,
+    opts: ProcessOptions = {},
+  ): Worker {
+    const w = new PgWorkerImpl(this, name, handler as Handler, opts);
+    this.workers.push(w);
+    return w;
+  }
+
+  async getJob<T = any>(id: number): Promise<Job<T> | undefined> {
+    await this.ready;
+    const row = (
+      await this.driver.query(`SELECT * FROM _jobs WHERE id = ?`, [id])
+    ).rows[0] as Row | undefined;
+    return row ? (deserializePg(row) as Job<T>) : undefined;
+  }
+
+  /** Count jobs by status (optionally for one queue). */
+  async counts(name?: string): Promise<Record<JobStatus, number>> {
+    await this.ready;
+    const rows = (
+      await this.driver.query(
+        name
+          ? `SELECT status, COUNT(*) AS n FROM _jobs WHERE queue = ? GROUP BY status`
+          : `SELECT status, COUNT(*) AS n FROM _jobs GROUP BY status`,
+        name ? [name] : [],
+      )
+    ).rows as Array<{ status: JobStatus; n: any }>;
+    const out: Record<JobStatus, number> = {
+      pending: 0,
+      active: 0,
+      done: 0,
+      failed: 0,
+    };
+    for (const r of rows) out[r.status] = Number(r.n);
+    return out;
+  }
+
+  /** Reset jobs stuck in `active` past `olderThanMs` back to `pending`. Returns the count. */
+  async recover(olderThanMs = 60_000, name?: string): Promise<number> {
+    await this.ready;
+    const filter = name ? " AND queue = ?" : "";
+    const params: any[] = name
+      ? [now(), now() - olderThanMs, name]
+      : [now(), now() - olderThanMs];
+    return (
+      await this.driver.query(
+        `UPDATE _jobs SET status='pending', locked_by=NULL, updated_at=? WHERE status='active' AND updated_at < ?${filter}`,
+        params,
+      )
+    ).changes;
+  }
+
+  /** @internal Extend a running job's visibility timeout (worker heartbeat). */
+  async heartbeatInternal(id: number, attempts: number): Promise<void> {
+    await this.driver.query(
+      `UPDATE _jobs SET updated_at=? WHERE id=? AND status='active' AND attempts=?`,
+      [now(), id, attempts],
+    );
+  }
+
+  /** Stop all workers and wait for in-flight jobs to finish. */
+  async close(): Promise<void> {
+    await Promise.all(this.workers.map((w) => w.stop()));
+  }
+
+  /** @internal Atomically claim the next due job (FOR UPDATE SKIP LOCKED), counting the attempt. */
+  async claimInternal(name: string): Promise<Job | null> {
+    await this.ready;
+    const t = now();
+    const row = (
+      await this.driver.query(
+        `UPDATE _jobs SET status='active', attempts=attempts+1, locked_by=?, updated_at=?
+         WHERE id = (
+           SELECT id FROM _jobs
+           WHERE queue=? AND status='pending' AND run_at<=?
+           ORDER BY priority DESC, id ASC
+           FOR UPDATE SKIP LOCKED LIMIT 1
+         )
+         RETURNING *`,
+        [this.workerId, t, name, t],
+      )
+    ).rows[0] as Row | undefined;
+    return row ? deserializePg(row) : null;
+  }
+
+  /** @internal Mark a job done; false if fenced out by a reclaim (see {@link Queue.completeInternal}). */
+  async completeInternal(job: Job, result: unknown): Promise<boolean> {
+    if (this.removeOnComplete) {
+      return (
+        (
+          await this.driver.query(
+            `DELETE FROM _jobs WHERE id=? AND attempts=?`,
+            [job.id, job.attempts],
+          )
+        ).changes > 0
+      );
+    }
+    return (
+      (
+        await this.driver.query(
+          `UPDATE _jobs SET status='done', result=?, error=NULL, updated_at=? WHERE id=? AND attempts=?`,
+          [safeStringify(result), now(), job.id, job.attempts],
+        )
+      ).changes > 0
+    );
+  }
+
+  /** @internal Record a failure (retry or dead-letter); false if fenced out. */
+  async failInternal(job: Job, err: unknown): Promise<boolean> {
+    const message = err instanceof Error ? err.message : String(err);
+    if (job.attempts < job.maxAttempts) {
+      return (
+        (
+          await this.driver.query(
+            `UPDATE _jobs SET status='pending', run_at=?, error=?, locked_by=NULL, updated_at=? WHERE id=? AND attempts=?`,
+            [now() + this.backoff(job.attempts), message, now(), job.id, job.attempts],
+          )
+        ).changes > 0
+      );
+    }
+    return (
+      (
+        await this.driver.query(
+          `UPDATE _jobs SET status='failed', error=?, updated_at=? WHERE id=? AND attempts=?`,
+          [message, now(), job.id, job.attempts],
+        )
+      ).changes > 0
+    );
+  }
+}
+
+/** Create a job queue over a monlite database (SQLite engine — synchronous API). */
 export function createQueue(db: Monlite, opts?: QueueOptions): Queue {
   return new Queue(db, opts);
+}
+
+/** Create a job queue over a monlite database on the Postgres engine (async API). */
+export function createPgQueue(db: Monlite, opts?: QueueOptions): PgQueue {
+  return new PgQueue(db, opts);
 }
