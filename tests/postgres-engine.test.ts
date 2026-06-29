@@ -70,6 +70,7 @@ try {
       client = new pgMod.Client({ connectionString: URL });
       await client.connect();
       await client.query(`DROP TABLE IF EXISTS users CASCADE`);
+      await client.query(`DROP TABLE IF EXISTS posts CASCADE`);
       await client.query(
         `CREATE TABLE "users" (_id text PRIMARY KEY, data jsonb NOT NULL, created_at bigint NOT NULL, updated_at bigint NOT NULL)`,
       );
@@ -103,6 +104,32 @@ try {
         await users.count({ where: { OR: [{ role: "admin" }, { age: { gte: 40 } }] } }),
       ).toBe(2);
       expect(await users.count({ where: { name: { startsWith: "A" } } })).toBe(1);
+    });
+
+    it("create() + findMany() + findFirst() run through the real Collection on Postgres", async () => {
+      const posts = db.collection("posts");
+      // createPg: writes a real row via the API (table auto-created on Postgres)
+      await posts.create({ data: { _id: "p1", title: "SQLite", views: 10, tags: ["db"] } });
+      await posts.create({ data: { _id: "p2", title: "Postgres", views: 30, tags: ["db", "sql"] } });
+      await posts.create({ data: { _id: "p3", title: "Redis", views: 20 } });
+      expect(await posts.count()).toBe(3);
+
+      // findMany: where + orderBy (numeric, via jsonb) + row→doc mapping
+      const top = await posts.findMany({ where: { views: { gte: 20 } }, orderBy: { views: "desc" } });
+      expect(top.map((d: any) => d._id)).toEqual(["p2", "p3"]);
+      expect(top[0].title).toBe("Postgres");
+      expect(typeof top[0].created_at).toBe("number");
+
+      // array op + take + skip
+      expect((await posts.findMany({ where: { tags: { has: "sql" } } })).map((d: any) => d._id)).toEqual(["p2"]);
+      expect((await posts.findMany({ orderBy: { views: "asc" }, take: 2 })).map((d: any) => d._id)).toEqual(["p1", "p3"]);
+      expect((await posts.findMany({ orderBy: { views: "asc" }, skip: 1 })).map((d: any) => d._id)).toEqual(["p3", "p2"]);
+
+      // findFirst (delegates to findMany) + select projection
+      expect((await posts.findFirst({ where: { title: "Redis" } }))?._id).toBe("p3");
+      // project() keeps only the selected keys (no implicit _id) — same as SQLite
+      const projected = await posts.findMany({ where: { _id: "p1" }, select: { title: true } });
+      expect(projected[0]).toEqual({ title: "SQLite" });
     });
   },
 );

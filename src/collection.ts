@@ -706,6 +706,7 @@ export class Collection<T = Doc> {
   /* ----------------------------- create ----------------------------- */
 
   async create(args: CreateArgs<T>): Promise<WithId<T>> {
+    if (this.mon.asyncDriver) return this.createPg(args);
     this.ensureTable();
     this.mon.assertWriteAllowed();
     const row = this.buildInsert(args.data);
@@ -795,6 +796,8 @@ export class Collection<T = Doc> {
     args: Omit<FindManyArgs<T>, "select"> & { select?: S } = {},
   ): Promise<Projected<T, S>[]> {
     const a = args as FindManyArgs<T>;
+    if (this.mon.asyncDriver)
+      return this.findManyPg(a) as unknown as Projected<T, S>[];
     // maxRows: cap unbounded reads. Probe one past the cap; throw if exceeded so
     // a missing `take` can't materialize an unbounded result set.
     const cap = this.mon.maxRows;
@@ -1002,6 +1005,93 @@ export class Collection<T = Doc> {
       params,
     );
     return r.rows[0].n;
+  }
+
+  /** Map a Postgres row to a document. Unlike SQLite, `data` (jsonb) is already parsed. */
+  private rowToDocPg(row: any): WithId<T> {
+    const doc = (row.data ?? {}) as Record<string, any>;
+    doc._id = row._id;
+    doc.created_at = Number(row.created_at);
+    doc.updated_at = Number(row.updated_at);
+    return doc as WithId<T>;
+  }
+
+  /** ORDER BY for Postgres: jsonb projection sorts numbers numerically (closer to SQLite). */
+  private pgOrderBy(orderBy: FindManyArgs<T>["orderBy"]): string {
+    if (!orderBy) return "";
+    const specs = Array.isArray(orderBy) ? orderBy : [orderBy];
+    const terms: string[] = [];
+    for (const spec of specs) {
+      for (const [field, dir] of Object.entries(spec as Record<string, any>)) {
+        const d = String(dir).toLowerCase() === "desc" ? "DESC" : "ASC";
+        const sys =
+          field === "_id" ||
+          field === "created_at" ||
+          field === "updated_at" ||
+          this.columns.has(field);
+        let col: string;
+        if (sys) col = `"${field}"`;
+        else {
+          const segs = field.split(".").map((s) => s.replace(/'/g, "''"));
+          col =
+            segs.length === 1
+              ? `data->'${segs[0]}'`
+              : `data#>'{${segs.join(",")}}'`;
+        }
+        terms.push(`${col} ${d}`);
+      }
+    }
+    return terms.length ? "ORDER BY " + terms.join(", ") : "";
+  }
+
+  /** Postgres path for {@link findMany}: shares buildWhere; jsonb rows; no joins yet. */
+  private async findManyPg(a: FindManyArgs<T>): Promise<WithId<T>[]> {
+    if (a.lookup)
+      throw new MonliteQueryError(
+        "lookup / joins are not yet supported on the postgres engine",
+      );
+    await this.ensureTablePg();
+    const cap = this.mon.maxRows;
+    const take = cap && a.take == null ? cap + 1 : a.take;
+    const params: any[] = [];
+    const where = buildWhere(a.where, {
+      params,
+      columns: this.columns,
+      dialect: "postgres",
+    });
+    let sql = `SELECT _id, data, created_at, updated_at FROM "${this.name}" WHERE ${where}`;
+    const order = this.pgOrderBy(a.orderBy);
+    if (order) sql += " " + order;
+    if (take != null) {
+      sql += " LIMIT ?";
+      params.push(take);
+    }
+    if (a.skip != null) {
+      sql += " OFFSET ?";
+      params.push(a.skip);
+    }
+    const r = await this.mon.asyncDriver!.query(sql, params);
+    if (cap && a.take == null && r.rows.length > cap) {
+      throw new MonliteQueryError(
+        `findMany on "${this.name}" would return more than maxRows (${cap}) — add a take/limit or a tighter where`,
+      );
+    }
+    return r.rows.map(
+      (row: any) => project(this.rowToDocPg(row), a.select) as WithId<T>,
+    );
+  }
+
+  /** Postgres path for {@link create}: reuses buildInsert + insertSql (a JSON string → jsonb). */
+  private async createPg(args: CreateArgs<T>): Promise<WithId<T>> {
+    this.mon.assertWriteAllowed();
+    if (this.mode !== "document")
+      throw new MonliteQueryError(
+        "structured collections are not yet supported on the postgres engine",
+      );
+    await this.ensureTablePg();
+    const row = this.buildInsert(args.data);
+    await this.mon.asyncDriver!.query(this.insertSql(), row.values);
+    return row.returned;
   }
 
   /**
