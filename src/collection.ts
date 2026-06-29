@@ -959,7 +959,7 @@ export class Collection<T = Doc> {
 
   /** Show SQLite's query plan for a `findMany`, and whether it uses an index. */
   async explain(args: FindManyArgs<T> = {}): Promise<ExplainResult> {
-    if (this.mon.asyncDriver) return this.pgUnsupported("explain()");
+    if (this.mon.asyncDriver) return this.explainPg(args);
     this.ensureTable();
     const { sql, params } = this.buildFindSql(args);
     const plan = this.db
@@ -1051,13 +1051,12 @@ export class Collection<T = Doc> {
     return terms.length ? "ORDER BY " + terms.join(", ") : "";
   }
 
-  /** Postgres path for {@link findMany}: shares buildWhere; jsonb rows; no joins yet. */
-  private async findManyPg(a: FindManyArgs<T>): Promise<WithId<T>[]> {
+  /** Build the Postgres SELECT for {@link findMany} (shared with {@link explain}). */
+  private buildFindSqlPg(a: FindManyArgs<T>): { sql: string; params: any[] } {
     if (a.lookup)
       throw new MonliteQueryError(
         "lookup / joins are not yet supported on the postgres engine",
       );
-    await this.ensureTablePg();
     const cap = this.mon.maxRows;
     const take = cap && a.take == null ? cap + 1 : a.take;
     const params: any[] = [];
@@ -1077,6 +1076,14 @@ export class Collection<T = Doc> {
       sql += " OFFSET ?";
       params.push(a.skip);
     }
+    return { sql, params };
+  }
+
+  /** Postgres path for {@link findMany}: shares buildWhere; jsonb rows; no joins yet. */
+  private async findManyPg(a: FindManyArgs<T>): Promise<WithId<T>[]> {
+    await this.ensureTablePg();
+    const cap = this.mon.maxRows;
+    const { sql, params } = this.buildFindSqlPg(a);
     const r = await this.mon.asyncDriver!.query(sql, params);
     if (cap && a.take == null && r.rows.length > cap) {
       throw new MonliteQueryError(
@@ -1097,6 +1104,44 @@ export class Collection<T = Doc> {
     const row = this.buildInsert(args.data);
     await this.mon.asyncDriver!.query(this.insertSql(), row.values);
     return row.returned;
+  }
+
+  /** Flatten a Postgres EXPLAIN (FORMAT JSON) plan tree into {@link ExplainResult} rows. */
+  private flattenPgPlan(
+    node: any,
+    counter: { n: number },
+    parent: number,
+    out: Array<{ id: number; parent: number; detail: string }>,
+  ): void {
+    const id = counter.n++;
+    const idx = node["Index Name"] ? ` using ${node["Index Name"]}` : "";
+    const rel = node["Relation Name"] ? ` on ${node["Relation Name"]}` : "";
+    const cost =
+      node["Total Cost"] != null ? ` (cost=${node["Total Cost"]})` : "";
+    out.push({
+      id,
+      parent,
+      detail: `${node["Node Type"] ?? "?"}${idx}${rel}${cost}`,
+    });
+    for (const child of node["Plans"] ?? [])
+      this.flattenPgPlan(child, counter, id, out);
+  }
+
+  private async explainPg(args: FindManyArgs<T>): Promise<ExplainResult> {
+    await this.ensureTablePg();
+    const { sql, params } = this.buildFindSqlPg(args);
+    const rows = (
+      await this.mon.asyncDriver!.query(`EXPLAIN (FORMAT JSON) ${sql}`, params)
+    ).rows as Array<Record<string, any>>;
+    let qp = rows[0]?.["QUERY PLAN"];
+    if (typeof qp === "string") qp = JSON.parse(qp);
+    const root = Array.isArray(qp) ? qp[0]?.Plan : qp?.Plan;
+    const plan: Array<{ id: number; parent: number; detail: string }> = [];
+    if (root) this.flattenPgPlan(root, { n: 0 }, 0, plan);
+    const usesIndex = plan.some((r) =>
+      /Index (Only )?Scan|Bitmap Index/i.test(r.detail),
+    );
+    return { sql, usesIndex, plan };
   }
 
   /** A feature not yet wired for the Postgres engine — fail loudly, never silently. */

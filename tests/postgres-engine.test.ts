@@ -261,8 +261,15 @@ try {
       expect(await ses.findById("fresh")).not.toBeNull();
     });
 
-    it("only explain() remains unsupported on Postgres", async () => {
-      await expect(db.collection("crud").explain({})).rejects.toThrow(/postgres engine/);
+    it("explain() returns a Postgres query plan", async () => {
+      const ex = await db.collection("users").explain({
+        where: { age: { gte: 18 } },
+        orderBy: { age: "desc" },
+      });
+      expect(ex.sql).toContain('FROM "users"');
+      expect(ex.plan.length).toBeGreaterThan(0);
+      expect(ex.plan.some((p: any) => /Scan/.test(p.detail))).toBe(true);
+      expect(typeof ex.usesIndex).toBe("boolean");
     });
   },
 );
