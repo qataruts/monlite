@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
-  MonliteError,
   MonliteQueryError,
   MonliteUniqueConstraintError,
   type Monlite,
@@ -22,6 +21,7 @@ describe("security: SQL injection", () => {
     // Pre-fix this alias-injected a sub-select. Generated aliases + JSON-string
     // path escaping now make it a harmless JSON-path key: no breakout (no injected
     // y/z columns), just one group keyed by the literal (non-matching) field name.
+    const evil = 'x" AS y, (SELECT 1) AS z --';
     const res = await c.groupBy({ by: [evil], _count: true });
     expect(res.length).toBe(1);
     expect(Object.keys(res[0])).not.toContain("y");
