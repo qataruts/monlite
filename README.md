@@ -23,11 +23,11 @@ of them into a single `.db` file:
 | You were running | monlite gives you |
 |---|---|
 | MongoDB / Mongoose | `@monlite/core` — document collections, typed queries, reactive `watch()` |
-| Redis (cache) | `@monlite/kv` — synchronous cache, atomic locks, TTLs |
+| Redis (cache) | `@monlite/kv` — synchronous cache, atomic locks, TTLs, pub/sub, sorted sets |
 | BullMQ + Redis | `@monlite/queue` — durable job queue, retries, backoff, dedupe |
 | Qdrant / Pinecone | `@monlite/vector` — vector search, `findSimilar()`, hybrid RAG |
 | Elasticsearch / Typesense | `@monlite/fts` — full-text search, FTS5, `search()` |
-| Cron server | `@monlite/cron` — persisted scheduled jobs |
+| Cron server | `@monlite/cron` — persisted scheduled jobs (time zones, jitter) |
 | MongoDB Atlas sync | `@monlite/sync` — local-first replication to MongoDB / PostgreSQL / MySQL |
 | Firebase / Pusher (realtime) | `@monlite/realtime` — stream live queries & docs to clients over SSE |
 
@@ -236,14 +236,19 @@ npm install @monlite/core better-sqlite3
 Add packages as you need them:
 
 ```bash
-npm install @monlite/vector   # semantic search
-npm install @monlite/fts      # full-text search
-npm install @monlite/kv       # cache + locks
-npm install @monlite/queue    # job queue
-npm install @monlite/cron     # scheduler
-npm install @monlite/sync     # cloud sync (MongoDB / PostgreSQL / MySQL)
-npm install @monlite/wasm     # browser support
+npm install @monlite/vector    # semantic search
+npm install @monlite/fts       # full-text search
+npm install @monlite/kv        # cache, locks, pub/sub, sorted sets
+npm install @monlite/queue     # durable job queue
+npm install @monlite/cron      # scheduler (time zones, jitter)
+npm install @monlite/sync      # cloud sync (MongoDB / PostgreSQL / MySQL)
+npm install @monlite/realtime  # stream live queries to clients over SSE
+npm install @monlite/wasm      # browser / SQLite-WASM
+npm install @monlite/electron  # Electron: DB in main, shared to renderers over IPC
 ```
+
+Plus a zero-install inspector: **`npx @monlite/studio app.db`** opens a local web UI to browse
+collections, view documents, and run queries.
 
 ---
 
@@ -278,10 +283,10 @@ Runnable demos are in [`examples/`](examples/).
 
 ## Status
 
-Production-ready and published. Current versions: `@monlite/core` **2.8.0**, `@monlite/sync`
-**1.3.4**, `@monlite/vector` **0.5.6**, `@monlite/fts` **0.5.5**, `@monlite/kv` **0.4.0**,
-`@monlite/queue` **0.5.0**, `@monlite/cron` 0.2.0, `@monlite/realtime` 0.1.0,
-`@monlite/wasm` 0.2.2. The 2.x API is frozen.
+Production-ready and published. Current versions: `@monlite/core` **2.8.1**, `@monlite/sync`
+**1.3.4**, `@monlite/realtime` **0.2.0**, `@monlite/vector` **0.5.6**, `@monlite/fts` **0.5.5**,
+`@monlite/kv` **0.4.1**, `@monlite/queue` **0.5.0**, `@monlite/cron` **0.2.1**, `@monlite/wasm`
+**0.2.2**, `@monlite/electron` **0.1.1**, `@monlite/studio` **0.1.1**. The 2.x API is frozen.
 
 Vector and full-text indexing are **linear at scale** — verified ingesting 100K documents
 in ~0.8s and 50K vectors in ~8s (no O(n²) re-index), so it comfortably backs 10K–100K-document

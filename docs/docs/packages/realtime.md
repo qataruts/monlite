@@ -3,7 +3,7 @@ id: realtime
 title: "@monlite/realtime"
 ---
 
-# @monlite/realtime
+# @monlite/realtime — networked live queries
 
 Networked realtime — stream live queries and documents to remote clients (browser, mobile, other
 services) over **Server-Sent Events**, backed by the [change feed](../core/realtime). Your database

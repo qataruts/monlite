@@ -32,14 +32,16 @@ install only what you need.
 | Package | Replaces | What it gives you |
 |---|---|---|
 | [`@monlite/core`](/core/documents) | MongoDB (documents) | Document + structured collections, one query API, aggregation, transactions, reactive `watch()` |
+| [`@monlite/sync`](/packages/sync) | Cloud sync | Local-first replication to MongoDB / PostgreSQL / MySQL |
+| [`@monlite/realtime`](/packages/realtime) | Firebase / Pusher | Stream live queries & documents to remote clients over SSE |
 | [`@monlite/vector`](/packages/vector) | Qdrant / Pinecone | Vector / semantic search (sqlite-vec) — plugin + `createVectorStore(db)` |
 | [`@monlite/fts`](/packages/fts) | Search engines | Full-text search (SQLite FTS5) — plugin + `createSearchIndex(db)` |
-| [`@monlite/kv`](/packages/kv) | Redis (cache) | Synchronous cache, atomic locks, TTLs |
+| [`@monlite/kv`](/packages/kv) | Redis | Synchronous cache, atomic locks, TTLs, pub/sub, sorted sets |
 | [`@monlite/queue`](/packages/queue) | BullMQ / Redis | Durable job queue — retries, backoff, delays, priorities, dedupe |
-| [`@monlite/cron`](/packages/cron) | Cron servers | Persisted scheduled jobs (5-field syntax) |
-| [`@monlite/sync`](/packages/sync) | Cloud sync | Local-first replication to MongoDB / PostgreSQL / MySQL |
+| [`@monlite/cron`](/packages/cron) | Cron servers | Persisted scheduled jobs — 5-field syntax, time zones, jitter |
 | [`@monlite/wasm`](/packages/wasm) | — | Run monlite in the **browser** on SQLite-WASM |
-| [`@monlite/electron`](https://github.com/qataruts/monlite/tree/main/packages/electron) | — | Share one database across Electron windows over IPC |
+| [`@monlite/electron`](/packages/electron) | — | Share one database across Electron windows over IPC |
+| [`@monlite/studio`](/packages/studio) | — | Local web inspector — `npx @monlite/studio app.db` |
 
 ## Why monlite
 

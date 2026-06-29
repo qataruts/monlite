@@ -90,14 +90,18 @@ schema-free.
 The core handles documents. Install packages for the rest:
 
 ```bash
-npm install @monlite/vector   # vector / semantic search
-npm install @monlite/fts      # full-text search
-npm install @monlite/kv       # cache + atomic locks
-npm install @monlite/queue    # durable job queue
-npm install @monlite/cron     # scheduled jobs
-npm install @monlite/sync     # local-first cloud sync
-npm install @monlite/wasm     # browser / SQLite-WASM
+npm install @monlite/vector    # vector / semantic search
+npm install @monlite/fts       # full-text search
+npm install @monlite/kv        # cache, locks, pub/sub, sorted sets
+npm install @monlite/queue     # durable job queue
+npm install @monlite/cron      # scheduled jobs (time zones, jitter)
+npm install @monlite/sync      # local-first cloud sync
+npm install @monlite/realtime  # stream live queries to clients over SSE
+npm install @monlite/wasm      # browser / SQLite-WASM
+npm install @monlite/electron  # Electron: DB in main, shared to renderers over IPC
 ```
+
+Plus `npx @monlite/studio app.db` — a zero-install web inspector for any monlite database.
 
 ## Where next
 

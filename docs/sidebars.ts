@@ -34,6 +34,8 @@ const sidebars: SidebarsConfig = {
         "packages/queue",
         "packages/cron",
         "packages/wasm",
+        "packages/electron",
+        "packages/studio",
       ],
     },
     {
