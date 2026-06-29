@@ -33,7 +33,10 @@ function parseField(field: string, min: number, max: number): Set<number> {
       lo = parseInt(a, 10);
       hi = parseInt(b, 10);
     } else {
-      lo = hi = parseInt(rangePart, 10);
+      // `N/step` means "from N up to max, every step" (e.g. `5/15` → 5,20,35,50);
+      // a bare `N` (no step) means exactly {N}.
+      lo = parseInt(rangePart, 10);
+      hi = stepPart === undefined ? lo : max;
     }
     if (
       Number.isNaN(lo) ||
@@ -87,7 +90,10 @@ export function nextCronRun(
   const d = new Date(from.getTime());
   d.setSeconds(0, 0);
   d.setMinutes(d.getMinutes() + 1);
-  for (let i = 0; i < 366 * 24 * 60 + 60; i++) {
+  // Search up to ~5 years so a leap-day-only schedule (`* * 29 2 *`) still resolves
+  // across the 4-year gap instead of throwing. JS Date arithmetic below skips
+  // non-existent days (Feb 29 in common years) and handles DST transitions natively.
+  for (let i = 0; i < 5 * 366 * 24 * 60; i++) {
     if (
       c.minute.has(d.getMinutes()) &&
       c.hour.has(d.getHours()) &&
@@ -138,13 +144,19 @@ export class Cron extends EventEmitter {
   schedule(name: string, expr: string, handler: CronHandler): void {
     const c = parseCron(expr);
     const existing = this.driver
-      .prepare(`SELECT next_run FROM _schedules WHERE name = ?`)
-      .get(name) as { next_run: number } | undefined;
-    const next = existing ? existing.next_run : nextCronRun(c).getTime();
+      .prepare(`SELECT next_run, cron FROM _schedules WHERE name = ?`)
+      .get(name) as { next_run: number; cron: string } | undefined;
+    // Keep the stored next_run only when the expression is unchanged (so a restart
+    // doesn't reset timing); if the expr changed, recompute so the new schedule
+    // takes effect immediately instead of waiting out the old next_run.
+    const next =
+      existing && existing.cron === expr
+        ? existing.next_run
+        : nextCronRun(c).getTime();
     this.driver
       .prepare(
         `INSERT INTO _schedules (name, cron, next_run, last_run) VALUES (?, ?, ?, NULL)
-         ON CONFLICT(name) DO UPDATE SET cron = excluded.cron`,
+         ON CONFLICT(name) DO UPDATE SET cron = excluded.cron, next_run = excluded.next_run`,
       )
       .run(name, expr, next);
     this.handlers.set(name, { c, fn: handler });

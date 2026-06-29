@@ -1,5 +1,10 @@
 # @monlite/kv
 
+## 0.2.2 — correctness fix (bug hunt)
+
+- **`set(key, undefined)` stores JSON `null` and round-trips cleanly** instead of throwing a
+  raw `NOT NULL constraint failed` SQL error. Falsy values (`0`, `""`, `false`) are unaffected.
+
 ## 0.2.1 — cross-process atomicity
 
 - **`setNX` / `incr` run under an IMMEDIATE transaction**, so the check-and-set is

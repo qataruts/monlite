@@ -99,7 +99,9 @@ export function kv(db: Monlite, options: KVOptions = {}): KV {
     },
     set(key, value, opts) {
       const expires = opts?.ttl != null ? now() + opts.ttl : null;
-      setRaw(key, JSON.stringify(value), expires);
+      // `?? null` so `set(key, undefined)` stores JSON null (round-trips to null)
+      // instead of binding `undefined` and tripping the NOT NULL constraint.
+      setRaw(key, JSON.stringify(value ?? null), expires);
     },
     setNX(key, value, opts) {
       // IMMEDIATE: take the write lock up front so two processes racing the same
@@ -108,7 +110,9 @@ export function kv(db: Monlite, options: KVOptions = {}): KV {
         const row = getRow(key);
         if (fresh(row)) return false; // a live key already exists
         const expires = opts?.ttl != null ? now() + opts.ttl : null;
-        setRaw(key, JSON.stringify(value), expires);
+        // `?? null` so `set(key, undefined)` stores JSON null (round-trips to null)
+        // instead of binding `undefined` and tripping the NOT NULL constraint.
+        setRaw(key, JSON.stringify(value ?? null), expires);
         return true;
       }, true);
     },

@@ -96,3 +96,28 @@ describe("@monlite/cron scheduler", () => {
     await waitFor(() => enqueued.length === 1);
   });
 });
+
+describe("cron edge cases (swarm-found)", () => {
+  it("N/step expands from N to max (5/15 -> 5,20,35,50)", () => {
+    expect([...parseCron("5/15 * * * *").minute]).toEqual([5, 20, 35, 50]);
+    expect([...parseCron("5 * * * *").minute]).toEqual([5]); // bare N is exactly {N}
+  });
+  it("resolves a leap-day-only schedule across the 4-year gap", () => {
+    const next = nextCronRun("0 0 29 2 *", new Date("2025-03-01T00:00:00"));
+    expect(next.getMonth()).toBe(1); // February
+    expect(next.getDate()).toBe(29);
+    expect(next.getFullYear()).toBe(2028);
+  });
+  it("changing a schedule's expression recomputes next_run immediately", () => {
+    const cron = makeCron(open());
+    cron.schedule("j", "0 3 * * *", () => {});
+    const before = cron.next("j")!;
+    cron.schedule("j", "*/5 * * * *", () => {});
+    const after = cron.next("j")!;
+    expect(after).toBeLessThan(before);
+    expect(after - Date.now()).toBeLessThan(6 * 60 * 1000);
+    const stable = cron.next("j");
+    cron.schedule("j", "*/5 * * * *", () => {}); // same expr -> unchanged
+    expect(cron.next("j")).toBe(stable);
+  });
+});

@@ -96,3 +96,21 @@ describe("@monlite/kv", () => {
     expect(c.get("lock")).toBe("c");
   });
 });
+
+describe("kv edge cases (swarm-found)", () => {
+  it("set(key, undefined) stores null instead of throwing", () => {
+    const c = kv(open());
+    expect(() => c.set("k", undefined)).not.toThrow();
+    expect(c.get("k")).toBeNull();
+    expect(c.has("k")).toBe(true);
+  });
+  it("preserves falsy values (0, empty string, false)", () => {
+    const c = kv(open());
+    c.set("n", 0);
+    c.set("s", "");
+    c.set("b", false);
+    expect(c.get("n")).toBe(0);
+    expect(c.get("s")).toBe("");
+    expect(c.get("b")).toBe(false);
+  });
+});
