@@ -1,5 +1,7 @@
 /** Shared helpers for translating document paths and values into SQLite. */
 
+import { MonliteQueryError } from "../errors.js";
+
 /** System columns stored outside the JSON `data` blob. */
 export const RESERVED_FIELDS = new Set(["_id", "created_at", "updated_at"]);
 
@@ -81,13 +83,18 @@ export function bindable(value: any): number | bigint | string | Buffer | null {
   if (value === undefined || value === null) return null;
   if (typeof value === "boolean") return value ? 1 : 0;
   if (value instanceof Date) return value.toISOString();
-  if (
-    typeof value === "number" ||
-    typeof value === "string" ||
-    typeof value === "bigint"
-  ) {
+  if (typeof value === "string") {
+    // node:sqlite truncates a TEXT value at an embedded NUL byte (\u0000) while
+    // better-sqlite3 preserves it — reject it so data isn't silently lost across
+    // drivers. (JSON columns are stringified first, which escapes any NUL safely.)
+    if (value.includes("\u0000")) {
+      throw new MonliteQueryError(
+        "Cannot store a string containing a NUL byte (\\u0000) — it is unsupported by SQLite TEXT.",
+      );
+    }
     return value;
   }
+  if (typeof value === "number" || typeof value === "bigint") return value;
   if (isBuffer(value)) return value;
   // Arrays / nested objects: compare against SQLite's minified JSON text.
   return JSON.stringify(value);

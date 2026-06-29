@@ -464,6 +464,20 @@ export class Collection<T = Doc> {
           `{ type: "JSON" } to store structured values.`,
       );
     }
+    // Guard silent precision loss: a JS number above 2^53 can't be stored exactly
+    // (better-sqlite3 rounds it; node:sqlite then can't read it back). Require a
+    // BigInt (exact) or a TEXT column for large integer ids.
+    if (
+      this.columnDefs[field]?.type === "INTEGER" &&
+      typeof value === "number" &&
+      Number.isInteger(value) &&
+      !Number.isSafeInteger(value)
+    ) {
+      throw new MonliteQueryError(
+        `Column "${field}": ${value} exceeds the safe integer range (2^53). ` +
+          `Pass a BigInt for an exact value, or use a TEXT column for large ids.`,
+      );
+    }
     return bindable(value);
   }
 

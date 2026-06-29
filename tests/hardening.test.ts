@@ -122,3 +122,30 @@ describe("new query methods", () => {
     ).rejects.toThrow();
   });
 });
+
+describe("driver parity: large integers + NUL bytes (swarm-found)", () => {
+  it("rejects a number above 2^53 in an INTEGER column (silent precision loss)", async () => {
+    const c = db.collection("ints", { schema: { big: "INTEGER" } });
+    await expect(
+      c.create({ data: { big: Number.MAX_SAFE_INTEGER + 1 } }),
+    ).rejects.toBeInstanceOf(MonliteQueryError);
+    // a safe integer is fine, and a BigInt is the supported way to store large ids
+    await expect(
+      c.create({ data: { _id: "ok", big: 42 } }),
+    ).resolves.toBeTruthy();
+    const d = await c.create({ data: { _id: "b", big: 9007199254740993n } });
+    // reads back as a JS number on BOTH drivers (node:sqlite no longer throws)
+    expect(typeof (await c.findById(d._id))!.big).toBe("number");
+  });
+
+  it("rejects a NUL byte in a raw TEXT column (driver-divergent truncation)", async () => {
+    const c = db.collection("texts", { schema: { note: "TEXT" } });
+    await expect(
+      c.create({ data: { note: "a\u0000b" } }),
+    ).rejects.toBeInstanceOf(MonliteQueryError);
+    // ordinary strings are unaffected
+    await expect(
+      c.create({ data: { note: "hello world" } }),
+    ).resolves.toBeTruthy();
+  });
+});

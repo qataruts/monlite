@@ -1,5 +1,18 @@
 # @monlite/core
 
+## 2.6.14 — driver parity: large integers + NUL bytes
+
+Closes the two driver-parity edge cases from the bug hunt (better-sqlite3 vs node:sqlite):
+
+- **Integers above 2^53 behave consistently.** Writing a plain `number` beyond the safe integer
+  range (2^53) into an `INTEGER` column now throws a clear error instead of silently losing
+  precision (better-sqlite3) — pass a `BigInt` for exact large ids, or use a `TEXT` column.
+  node:sqlite now reads large integers back as a (lossy) JS number too, instead of throwing,
+  so both drivers return the same shape.
+- **NUL bytes in TEXT are rejected on write.** A string containing a `NUL` byte is refused
+  with a clear error rather than being silently truncated by node:sqlite (better-sqlite3 kept
+  it). Values stored in JSON/`data` columns are unaffected — `JSON.stringify` escapes NUL safely.
+
 ## 2.6.13 — sync enumeration + watch isolation (bug hunt, cont.)
 
 - **`$collections()` returns only real collections** (tables with an `_id` column), excluding

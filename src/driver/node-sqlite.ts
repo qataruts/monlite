@@ -5,6 +5,19 @@ import type { Driver, DriverOpenOptions, PreparedStatement } from "./types.js";
 const STMT_CACHE_MAX = 256;
 
 /**
+ * Coerce a result row's BigInt cells back to plain numbers. node:sqlite is read
+ * with `readBigInts` on (so it doesn't throw on integers above 2^53); this gives
+ * the same shape better-sqlite3 returns — a JS number, lossy only beyond 2^53.
+ */
+function coerceBigInts<T>(row: T): T {
+  if (row && typeof row === "object") {
+    const r = row as Record<string, unknown>;
+    for (const k in r) if (typeof r[k] === "bigint") r[k] = Number(r[k]);
+  }
+  return row;
+}
+
+/**
  * Adapter over Node's built-in `node:sqlite` (Node >= 22.5). Lets monlite run
  * with zero external dependencies. Note: `node:sqlite` is still flagged
  * experimental by Node and prints a one-time ExperimentalWarning.
@@ -56,6 +69,12 @@ export class NodeSqliteDriver implements Driver {
     if (cached) return cached;
 
     const stmt = this.raw.prepare(sql);
+    // Read large integers as BigInt so node:sqlite doesn't THROW on values above
+    // 2^53 (better-sqlite3 returns a lossy number instead). We then coerce BigInt
+    // back to Number below, so both drivers behave identically: a JS number, lossy
+    // only beyond 2^53. (Writes of unsafe numbers are rejected upstream; use BigInt
+    // or a TEXT column for exact large ids.)
+    stmt.setReadBigInts?.(true);
     const report = this.onQuery;
     const time = report
       ? <R>(run: () => R): R => {
@@ -69,8 +88,9 @@ export class NodeSqliteDriver implements Driver {
       : <R>(run: () => R): R => run();
     const wrapped: PreparedStatement = {
       run: (...p: any[]) => time(() => stmt.run(...p)),
-      get: (...p: any[]) => time(() => stmt.get(...p)),
-      all: (...p: any[]) => time(() => stmt.all(...p)),
+      get: (...p: any[]) => time(() => coerceBigInts(stmt.get(...p))),
+      all: (...p: any[]) =>
+        time(() => (stmt.all(...p) as any[]).map(coerceBigInts)),
     };
     if (this.cache.size >= STMT_CACHE_MAX) {
       const oldest = this.cache.keys().next().value;

@@ -261,7 +261,7 @@ Runnable demos are in [`examples/`](examples/).
 
 ## Status
 
-Production-ready and published. Current versions: `@monlite/core` **2.6.13**, `@monlite/sync`
+Production-ready and published. Current versions: `@monlite/core` **2.6.14**, `@monlite/sync`
 **1.3.4**, `@monlite/vector` **0.5.6**, `@monlite/fts` **0.5.5**, `@monlite/kv` **0.2.2**,
 `@monlite/queue` **0.3.5**, `@monlite/cron` 0.1.2, `@monlite/wasm` 0.2.2. The 2.x API is frozen.
 
