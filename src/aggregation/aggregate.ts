@@ -17,6 +17,15 @@ export interface AggContext {
   onPath: (path: string) => void;
   /** Declared native columns (structured collections). */
   columns?: Set<string>;
+  /** Declared JSON columns — their values are decoded to match findMany. */
+  jsonColumns?: Set<string>;
+}
+
+/** Decode a JSON-column value (raw text) to match findMany; pass others through. */
+function decodeAgg(ctx: AggContext, field: string, v: any): any {
+  return ctx.jsonColumns?.has(field) && typeof v === "string"
+    ? JSON.parse(v)
+    : v;
 }
 
 const ACCUMULATORS = ["_sum", "_avg", "_min", "_max"] as const;
@@ -80,7 +89,7 @@ export function aggregate(
   if (args._count) result._count = row.agg_count ?? 0;
   for (const col of cols) {
     const bucket = (result[col.kind] ??= {});
-    bucket[col.field] = row[col.alias] ?? null;
+    bucket[col.field] = decodeAgg(ctx, col.field, row[col.alias] ?? null);
   }
   return result;
 }
@@ -227,10 +236,15 @@ export function groupBy(ctx: AggContext, args: GroupByArgs): GroupByResult[] {
 
   return rows.map((row) => {
     const out: GroupByResult = {};
-    for (const { alias, field } of groupCols) out[field] = row[alias];
+    for (const { alias, field } of groupCols)
+      out[field] = decodeAgg(ctx, field, row[alias]);
     if (args._count) out._count = row.agg_count;
     for (const col of cols) {
-      (out[col.kind] ??= {})[col.field] = row[col.alias] ?? null;
+      (out[col.kind] ??= {})[col.field] = decodeAgg(
+        ctx,
+        col.field,
+        row[col.alias] ?? null,
+      );
     }
     return out;
   });

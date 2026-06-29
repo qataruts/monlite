@@ -153,3 +153,28 @@ describe("groupBy orderBy by accumulator (Prisma-style)", () => {
     expect(byField.map((r: any) => r.c)).toEqual(["c1", "c2", "c3"]);
   });
 });
+
+describe("JSON-column decode in distinct/groupBy/aggregate (swarm-found)", () => {
+  it("returns decoded objects (not raw JSON text) for JSON columns", async () => {
+    const db = openDb();
+    const c = db.collection("jc", { schema: { meta: { type: "JSON" } } });
+    await c.createMany({
+      data: [
+        { _id: "a", meta: { k: 1 } },
+        { _id: "b", meta: { k: 2 } },
+        { _id: "c", meta: { k: 1 } },
+      ],
+    });
+    const dist = await c.distinct("meta");
+    expect(dist.every((v: any) => typeof v === "object")).toBe(true);
+    expect(dist.length).toBe(2);
+    const gb = await c.groupBy({ by: ["meta"], _count: true });
+    expect(typeof gb[0].meta).toBe("object");
+    const mm = await c.aggregate({
+      _min: { meta: true },
+      _max: { meta: true },
+    });
+    expect(typeof mm._min!.meta).toBe("object");
+    await db.$disconnect();
+  });
+});

@@ -964,9 +964,13 @@ export class Collection<T = Doc> {
         `WHERE ${clause} ORDER BY v`;
     }
 
+    const decode = this.jsonColumns.has(field);
     return this.guard(() => {
       const rows = this.db.prepare(sql).all(...params) as Array<{ v: any }>;
-      return rows.map((r) => r.v);
+      // Decode a JSON column's values to match findMany (which returns objects).
+      return rows.map((r) =>
+        decode && typeof r.v === "string" ? JSON.parse(r.v) : r.v,
+      );
     });
   }
 
@@ -1342,6 +1346,7 @@ export class Collection<T = Doc> {
           table: this.name,
           onPath: this.trackPath,
           columns: this.columns,
+          jsonColumns: this.jsonColumns,
         },
         args,
       ),
@@ -1357,6 +1362,7 @@ export class Collection<T = Doc> {
           table: this.name,
           onPath: this.trackPath,
           columns: this.columns,
+          jsonColumns: this.jsonColumns,
         },
         args,
       ),
