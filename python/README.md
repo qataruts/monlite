@@ -126,6 +126,24 @@ posts.create({"title": "SQLite is great", "body": "embedded and fast"})
 idx.search("sqlite", limit=10)                    # ranked documents (interop-compatible with Node)
 ```
 
+## Vector / semantic search
+
+```bash
+pip install "monlite[vector]"   # native sqlite-vec; falls back to pure-Python if absent
+```
+
+```python
+from monlite import vector, hybrid_search
+
+db.collection("docs").create({"text": "black holes", "embedding": [0.1, 0.2, ...]})
+vec = vector(db, "docs", field="embedding", dimensions=1536, distance="cosine")
+vec.find_similar(query_embedding, top_k=5, where={"tenant": "t1"})  # docs ranked by distance
+hybrid_search(db, "docs", text="black holes", query_vector=query_embedding, top_k=5)  # RAG
+```
+
+Native `vec0` (sqlite-vec) when available, an exact brute-force fallback otherwise — same
+`<coll>_vec` tables and JSON embeddings as `@monlite/vector`.
+
 ## Cross-language interop
 
 Each runtime is a complete, independent library; the shared-file interop is a bonus you opt into.
@@ -147,8 +165,9 @@ pip install "monlite[mongo]"     # sync to MongoDB
 ## Status
 
 **Documents (with transactions, aggregation, and the change feed), kv (cache, locks, pub/sub,
-sorted sets), the durable queue, cron, and FTS5 are implemented** and covered by tests — including
-a cross-runtime interop suite. The `[vector]` extra and sync adapters are next. The
-[file format](https://qataruts.github.io/monlite/reference/file-format) is the contract every part shares.
+sorted sets), the durable queue, cron, FTS5, and vector / semantic search are implemented** and
+covered by tests — including a cross-runtime interop suite. Sync adapters (Mongo / Postgres / MySQL)
+are next. The [file format](https://qataruts.github.io/monlite/reference/file-format) is the
+contract every part shares.
 
 MIT

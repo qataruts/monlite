@@ -312,9 +312,10 @@ browser on SQLite-WASM, with semantic embeddings computed on-device via Transfor
 
 The **Python port** — [`pip install monlite`](https://pypi.org/project/monlite/) — is at feature
 parity: documents (with transactions, aggregation, and the change feed), kv (cache, locks, pub/sub,
-sorted sets), the durable queue, cron, and FTS5 — all reading and writing the **same `.db`** as the
-Node packages. A cross-runtime interop suite round-trips a file between the two. Pure standard
-library, Python 3.9+. So **Python ingests/embeds while Node serves**, over one file.
+sorted sets), the durable queue, cron, FTS5, and vector / semantic search (`monlite[vector]`) — all
+reading and writing the **same `.db`** as the Node packages. A cross-runtime interop suite
+round-trips a file between the two. Pure standard library, Python 3.9+. So **Python ingests/embeds
+while Node serves**, over one file.
 
 ## License
 

@@ -41,6 +41,7 @@ for change in db.changes():
 | **queue** | durable `_jobs`: `add`/`claim`/`complete`/`fail`/`process`, retries + backoff, delay, priority, dedupe |
 | **cron** | `parse_cron`, `next_cron_run` (tz via `zoneinfo`, jitter), `schedule`/`tick` with an atomic multi-process claim |
 | **fts** | FTS5 — `fts(db, "posts", fields=["title", "body"])` then `idx.search("query")` |
+| **vector** | `vector(db, "docs", field="embedding", dimensions=…)` → `find_similar(...)`; native `sqlite-vec` (`[vector]` extra) or a pure-Python fallback; `hybrid_search` for RAG |
 
 The change feed, sorted sets, and the queue are exercised by a **cross-runtime interop test
 suite** that round-trips a `.db` between Node and Python.
@@ -58,16 +59,23 @@ idx = fts(db, "posts", fields=["title", "body"])
 idx.search("sqlite", limit=10)
 ```
 
-## Vectors
+## Vector / semantic search
 
-The `[vector]` extra (semantic search via `sqlite-vec`) is next. Today, `sqlite-vec` has official
-Python bindings you can use directly against a monlite vector collection:
+`pip install "monlite[vector]"` adds the AI-agent memory layer — native `vec0` (sqlite-vec) when
+the extension loads, an exact brute-force fallback over a plain JSON table otherwise:
 
 ```python
-import sqlite_vec
-db.sqlite.enable_load_extension(True)
-sqlite_vec.load(db.sqlite)
+from monlite import vector
+
+vec = vector(db, "docs", field="embedding", dimensions=1536, distance="cosine")
+vec.find_similar(query_embedding, top_k=5, where={"tenant": "t1"})  # docs ranked by distance
 ```
+
+It indexes a collection's embedding field, adds `collection.find_similar(...)`, keeps the index
+current on writes, and backfills existing docs. `hybrid_search(db, coll, text, query_vector, …)`
+combines FTS candidates with a vector re-rank for RAG. The `<coll>_vec` + `_monlite_vec_state`
+tables and the JSON embedding format match `@monlite/vector`, so same-mode indexes interoperate
+with Node (both native, or both fallback).
 
 ## Lower-level: just SQLite
 
