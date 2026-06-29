@@ -1,5 +1,6 @@
 import type { Driver } from "../driver/types.js";
 import type { Monlite } from "../db.js";
+import type { ChangeEvent } from "../types.js";
 import { objectId } from "../id.js";
 import {
   makeVersion,
@@ -97,6 +98,8 @@ export class SyncStore {
     private readonly db: Driver,
     nodeId?: string,
     private readonly mon?: Monlite,
+    /** True when opened with `{ sync: true }` — guards compaction of unpushed changes. */
+    private readonly syncEnabled = false,
   ) {
     this.init();
     this.nodeId = this.resolveNodeId(nodeId);
@@ -204,6 +207,85 @@ export class SyncStore {
       )
       .get(collection, id) as { version: string } | undefined;
     return row?.version ?? null;
+  }
+
+  /* --------------------------- changefeed (read) --------------------------- */
+
+  /**
+   * The raw, ORDERED feed of every change with `seq > sinceSeq` (optionally
+   * scoped to one collection). Unlike {@link changesSince} (which coalesces to
+   * the latest state per doc for sync push), this preserves each individual
+   * change in sequence — what realtime/reactivity needs.
+   */
+  feedSince(
+    collection: string | undefined,
+    sinceSeq: number,
+    limit = 1000,
+  ): ChangeEvent[] {
+    const params: any[] = [sinceSeq];
+    let collFilter = "";
+    if (collection !== undefined) {
+      collFilter = " AND coll = ?";
+      params.push(collection);
+    }
+    params.push(Math.max(1, limit));
+    const rows = this.db
+      .prepare(
+        `SELECT seq, coll, doc_id, op, ts FROM _monlite_changes
+         WHERE seq > ?${collFilter} ORDER BY seq LIMIT ?`,
+      )
+      .all(...params) as Array<{
+      seq: number;
+      coll: string;
+      doc_id: string;
+      op: "upsert" | "delete";
+      ts: number;
+    }>;
+    return rows.map((r) => ({
+      seq: r.seq,
+      collection: r.coll,
+      id: r.doc_id,
+      op: r.op,
+      ts: r.ts,
+    }));
+  }
+
+  /** Highest recorded `seq` (0 when the feed is empty). */
+  currentSeq(): number {
+    const row = this.db
+      .prepare(`SELECT MAX(seq) AS s FROM _monlite_changes`)
+      .get() as { s: number | null };
+    return row?.s ?? 0;
+  }
+
+  /**
+   * Prune old feed entries to bound growth. Keeps at least `keepLast` rows and
+   * NEVER drops an unpushed local change (sync still needs those). Returns the
+   * number of rows deleted.
+   */
+  compact(opts: { keepLast?: number } = {}): number {
+    const keepLast = Math.max(0, opts.keepLast ?? 1000);
+    const max = this.currentSeq();
+    let cutoff = max - keepLast; // delete rows with seq <= cutoff
+    // Only protect unpushed local changes when sync is actually in play — in a
+    // changefeed-only DB nothing ever marks them pushed, so that guard would
+    // block all compaction.
+    if (this.syncEnabled || this.hasRemotes()) {
+      const unpushed = this.db
+        .prepare(
+          `SELECT MIN(seq) AS s FROM _monlite_changes WHERE source = 'local' AND pushed = 0`,
+        )
+        .get() as { s: number | null };
+      if (unpushed?.s != null) cutoff = Math.min(cutoff, unpushed.s - 1);
+    }
+    if (cutoff <= 0) return 0;
+    return this.db
+      .prepare(`DELETE FROM _monlite_changes WHERE seq <= ?`)
+      .run(cutoff).changes as number;
+  }
+
+  private hasRemotes(): boolean {
+    return !!this.db.prepare(`SELECT 1 FROM _monlite_sync_state LIMIT 1`).get();
   }
 
   /* ----------------------------- push side ----------------------------- */

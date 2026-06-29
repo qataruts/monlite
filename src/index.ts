@@ -28,6 +28,8 @@ export type {
   ColumnInfo,
   LiveEvent,
   WatchHandle,
+  ChangeEvent,
+  ChangesOptions,
   ExplainResult,
   FieldFilter,
   FilterInput,

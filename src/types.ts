@@ -111,6 +111,33 @@ export interface WatchHandle<T = Doc> {
   stop(): void;
 }
 
+/**
+ * One entry in the ordered, durable change feed (see {@link Monlite.changes}).
+ * Requires `{ changefeed: true }` (or `{ sync: true }`) at `createDb`.
+ */
+export interface ChangeEvent {
+  /** Monotonic cursor — pass back as `since` to resume exactly after this event. */
+  seq: number;
+  /** Collection the change belongs to. */
+  collection: string;
+  /** Document id. */
+  id: string;
+  /** `"upsert"` (create/update) or `"delete"`. */
+  op: "upsert" | "delete";
+  /** Wall-clock millis when the change was recorded. */
+  ts: number;
+}
+
+/** Options for {@link Monlite.changes}. */
+export interface ChangesOptions {
+  /** Resume strictly after this `seq` (default `0` = from the start of the feed). */
+  since?: number;
+  /** Poll interval in ms for picking up cross-process writes. Default `200`. */
+  pollMs?: number;
+  /** Stop the stream when aborted. */
+  signal?: AbortSignal;
+}
+
 /** Result of `collection.explain()`. */
 export interface ExplainResult {
   sql: string;
@@ -430,6 +457,12 @@ export interface MonliteOptions {
    * overhead when disabled.
    */
   sync?: boolean;
+  /**
+   * Record an ordered, durable change feed for {@link Monlite.changes} (realtime
+   * / cross-process reactivity) WITHOUT enabling sync. `{ sync: true }` implies
+   * this. Off by default — adds one append per write when on.
+   */
+  changefeed?: boolean;
   /**
    * Stable node identity used for last-write-wins tie-breaking. Auto-generated
    * and persisted in the database on first sync-enabled open if omitted.

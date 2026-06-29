@@ -1,4 +1,6 @@
 import type {
+  ChangeEvent,
+  ChangesOptions,
   CollectionOptions,
   ColumnInfo,
   DbStats,
@@ -38,6 +40,22 @@ function buildTagged(
     }
   });
   return { sql, params };
+}
+
+/** Sleep that resolves early if the signal aborts (for the polling change stream). */
+function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) return resolve();
+    const t = setTimeout(resolve, ms);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(t);
+        resolve();
+      },
+      { once: true },
+    );
+  });
 }
 
 /**
@@ -122,8 +140,15 @@ export class Monlite {
       options.autoIndexAfter ?? 10,
     );
 
-    if (options.sync) {
-      this.$sync = new SyncStore(this.driver, options.nodeId, this);
+    // The change feed underpins sync AND realtime/cross-process reactivity, so
+    // initialise it for either. `sync` implies `changefeed`.
+    if (options.sync || options.changefeed) {
+      this.$sync = new SyncStore(
+        this.driver,
+        options.nodeId,
+        this,
+        !!options.sync,
+      );
     }
 
     this.plugins = options.plugins ?? [];
@@ -350,6 +375,80 @@ export class Monlite {
       )
       .all() as Array<{ name: string }>;
     return Promise.resolve(rows.map((r) => r.name));
+  }
+
+  /* ----------------------------- change feed ----------------------------- */
+
+  private assertChangefeed(): void {
+    if (!this.$sync) {
+      throw new MonliteError(
+        "The change feed is off. Open the database with { changefeed: true } " +
+          "(or { sync: true }) to use changes()/changesSince()/currentSeq().",
+      );
+    }
+  }
+
+  /**
+   * Stream the ordered, durable change feed — including writes from OTHER
+   * processes sharing this `.db` and changes applied by sync. Requires
+   * `{ changefeed: true }` (or `{ sync: true }`). Resume exactly after a prior
+   * point by passing that event's `seq` as `since`; stop via an `AbortSignal`
+   * or by breaking the loop.
+   *
+   * ```ts
+   * for await (const ev of db.changes("orders", { since: lastSeq, signal })) {
+   *   // ev = { seq, collection, id, op: "upsert"|"delete", ts }
+   * }
+   * ```
+   */
+  async *changes(
+    collection?: string,
+    opts: ChangesOptions = {},
+  ): AsyncIterableIterator<ChangeEvent> {
+    this.assertChangefeed();
+    const pollMs = opts.pollMs ?? 200;
+    const signal = opts.signal;
+    let cursor = opts.since ?? 0;
+    while (!signal?.aborted) {
+      const batch = this.$sync!.feedSince(collection, cursor, 1000);
+      for (const ev of batch) {
+        if (signal?.aborted) return;
+        cursor = ev.seq;
+        yield ev;
+      }
+      // Drained a full batch? loop immediately to catch up; else wait for more.
+      if (batch.length === 1000) continue;
+      if (signal?.aborted) return;
+      await abortableSleep(pollMs, signal);
+    }
+  }
+
+  /** Pull (non-streaming) changes with `seq > since`, optionally for one collection. */
+  changesSince(
+    collection: string | undefined,
+    since: number,
+    limit = 1000,
+  ): ChangeEvent[] {
+    this.assertOpen();
+    this.assertChangefeed();
+    return this.$sync!.feedSince(collection, since, limit);
+  }
+
+  /** Highest change-feed `seq` so far (0 if empty) — a cursor for "only new" streams. */
+  currentSeq(): number {
+    this.assertOpen();
+    this.assertChangefeed();
+    return this.$sync!.currentSeq();
+  }
+
+  /**
+   * Bound change-feed growth: drop old entries, keeping at least `keepLast` and
+   * never an unpushed local change (sync still needs those). Returns rows removed.
+   */
+  compactChanges(opts: { keepLast?: number } = {}): number {
+    this.assertOpen();
+    this.assertChangefeed();
+    return this.$sync!.compact(opts);
   }
 
   /** Drop a collection and all of its data. */
