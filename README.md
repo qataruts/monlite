@@ -29,6 +29,7 @@ of them into a single `.db` file:
 | Elasticsearch / Typesense | `@monlite/fts` — full-text search, FTS5, `search()` |
 | Cron server | `@monlite/cron` — persisted scheduled jobs |
 | MongoDB Atlas sync | `@monlite/sync` — local-first replication to MongoDB / PostgreSQL / MySQL |
+| Firebase / Pusher (realtime) | `@monlite/realtime` — stream live queries & docs to clients over SSE |
 
 **One npm install per feature. One `.db` file for all of them. Backup = `cp app.db backup.db`.**
 
@@ -279,7 +280,8 @@ Runnable demos are in [`examples/`](examples/).
 
 Production-ready and published. Current versions: `@monlite/core` **2.7.0**, `@monlite/sync`
 **1.3.4**, `@monlite/vector` **0.5.6**, `@monlite/fts` **0.5.5**, `@monlite/kv` **0.2.2**,
-`@monlite/queue` **0.3.5**, `@monlite/cron` 0.1.2, `@monlite/wasm` 0.2.2. The 2.x API is frozen.
+`@monlite/queue` **0.3.5**, `@monlite/cron` 0.1.2, `@monlite/realtime` 0.1.0,
+`@monlite/wasm` 0.2.2. The 2.x API is frozen.
 
 Vector and full-text indexing are **linear at scale** — verified ingesting 100K documents
 in ~0.8s and 50K vectors in ~8s (no O(n²) re-index), so it comfortably backs 10K–100K-document

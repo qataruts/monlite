@@ -27,6 +27,7 @@ const sidebars: SidebarsConfig = {
       label: "Packages",
       items: [
         "packages/sync",
+        "packages/realtime",
         "packages/fts",
         "packages/vector",
         "packages/kv",
