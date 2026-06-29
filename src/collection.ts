@@ -904,8 +904,9 @@ export class Collection<T = Doc> {
     const lq = new LiveQuery<T>(this, args, cb);
     const reactor = this.mon.reactor;
     const name = this.name;
+    const mon = this.mon;
     reactor.register(name, lq);
-    this.mon.ensureReactorPolling(); // cross-process delivery when changefeed is on
+    mon.ensureReactorPolling(); // cross-process delivery when changefeed is on
     return {
       get results() {
         return lq.results;
@@ -913,6 +914,7 @@ export class Collection<T = Doc> {
       stop() {
         lq.stopped = true;
         reactor.unregister(name, lq);
+        mon.maybeStopReactorPolling(); // free the poll if no watchers remain
       },
     };
   }

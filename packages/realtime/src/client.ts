@@ -15,6 +15,8 @@ export interface RealtimeClientOptions {
   reconnectMs?: number;
   /** Custom `fetch` (e.g. for Node < 18 or a proxy). Defaults to global `fetch`. */
   fetch?: typeof fetch;
+  /** Called for a server-sent `{ error }` frame. Defaults to `console.error`. */
+  onError?: (error: unknown) => void;
 }
 
 /** Unsubscribe from a live stream. */
@@ -87,25 +89,35 @@ export function connectRealtime(
           const reader = res.body.getReader();
           const decoder = new TextDecoder();
           let buf = "";
+          // Tolerate LF, CRLF and CR frame/line separators (SSE permits all).
+          const FRAME_SEP = /\r\n\r\n|\n\n|\r\r/;
           for (;;) {
             const { value, done } = await reader.read();
             if (done) break;
             buf += decoder.decode(value, { stream: true });
-            let idx: number;
-            while ((idx = buf.indexOf("\n\n")) >= 0) {
-              const frame = buf.slice(0, idx);
-              buf = buf.slice(idx + 2);
+            let m: RegExpExecArray | null;
+            while ((m = FRAME_SEP.exec(buf))) {
+              const frame = buf.slice(0, m.index);
+              buf = buf.slice(m.index + m[0].length);
               const data = frame
-                .split("\n")
+                .split(/\r\n|\n|\r/)
                 .filter((l) => l.startsWith("data:"))
                 .map((l) => l.slice(5).replace(/^ /, ""))
                 .join("\n");
-              if (data) {
-                try {
-                  onMessage(JSON.parse(data));
-                } catch {
-                  /* ignore malformed frame */
-                }
+              if (!data) continue; // comment/heartbeat (":" lines) → ignore
+              let parsed: any;
+              try {
+                parsed = JSON.parse(data);
+              } catch {
+                continue; // malformed frame
+              }
+              if (parsed && typeof parsed === "object" && "error" in parsed) {
+                (
+                  opts.onError ??
+                  ((e: unknown) => console.error("realtime:", e))
+                )(parsed.error);
+              } else {
+                onMessage(parsed);
               }
             }
           }

@@ -6,6 +6,7 @@ import type {
   WhereInput,
   WithId,
 } from "./types.js";
+import { project } from "./query/select.js";
 
 /** Structural equality for document field values (scalars fast-path, else JSON). */
 function valueEquals(a: unknown, b: unknown): boolean {
@@ -46,9 +47,13 @@ const RELEVANCE_PROBE_LIMIT = 500;
  * in the result set, or it now matches the filter.
  */
 export class LiveQuery<T = Doc> {
+  /** Result set as the caller sees it (projected by `select`, if any). */
   results: WithId<T>[] = [];
   stopped = false;
 
+  /** Full (unprojected) result set — identity + diffing always run on this so a
+   *  `select` that omits `_id`/changed fields can't corrupt the delta engine. */
+  private full: WithId<T>[] = [];
   private ids = new Set<string>();
   /** When set, only emit a "change" if one of these fields changed. */
   private readonly fieldSet?: Set<string>;
@@ -89,9 +94,11 @@ export class LiveQuery<T = Doc> {
     type: LiveEvent<T>["type"],
     changedIds?: Set<string>,
   ): void {
-    const prev = this.results;
+    const prev = this.full;
     const prevById = new Map(prev.map((d) => [d._id, d] as const));
-    const next = this.source.findManyCore(this.args);
+    // Always read FULL docs for bookkeeping (drop `select`); project only at the
+    // emit boundary below — otherwise a select omitting `_id` collapses identity.
+    const next = this.source.findManyCore({ ...this.args, select: undefined });
     const nextById = new Map(next.map((d) => [d._id, d] as const));
 
     const added = next.filter((d) => !this.ids.has(d._id));
@@ -131,8 +138,15 @@ export class LiveQuery<T = Doc> {
       if (m.length) moved = m;
     }
 
-    this.results = next;
+    this.full = next;
     this.ids = new Set(nextById.keys());
+
+    // Project to the caller's `select` only now (identity/diffing above used full
+    // docs). `results` is kept current even when the event below is suppressed.
+    const sel = this.args.select;
+    const proj = (docs: WithId<T>[]): WithId<T>[] =>
+      sel ? docs.map((d) => project(d as any, sel as any) as WithId<T>) : docs;
+    this.results = proj(next);
 
     // Field-scoped: suppress a pure "change" that touched no watched field (but
     // always deliver init, structural add/remove, and position moves).
@@ -151,11 +165,11 @@ export class LiveQuery<T = Doc> {
 
     this.cb({
       type,
-      results: next,
-      added,
-      removed,
-      changed,
-      moved,
+      results: this.results,
+      added: proj(added),
+      removed: proj(removed),
+      changed: proj(changed),
+      moved: moved ? proj(moved) : undefined,
       changedFields,
     });
   }

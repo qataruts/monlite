@@ -1,5 +1,17 @@
 # @monlite/kv
 
+## 0.4.1 — pub/sub + ZSET hardening (audit fixes)
+
+Bug fixes from an internal audit. **No API changes.**
+
+- **Pub/sub prune is namespace-scoped.** Publishing now prunes only the publishing namespace's
+  expired messages (`WHERE ns = ? AND ts < ?`), so a busy namespace can no longer drop another
+  namespace's still-unread messages from the shared table.
+- **ZSET score validation.** `zadd`/`zincrby` reject a `NaN`/non-numeric score with a clear error
+  instead of failing deep in SQLite with a `NOT NULL` constraint message.
+- **`zrange` floors fractional rank arguments** (`zrange(key, 0.7, 1.9)`) so they can't reach
+  SQLite's `LIMIT`/`OFFSET` and throw a datatype mismatch.
+
 ## 0.4.0 — sorted sets (ZSET)
 
 - **`zadd` / `zscore` / `zincrby` / `zrem` / `zcard` / `zrank` / `zrange` / `zrangeByScore`** —

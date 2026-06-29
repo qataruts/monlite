@@ -1,6 +1,6 @@
 {
   "name": "@monlite/cron",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Cron-style job scheduling for @monlite/core: persisted schedules, 5-field cron, multi-process safe.",
   "type": "module",
   "main": "./dist/index.cjs",

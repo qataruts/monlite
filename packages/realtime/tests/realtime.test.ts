@@ -157,4 +157,63 @@ describe("@monlite/realtime (SSE gateway + client)", () => {
       .update({ where: { _id: d._id }, data: { $set: { status: "closed" } } });
     await waitFor(() => events.length > afterInit); // watched field → event
   });
+
+  it("does not leak a subscription when the client disconnects during authorize", async () => {
+    const db = openDb();
+    await db.collection("orders").create({ data: { _id: "a", status: "open" } });
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const server = realtime({
+      authorize: async () => {
+        await gate; // hold the request open inside authorize
+        return { db };
+      },
+    });
+    const { url } = listen(server);
+
+    const ac = new AbortController();
+    // Fire a raw request and abort it while authorize is still pending.
+    void fetch(`${url}/realtime/query?coll=orders`, { signal: ac.signal }).catch(
+      () => {},
+    );
+    await new Promise((r) => setTimeout(r, 80));
+    ac.abort();
+    await new Promise((r) => setTimeout(r, 20));
+    release(); // authorize resolves only AFTER the disconnect
+    await new Promise((r) => setTimeout(r, 60));
+    expect(server.subscriptions).toBe(0); // nothing left registered
+  });
+
+  it("returns a clean 400 (not an SSE stream) for a /doc request missing id", async () => {
+    const db = openDb();
+    const { url } = listen(realtime({ db }));
+    const res = await fetch(`${url}/realtime/doc?coll=orders`);
+    expect(res.status).toBe(400);
+    await res.body?.cancel();
+  });
+
+  it("routes an in-band {error} frame to onError instead of corrupting a snapshot", async () => {
+    // Stub SSE server that emits an {error} frame (with CRLF separators) — the
+    // shape a watch failure produces, and the line-ending an HTTP proxy may add.
+    const http = await import("node:http");
+    const server = http.createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.write("data: " + JSON.stringify({ error: "watch failed" }) + "\r\n\r\n");
+    });
+    await new Promise<void>((r) => server.listen(0, r));
+    cleanups.push(() => server.close());
+    const stubUrl = `http://127.0.0.1:${(server.address() as any).port}`;
+
+    const errors: unknown[] = [];
+    const events: LiveEvent[] = [];
+    const client = connectRealtime(stubUrl, {
+      onError: (e) => errors.push(e),
+      reconnectMs: 10_000,
+    });
+    cleanups.push(() => client.close());
+    client.collection("orders").onSnapshot((e) => events.push(e));
+    await waitFor(() => errors.length >= 1);
+    expect(errors[0]).toBe("watch failed"); // CRLF-parsed + routed to onError
+    expect(events).toHaveLength(0); // never masqueraded as a snapshot
+  });
 });

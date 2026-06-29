@@ -1,6 +1,6 @@
 {
   "name": "@monlite/realtime",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Networked realtime for @monlite/core: stream live queries and documents to remote clients over SSE, backed by the change feed.",
   "type": "module",
   "main": "./dist/index.cjs",

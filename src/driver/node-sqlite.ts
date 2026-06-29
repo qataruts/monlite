@@ -118,6 +118,26 @@ export class NodeSqliteDriver implements Driver {
     return wrapped;
   }
 
+  /** Callbacks to run after the OUTERMOST transaction commits (see {@link afterCommit}). */
+  private afterCommitHooks: Array<() => void> = [];
+
+  afterCommit(cb: () => void): void {
+    if (this.depth === 0) cb();
+    else this.afterCommitHooks.push(cb);
+  }
+
+  private runAfterCommit(): void {
+    const hooks = this.afterCommitHooks;
+    this.afterCommitHooks = [];
+    for (const h of hooks) {
+      try {
+        h();
+      } catch {
+        /* a post-commit hook must not break siblings */
+      }
+    }
+  }
+
   transaction<T>(fn: () => T, immediate = false): T {
     const savepoint = `monlite_sp_${this.depth}`;
     if (this.depth === 0)
@@ -128,8 +148,10 @@ export class NodeSqliteDriver implements Driver {
     try {
       const result = fn();
       this.depth--;
-      if (this.depth === 0) this.raw.exec("COMMIT");
-      else this.raw.exec(`RELEASE ${savepoint}`);
+      if (this.depth === 0) {
+        this.raw.exec("COMMIT");
+        this.runAfterCommit();
+      } else this.raw.exec(`RELEASE ${savepoint}`);
       return result;
     } catch (err) {
       this.depth--;
@@ -146,6 +168,7 @@ export class NodeSqliteDriver implements Driver {
           /* already rolled back / no active txn */
         }
       }
+      if (this.depth === 0) this.afterCommitHooks = []; // discard on outermost rollback
       throw err;
     }
   }
@@ -159,8 +182,10 @@ export class NodeSqliteDriver implements Driver {
     try {
       const result = await fn();
       this.depth--;
-      if (this.depth === 0) this.raw.exec("COMMIT");
-      else this.raw.exec(`RELEASE ${savepoint}`);
+      if (this.depth === 0) {
+        this.raw.exec("COMMIT");
+        this.runAfterCommit();
+      } else this.raw.exec(`RELEASE ${savepoint}`);
       return result;
     } catch (err) {
       this.depth--;
@@ -175,6 +200,7 @@ export class NodeSqliteDriver implements Driver {
           /* already rolled back / no active txn */
         }
       }
+      if (this.depth === 0) this.afterCommitHooks = []; // discard on outermost rollback
       throw err;
     }
   }

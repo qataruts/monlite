@@ -97,9 +97,9 @@ interface WallParts {
   dow: number;
 }
 
-function partsMatch(c: ParsedCron, p: WallParts): boolean {
-  if (!c.minute.has(p.minute) || !c.hour.has(p.hour) || !c.month.has(p.month))
-    return false;
+/** True if the date part (month + day-of-month/day-of-week) of `p` can match. */
+function dayMatches(c: ParsedCron, p: WallParts): boolean {
+  if (!c.month.has(p.month)) return false;
   const dom = c.dom.has(p.day);
   const dow = c.dow.has(p.dow);
   // POSIX: when both day-of-month and day-of-week are restricted, either matches.
@@ -175,11 +175,30 @@ export function nextCronRun(
   d.setSeconds(0, 0);
   d.setMinutes(d.getMinutes() + 1);
   // Search up to ~5 years so a leap-day-only schedule (`* * 29 2 *`) still resolves
-  // across the 4-year gap instead of throwing. Local iteration uses Date arithmetic
-  // (skips non-existent days / handles DST natively); the tz path advances absolute
-  // time by a minute and reads the zone's wall clock (DST handled by `Intl`).
-  for (let i = 0; i < 5 * 366 * 24 * 60; i++) {
-    if (partsMatch(c, tz ? tzParts(d, tz) : localParts(d))) return d;
+  // across the 4-year gap instead of throwing. We SKIP whole non-matching days and
+  // hours instead of scanning minute-by-minute, so even the tz path (which calls
+  // Intl per step) stays in the thousands of iterations, not millions — otherwise a
+  // single tz/leap-day schedule would freeze the event loop. DST is handled by Date
+  // arithmetic (local) / `Intl` (tz); the coarse jumps are self-correcting since the
+  // loop re-reads the wall clock each step.
+  for (let i = 0; i < 5 * 366 * 25; i++) {
+    const p = tz ? tzParts(d, tz) : localParts(d);
+    if (!dayMatches(c, p)) {
+      // Skip to the next day's 00:00. Local uses Date methods (exact + DST-safe);
+      // tz advances absolute time (a DST transition that day can leave the landing
+      // off by ≤1h, self-corrected on the next pass).
+      if (tz) {
+        const mins = (24 - p.hour) * 60 - p.minute;
+        d.setTime(d.getTime() + Math.max(1, mins) * 60_000);
+      } else d.setHours(24, 0, 0, 0);
+      continue;
+    }
+    if (!c.hour.has(p.hour)) {
+      if (tz) d.setTime(d.getTime() + (60 - p.minute) * 60_000);
+      else d.setHours(d.getHours() + 1, 0, 0, 0); // next hour
+      continue;
+    }
+    if (c.minute.has(p.minute)) return d;
     if (tz) d.setTime(d.getTime() + 60_000);
     else d.setMinutes(d.getMinutes() + 1);
   }

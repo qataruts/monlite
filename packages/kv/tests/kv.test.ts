@@ -181,6 +181,25 @@ describe("kv pub/sub (paradigm improvements)", () => {
     A.stop();
     B.stop();
   });
+
+  it("prune is namespace-scoped: a busy namespace can't drop another's messages", () => {
+    const db = open();
+    const B = kv(db, { namespace: "B" });
+    // Seed an old (>30s) message in namespace A directly.
+    db.driver
+      .prepare(
+        `INSERT INTO _monlite_kv_pubsub (ns, channel, payload, ts) VALUES ('A', 'c', '1', ?)`,
+      )
+      .run(Date.now() - 31_000);
+    // A publish in B prunes only B's stale rows, not A's.
+    B.publish("x", { b: 1 });
+    const aRows = (
+      db.driver
+        .prepare(`SELECT COUNT(*) AS n FROM _monlite_kv_pubsub WHERE ns = 'A'`)
+        .get() as { n: number }
+    ).n;
+    expect(aRows).toBe(1);
+  });
 });
 
 describe("kv sorted sets (paradigm improvements)", () => {
@@ -223,5 +242,21 @@ describe("kv sorted sets (paradigm improvements)", () => {
     c.zadd("t", 1, "c");
     expect(c.zrange("t", 0, -1)).toEqual(["a", "b", "c"]);
     expect(c.zrange("t", 0, -1, { rev: true })).toEqual(["c", "b", "a"]);
+  });
+
+  it("rejects a NaN score with a clear error (not a NOT NULL failure)", () => {
+    const c = kv(open());
+    expect(() => c.zadd("s", NaN, "m")).toThrow(/score must be a number/);
+    expect(() => c.zincrby("s", NaN, "m")).toThrow(/delta must be a number/);
+    // @ts-expect-error — non-numeric score is a usage error
+    expect(() => c.zadd("s", "high", "m")).toThrow(/score must be a number/);
+  });
+
+  it("floors fractional rank args in zrange (no datatype mismatch)", () => {
+    const c = kv(open());
+    c.zadd("b", 1, "x");
+    c.zadd("b", 2, "y");
+    c.zadd("b", 3, "z");
+    expect(c.zrange("b", 0.7, 1.9)).toEqual(["x", "y"]); // truncated to 0..1
   });
 });

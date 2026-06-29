@@ -96,21 +96,67 @@ export function realtime(options: RealtimeOptions): RealtimeServer {
     }
 
     void (async () => {
+      // Validate params BEFORE auth/stream — a bad request is then a clean 400,
+      // not an in-band error written onto an already-opened SSE stream.
+      const coll = url.searchParams.get("coll");
+      if (!coll) {
+        fail(res, 400, "missing coll");
+        return;
+      }
+      const docId = kind === "doc" ? url.searchParams.get("id") : null;
+      if (kind === "doc" && !docId) {
+        fail(res, 400, "missing id");
+        return;
+      }
+      let args: WatchArgs<any> = {};
+      if (kind === "query") {
+        const q = url.searchParams.get("q");
+        if (q) {
+          try {
+            args = JSON.parse(q);
+          } catch {
+            fail(res, 400, "invalid q");
+            return;
+          }
+        }
+      }
+
+      // Attach an idempotent cleanup BEFORE the (possibly async) authorize, so a
+      // client that disconnects during auth still tears the subscription down —
+      // otherwise the watch handle + heartbeat leak forever (unauthenticated DoS).
+      let handle: WatchHandle<any> | undefined;
+      // `cleanup` (attached below, before `await`) may read this while it's still
+      // unset, so it must be a hoisted let seeded to undefined — not a const.
+      let heartbeat: ReturnType<typeof setInterval> | undefined = undefined;
+      let cleaned = false;
+      const cleanup = (): void => {
+        if (cleaned) return;
+        cleaned = true;
+        if (heartbeat) clearInterval(heartbeat);
+        if (handle) {
+          handle.stop();
+          open.delete(handle);
+        }
+      };
+      req.on("close", cleanup);
+      res.on("close", cleanup);
+
       let ctx: RealtimeContext | null;
       try {
         ctx = await resolve(req);
       } catch (err) {
+        cleanup();
         fail(res, 401, (err as Error)?.message ?? "unauthorized");
         return;
       }
       if (!ctx) {
+        cleanup();
         fail(res, 401, "unauthorized");
         return;
       }
-
-      const coll = url.searchParams.get("coll");
-      if (!coll) {
-        fail(res, 400, "missing coll");
+      // Client may have disconnected during the await — bail before opening.
+      if (cleaned || req.destroyed || res.destroyed) {
+        cleanup();
         return;
       }
 
@@ -125,47 +171,32 @@ export function realtime(options: RealtimeOptions): RealtimeServer {
       res.write(": ok\n\n");
       let id = 0;
       const send = (payload: unknown): void => {
-        if (res.writableEnded) return;
+        if (res.writableEnded || res.destroyed) return;
         res.write(`id: ${++id}\ndata: ${JSON.stringify(payload)}\n\n`);
       };
 
-      let handle: WatchHandle<any> | undefined;
       try {
         const collection = ctx.db.collection(coll);
-        if (kind === "doc") {
-          const docId = url.searchParams.get("id");
-          if (!docId) {
-            fail(res, 400, "missing id");
-            return;
-          }
-          handle = collection.watchDoc(docId, (doc) => send({ doc }));
-        } else {
-          const q = url.searchParams.get("q");
-          const args: WatchArgs<any> = q ? JSON.parse(q) : {};
-          handle = collection.watch(args, (event) => send(event));
-        }
+        handle =
+          kind === "doc"
+            ? collection.watchDoc(docId as string, (doc) => send({ doc }))
+            : collection.watch(args, (event) => send(event));
       } catch (err) {
-        // Headers already sent; surface the error in-band, then close.
         send({ error: (err as Error)?.message ?? "watch failed" });
         res.end();
+        cleanup();
+        return;
+      }
+      if (cleaned) {
+        // Disconnected during setup — don't leave the handle registered.
+        handle.stop();
         return;
       }
       open.add(handle);
-
-      const heartbeat = setInterval(() => {
-        if (!res.writableEnded) res.write(": ping\n\n");
+      heartbeat = setInterval(() => {
+        if (!res.writableEnded && !res.destroyed) res.write(": ping\n\n");
       }, heartbeatMs);
       (heartbeat as any).unref?.();
-
-      const cleanup = (): void => {
-        clearInterval(heartbeat);
-        if (handle) {
-          handle.stop();
-          open.delete(handle);
-        }
-      };
-      req.on("close", cleanup);
-      res.on("close", cleanup);
     })();
   };
 

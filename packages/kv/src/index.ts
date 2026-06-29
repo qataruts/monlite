@@ -291,6 +291,8 @@ export function kv(db: Monlite, options: KVOptions = {}): KV {
 
     // ── sorted sets ──────────────────────────────────────────────────────────
     zadd(key, score, member) {
+      if (typeof score !== "number" || Number.isNaN(score))
+        throw new Error(`kv.zadd: score must be a number, got ${score}`);
       driver
         .prepare(
           `INSERT INTO _monlite_kv_zset (ns, k, member, score) VALUES (?, ?, ?, ?)
@@ -299,6 +301,8 @@ export function kv(db: Monlite, options: KVOptions = {}): KV {
         .run(ns, key, member, score);
     },
     zincrby(key, delta, member) {
+      if (typeof delta !== "number" || Number.isNaN(delta))
+        throw new Error(`kv.zincrby: delta must be a number, got ${delta}`);
       // IMMEDIATE: atomic read-modify-write across processes.
       return driver.transaction(() => {
         const row = driver
@@ -362,6 +366,10 @@ export function kv(db: Monlite, options: KVOptions = {}): KV {
       ).n;
     },
     zrange(key, start, stop, opts) {
+      // Floor rank args so a fractional index can't reach SQLite's LIMIT/OFFSET
+      // (which would throw "datatype mismatch").
+      start = Math.trunc(start);
+      stop = Math.trunc(stop);
       const card = api.zcard(key);
       let lo = start < 0 ? card + start : start;
       let hi = stop < 0 ? card + stop : stop;
@@ -397,11 +405,12 @@ export function kv(db: Monlite, options: KVOptions = {}): KV {
           `INSERT INTO _monlite_kv_pubsub (ns, channel, payload, ts) VALUES (?, ?, ?, ?)`,
         )
         .run(ns, channel, JSON.stringify(message ?? null), ts);
-      // Ephemeral: prune old messages (late subscribers don't replay) so the
-      // table can't grow unbounded.
+      // Ephemeral: prune THIS namespace's old messages (late subscribers don't
+      // replay) so the table can't grow unbounded — scoped to `ns` so a busy
+      // namespace can't drop another's still-unread messages.
       driver
-        .prepare(`DELETE FROM _monlite_kv_pubsub WHERE ts < ?`)
-        .run(ts - 30_000);
+        .prepare(`DELETE FROM _monlite_kv_pubsub WHERE ns = ? AND ts < ?`)
+        .run(ns, ts - 30_000);
       // Deliver to same-instance subscribers immediately (cross-process listeners
       // pick it up on their next poll).
       drainPubsub();

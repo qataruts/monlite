@@ -33,6 +33,13 @@ export interface Driver {
    * don't implement it can't use `db.transactionAsync`.
    */
   transactionAsync?<T>(fn: () => Promise<T>): Promise<T>;
+  /**
+   * Run `cb` AFTER the outermost transaction commits (or immediately if not in a
+   * transaction); the queued callbacks are discarded if the outermost transaction
+   * rolls back. Used so reactor/watch notifications never reflect uncommitted or
+   * rolled-back writes. Optional — callers fall back to running `cb` inline.
+   */
+  afterCommit?(cb: () => void): void;
   close(): void;
   /** Rotate the encryption key (encrypted backends only). */
   rekey?(key: string, cipher?: string): void;

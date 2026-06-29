@@ -1,5 +1,23 @@
 # @monlite/core
 
+## 2.8.1 — reactivity correctness (post-commit delivery, projection-safe deltas)
+
+Bug fixes from an internal audit of the realtime stack. **No API changes** — these correct edge
+cases that previously dropped or invented watcher events. Verified on both drivers.
+
+- **Watchers no longer miss or invent events around a rolled-back transaction.** Reactor delivery
+  is deferred to _after_ the outermost transaction commits (via a new optional, internal
+  `afterCommit` driver hook). A write inside a `transactionAsync` that rolls back fires no watcher
+  event, and a committed write made right after a rollback is no longer dropped.
+- **`watch({ select })` deltas are correct again.** Live-query diffing now runs over full,
+  unprojected documents and projects only at the emit boundary — so a `select` that omits `_id`
+  (or a diffed field) no longer breaks `added`/`removed`/`changed`, and a `fields`-scoped watch
+  still fires when `select` omits the watched field.
+- **No event replay after a watcher gap.** When the last watcher stops, the change-feed poll is
+  cancelled and re-pinned to "now" on the next `watch()`, so a later watcher doesn't replay writes
+  made while nobody was watching (and the database holds no poll timer when idle).
+- **`changes()` no longer leaks an abort listener per poll iteration.**
+
 ## 2.8.0 — shared heartbeat (one coalesced timer)
 
 Additive. A new `Heartbeat` — a single coalescing scheduler exposed as `db.heartbeat` — that

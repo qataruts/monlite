@@ -1,5 +1,23 @@
 # @monlite/realtime
 
+## 0.2.0 — hardening + `onError` (audit fixes)
+
+Additive + bug fixes from an internal audit. Backward-compatible.
+
+- **Fixes an unauthenticated subscription leak (DoS).** If a client disconnected _while_ an async
+  `authorize()` was still pending, the watch handle + heartbeat were never torn down. Cleanup is
+  now attached before authorize runs, and the stream re-checks for a disconnect before opening.
+- **Validates request params before opening the stream.** A `/doc` request missing `id` (or a
+  `/query` with un-parseable `q`) now returns a clean `400` instead of an in-band error written
+  onto an already-opened SSE stream.
+- **Liveness guards now also check `res.destroyed`**, so sends and the heartbeat stop promptly on
+  an abrupt socket drop (not only a graceful end).
+- **Client: `onError` option** — a server-sent `{ error }` frame is routed to `onError`
+  (default `console.error`) instead of being mis-delivered as a `null` document or a malformed
+  snapshot event. Defaults preserve existing behavior.
+- **Client: SSE parser tolerates `LF`, `CRLF` and `CR`** frame/line separators (some proxies
+  rewrite line endings), and skips malformed frames without tearing down the stream.
+
 ## 0.1.0 — initial release
 
 Networked realtime for `@monlite/core` over Server-Sent Events, backed by the change feed.

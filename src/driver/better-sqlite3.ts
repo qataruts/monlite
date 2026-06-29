@@ -80,10 +80,38 @@ export class BetterSqlite3Driver implements Driver {
     this.cache.set(sql, stmt);
   }
 
+  /** Callbacks to run after the OUTERMOST transaction commits (see {@link afterCommit}). */
+  private afterCommitHooks: Array<() => void> = [];
+
+  afterCommit(cb: () => void): void {
+    if (!this.raw.inTransaction) cb();
+    else this.afterCommitHooks.push(cb);
+  }
+
+  private runAfterCommit(): void {
+    const hooks = this.afterCommitHooks;
+    this.afterCommitHooks = [];
+    for (const h of hooks) {
+      try {
+        h();
+      } catch {
+        /* a post-commit hook must not break siblings */
+      }
+    }
+  }
+
   transaction<T>(fn: () => T, immediate = false): T {
     // Nested calls automatically use SAVEPOINTs in better-sqlite3.
+    const top = !this.raw.inTransaction;
     const tx = this.raw.transaction(fn);
-    return immediate ? tx.immediate() : tx();
+    try {
+      const result = immediate ? tx.immediate() : tx();
+      if (top) this.runAfterCommit(); // outermost committed
+      return result;
+    } catch (err) {
+      if (top) this.afterCommitHooks = []; // outermost rolled back — discard
+      throw err;
+    }
   }
 
   private asyncSp = 0;
@@ -96,6 +124,7 @@ export class BetterSqlite3Driver implements Driver {
     try {
       const result = await fn();
       this.raw.exec(top ? "COMMIT" : `RELEASE ${sp}`);
+      if (top) this.runAfterCommit();
       return result;
     } catch (err) {
       try {
@@ -103,6 +132,7 @@ export class BetterSqlite3Driver implements Driver {
       } catch {
         /* already rolled back */
       }
+      if (top) this.afterCommitHooks = []; // discard hooks from the rolled-back txn
       throw err;
     } finally {
       if (top) this.asyncSp = 0;

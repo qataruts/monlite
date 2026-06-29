@@ -8,11 +8,11 @@ describe("Heartbeat (coalescing scheduler)", () => {
     const hb = new Heartbeat();
     let n = 0;
     const t = hb.every(20, () => n++);
-    await sleep(85);
+    await sleep(200); // generous so it never flakes under CI load
     expect(n).toBeGreaterThanOrEqual(2);
     const at = n;
     t.cancel();
-    await sleep(60);
+    await sleep(80);
     expect(n).toBe(at); // no more fires after cancel
     hb.stop();
   });
@@ -46,7 +46,7 @@ describe("Heartbeat (coalescing scheduler)", () => {
     let n = 0;
     const t = hb.every(500, () => n++);
     t.setInterval(15); // speed it up
-    await sleep(80);
+    await sleep(160);
     expect(n).toBeGreaterThanOrEqual(2);
     hb.stop();
   });

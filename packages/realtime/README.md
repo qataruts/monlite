@@ -64,6 +64,10 @@ stop(); // unsubscribe
 live.close(); // unsubscribe everything
 ```
 
+Client options: `{ token, path, reconnectMs, fetch, onError }`. `onError` (default `console.error`)
+receives any server-sent `{ error }` frame — e.g. a watch that failed server-side — so it is never
+mis-delivered as a snapshot or a `null` document.
+
 ## How it works
 
 - One SSE stream per subscription; the query travels in the URL.

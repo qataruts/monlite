@@ -1,5 +1,17 @@
 # @monlite/cron
 
+## 0.2.1 — fast `nextCronRun` (no event-loop freeze)
+
+Bug fix from an internal audit. **No API or behavior change** — the computed next-run is identical;
+it's just computed without scanning minute-by-minute.
+
+- **`nextCronRun` no longer freezes the event loop on sparse or `tz` schedules.** It now skips whole
+  non-matching days and hours instead of iterating every minute across the (up to 5-year) search
+  window. A `tz` leap-day schedule (`0 0 29 2 *`) or an impossible date (`0 0 31 2 *`) previously
+  did ~2.6M `Intl` calls (multi-second block); both now resolve (or throw) in a few hundred
+  iterations. The local path uses DST-safe `Date` arithmetic; the `tz` path self-corrects coarse
+  jumps by re-reading the zone's wall clock each step.
+
 ## 0.2.0 — time zones + jitter
 
 - **Per-schedule time zones**: `schedule(name, expr, fn, { tz: "Europe/Istanbul" })` evaluates the

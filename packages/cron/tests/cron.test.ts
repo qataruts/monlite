@@ -108,6 +108,20 @@ describe("cron edge cases (swarm-found)", () => {
     expect(next.getDate()).toBe(29);
     expect(next.getFullYear()).toBe(2028);
   });
+  it("resolves a tz leap-day / impossible schedule fast (day-skip, no event-loop freeze)", () => {
+    // Day/hour skipping keeps these in the thousands of iterations; a naive
+    // minute-by-minute tz scan would be ~2.6M Intl calls (multi-second freeze).
+    const t0 = performance.now();
+    const leap = nextCronRun("0 0 29 2 *", new Date("2026-03-01T00:00:00Z"), {
+      tz: "America/New_York",
+    });
+    expect(leap.getUTCFullYear()).toBe(2028); // still correct
+    // An impossible date (Feb 31) scans the whole window then throws — also fast.
+    expect(() =>
+      nextCronRun("0 0 31 2 *", new Date(), { tz: "America/New_York" }),
+    ).toThrow(/Could not compute/);
+    expect(performance.now() - t0).toBeLessThan(2000);
+  });
   it("changing a schedule's expression recomputes next_run immediately", () => {
     const cron = makeCron(open());
     cron.schedule("j", "0 3 * * *", () => {});

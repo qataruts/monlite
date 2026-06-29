@@ -47,15 +47,17 @@ function buildTagged(
 function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     if (signal?.aborted) return resolve();
-    const t = setTimeout(resolve, ms);
-    signal?.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(t);
-        resolve();
-      },
-      { once: true },
-    );
+    const timer = setTimeout(() => {
+      // Remove the listener on the normal (timed-out) path too — `{ once: true }`
+      // only fires on abort, so without this each poll iteration would leak one.
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      resolve();
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
   });
 }
 
@@ -469,8 +471,16 @@ export class Monlite {
    * otherwise emit the ids directly (in-process only — the unchanged default).
    */
   notifyReactor(collection: string, ids: string[]): void {
-    if (this.$sync) this.drainReactor();
-    else this.reactor.emit(collection, ids);
+    // Deliver AFTER the write commits, so watchers never see uncommitted or
+    // rolled-back data and (changefeed on) the reactor cursor only advances over
+    // committed seqs. afterWrite runs inside the write transaction.
+    const deliver = () => {
+      if (this.closed) return;
+      if (this.$sync) this.drainReactor();
+      else this.reactor.emit(collection, ids);
+    };
+    if (this.driver.afterCommit) this.driver.afterCommit(deliver);
+    else deliver();
   }
 
   /**
@@ -479,12 +489,22 @@ export class Monlite {
    */
   ensureReactorPolling(): void {
     if (!this.$sync || this.reactorTask) return;
-    // Only changes recorded AFTER watching starts should fire watchers; the
-    // initial snapshot already reflects everything up to here.
+    // Re-pin the cursor to "now" each time polling (re)starts — i.e. whenever the
+    // watcher set goes empty -> non-empty — so writes made during a no-watcher
+    // window aren't replayed to a later watcher whose init snapshot already
+    // includes them. (The task is cancelled on the last unwatch below.)
     this.reactorCursor = this.$sync.currentSeq();
     this.reactorTask = this.heartbeat.every(this.reactorPollMs, () =>
       this.drainReactor(),
     );
+  }
+
+  /** @internal Stop the change-feed poll when the last watcher unregisters. */
+  maybeStopReactorPolling(): void {
+    if (this.reactorTask && !this.reactor.hasAnyWatchers()) {
+      this.reactorTask.cancel();
+      this.reactorTask = undefined;
+    }
   }
 
   /** Deliver every feed change since the cursor to the reactor (local + remote). */
