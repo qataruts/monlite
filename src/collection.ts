@@ -1125,8 +1125,11 @@ export class Collection<T = Doc> {
 
     let result: { id: string; doc: WithId<T> } | null;
     try {
+      // Route through Monlite.transactionAsync (serialized + re-entrant) rather
+      // than the driver directly, so concurrent CAS calls don't interleave on the
+      // shared connection and corrupt each other's savepoints.
       result = this.db.transactionAsync
-        ? await this.db.transactionAsync(async () => work())
+        ? await this.mon.transactionAsync(async () => work())
         : this.db.transaction(work);
     } catch (err) {
       throw normalizeDriverError(err, this.name);

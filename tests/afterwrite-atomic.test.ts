@@ -148,3 +148,51 @@ describe("sync ingest indexes atomically too", () => {
     expect(await c.count()).toBe(1);
   });
 });
+
+describe("async transaction concurrency + re-entrancy (swarm-found)", () => {
+  it("concurrent findOneAndUpdate (multi-worker CAS) does not corrupt savepoints", async () => {
+    const db = createDb(":memory:");
+    dbs.push(db);
+    const c = db.collection("jobs");
+    await c.createMany({
+      data: Array.from({ length: 8 }, (_, i) => ({
+        _id: "j" + i,
+        status: "pending",
+      })),
+    });
+    const res = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        c.findOneAndUpdate({
+          where: { status: "pending" },
+          data: { $set: { status: "active" } },
+          returnDocument: "after",
+        }),
+      ),
+    );
+    expect(res.filter((r) => r?.status === "active").length).toBe(8); // all claimed, no errors
+    expect(await c.count({ where: { status: "pending" } })).toBe(0);
+  });
+  it("nested transactionAsync commits and does not brick the connection", async () => {
+    const db = createDb(":memory:");
+    dbs.push(db);
+    const c = db.collection("c");
+    await c.create({ data: { _id: "a", n: 0 } });
+    await db.transactionAsync(async () => {
+      await db.transactionAsync(async () => {
+        await c.update({ where: { _id: "a" }, data: { $set: { n: 1 } } });
+      });
+    });
+    expect((await c.findById("a"))?.n).toBe(1);
+    // inner rollback only: outer commits, inner savepoint reverts
+    await db.transactionAsync(async () => {
+      await c.update({ where: { _id: "a" }, data: { $set: { n: 2 } } });
+      await db
+        .transactionAsync(async () => {
+          await c.update({ where: { _id: "a" }, data: { $set: { n: 99 } } });
+          throw new Error("inner");
+        })
+        .catch(() => {});
+    });
+    expect((await c.findById("a"))?.n).toBe(2); // inner reverted to the outer's 2, not 99
+  });
+});

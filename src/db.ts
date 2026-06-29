@@ -298,6 +298,18 @@ export class Monlite {
       );
     }
     const als = this.getAls();
+    // Re-entrant: a transactionAsync called INSIDE another's callback must NOT
+    // re-queue on txTail (it would deadlock waiting for the outer to release).
+    // Run it directly — it already inherits the outer's async-context scope, and
+    // the driver nests it as a SAVEPOINT.
+    if (als && als.getStore() != null) {
+      this.asyncTxDepth++;
+      return Promise.resolve(
+        this.driver.transactionAsync!(async () => fn(this)),
+      ).finally(() => {
+        this.asyncTxDepth--;
+      }) as Promise<R>;
+    }
     const token = {};
     const run = this.txTail.then(() => {
       this.asyncTxDepth++;
