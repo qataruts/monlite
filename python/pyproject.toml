@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "monlite"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local-first database for Python — documents, cache, queue, FTS, vectors over one SQLite file. The Python port of monlite; reads/writes the same .db as the TypeScript packages."
 readme = "README.md"
 requires-python = ">=3.9"

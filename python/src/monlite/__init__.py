@@ -23,6 +23,7 @@ from .fts import (
     create_search_index,
     fts,
 )
+from .vector import VectorStore, hybrid_search, vector
 
 __all__ = [
     # core (documents, transactions, change feed)
@@ -50,6 +51,10 @@ __all__ = [
     "SearchIndex",
     "create_dynamic_search_index",
     "DynamicSearchIndex",
+    # vector / semantic search ([vector] extra for native sqlite-vec; JS-style fallback otherwise)
+    "vector",
+    "VectorStore",
+    "hybrid_search",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
