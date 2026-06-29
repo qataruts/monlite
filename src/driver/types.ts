@@ -88,8 +88,11 @@ export interface AsyncDriver {
 }
 
 /** True when `d` is an {@link AsyncDriver} (networked engine) rather than a sync {@link Driver}. */
-export function isAsyncDriver(d: Driver | AsyncDriver): d is AsyncDriver {
-  return (d as AsyncDriver).async === true;
+export function isAsyncDriver(d: unknown): d is AsyncDriver {
+  // Guard against non-objects: `d` may be undefined or a string DriverName here.
+  return (
+    typeof d === "object" && d !== null && (d as AsyncDriver).async === true
+  );
 }
 
 export interface DriverOpenOptions {

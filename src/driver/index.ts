@@ -1,6 +1,12 @@
 import { createRequire } from "node:module";
 import { MonliteError } from "../errors.js";
-import type { Driver, DriverName, DriverOpenOptions } from "./types.js";
+import type {
+  Driver,
+  AsyncDriver,
+  DriverName,
+  DriverOpenOptions,
+} from "./types.js";
+import { isAsyncDriver } from "./types.js";
 import { BetterSqlite3Driver } from "./better-sqlite3.js";
 import { NodeSqliteDriver } from "./node-sqlite.js";
 
@@ -48,7 +54,7 @@ function loadNodeSqlite(): any | null {
 }
 
 export interface CreateDriverOptions extends DriverOpenOptions {
-  driver?: DriverName | Driver;
+  driver?: DriverName | Driver | AsyncDriver;
 }
 
 /** A custom driver instance (e.g. `@monlite/wasm`) implements this shape. */
@@ -68,9 +74,12 @@ function isDriverInstance(d: unknown): d is Driver {
 export function createDriver(
   filename: string,
   options: CreateDriverOptions = {},
-): Driver {
-  // A custom driver instance (e.g. the browser WASM driver) is used as-is.
-  if (isDriverInstance(options.driver)) return options.driver;
+): Driver | AsyncDriver {
+  // A pre-built async engine (e.g. @monlite/postgres) is used as-is.
+  if (isAsyncDriver(options.driver as Driver | AsyncDriver))
+    return options.driver as AsyncDriver;
+  // A custom sync driver instance (e.g. the browser WASM driver) is used as-is.
+  if (isDriverInstance(options.driver as Driver)) return options.driver as Driver;
 
   const choice = options.driver ?? "auto";
 

@@ -6,7 +6,7 @@
  */
 
 import type { MonlitePlugin } from "./plugin.js";
-import type { Driver } from "./driver/types.js";
+import type { Driver, AsyncDriver } from "./driver/types.js";
 
 /** A free-form document. */
 export type Doc = Record<string, any>;
@@ -462,7 +462,7 @@ export interface MonliteOptions {
    * You can also pass a custom {@link Driver} instance (e.g. `@monlite/wasm`
    * for the browser).
    */
-  driver?: DriverName | Driver;
+  driver?: DriverName | Driver | AsyncDriver;
   /**
    * Encrypt the database at rest. Requires the `better-sqlite3-multiple-ciphers`
    * package (a drop-in for `better-sqlite3`); not supported on `node:sqlite`.

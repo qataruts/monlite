@@ -182,8 +182,24 @@ export class Collection<T = Doc> {
     return [...this.columnOrder];
   }
 
+  private pgInitialized = false;
+
+  /** Create this collection's Postgres (JSONB) table, once. */
+  private async ensureTablePg(): Promise<void> {
+    if (this.pgInitialized) return;
+    await this.mon.asyncDriver!.exec(
+      `CREATE TABLE IF NOT EXISTS "${this.name}" (` +
+        `_id text PRIMARY KEY, data jsonb NOT NULL, ` +
+        `created_at bigint NOT NULL, updated_at bigint NOT NULL)`,
+    );
+    this.pgInitialized = true;
+  }
+
   private ensureTable(): void {
     if (this.initialized) return;
+    // Postgres engine: tables are created asynchronously via ensureTablePg(); the
+    // synchronous SQLite path below is left entirely unchanged.
+    if (this.mon.asyncDriver) return;
 
     if (this.mode === "document") {
       this.db.exec(
@@ -958,6 +974,7 @@ export class Collection<T = Doc> {
   }
 
   async count(args: CountArgs<T> = {}): Promise<number> {
+    if (this.mon.asyncDriver) return this.countPg(args);
     this.ensureTable();
     const params: any[] = [];
     const where = buildWhere(args.where, {
@@ -969,6 +986,22 @@ export class Collection<T = Doc> {
       .prepare(`SELECT COUNT(*) AS n FROM "${this.name}" WHERE ${where}`)
       .get(...params) as { n: number };
     return row.n;
+  }
+
+  /** Postgres path for {@link count}: shares `buildWhere` (dialect: "postgres"). */
+  private async countPg(args: CountArgs<T>): Promise<number> {
+    await this.ensureTablePg();
+    const params: any[] = [];
+    const where = buildWhere(args.where, {
+      params,
+      columns: this.columns,
+      dialect: "postgres",
+    });
+    const r = await this.mon.asyncDriver!.query(
+      `SELECT COUNT(*)::int AS n FROM "${this.name}" WHERE ${where}`,
+      params,
+    );
+    return r.rows[0].n;
   }
 
   /**

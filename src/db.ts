@@ -12,7 +12,8 @@ import { AutoIndexer } from "./auto-index.js";
 import { MonliteError, normalizeDriverError } from "./errors.js";
 import { bindable } from "./query/sql.js";
 import { createDriver } from "./driver/index.js";
-import type { Driver } from "./driver/types.js";
+import type { Driver, AsyncDriver } from "./driver/types.js";
+import { isAsyncDriver } from "./driver/types.js";
 import { SyncStore } from "./sync/store.js";
 import { Reactor } from "./reactive.js";
 import { Heartbeat, type HeartbeatTask } from "./heartbeat.js";
@@ -62,12 +63,41 @@ function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 /**
+ * A sync {@link Driver} placeholder for an async engine (Postgres). It satisfies the
+ * `driver: Driver` field but throws if a synchronous operation is actually attempted —
+ * which only happens on a code path the async engine doesn't support yet. The real work
+ * goes through `db.asyncDriver`.
+ */
+function asyncEngineStub(name: string): Driver {
+  const nope = (): never => {
+    throw new MonliteError(
+      `The "${name}" engine is asynchronous — this synchronous operation is not ` +
+        `available on it. Use the async API (e.g. await collection.findMany(...) / count(...)).`,
+    );
+  };
+  return {
+    name,
+    raw: null,
+    exec: nope,
+    prepare: nope,
+    transaction: nope,
+    close: () => {},
+  };
+}
+
+/**
  * A monlite database — a thin document layer over a single SQLite file.
  * Create one with {@link createDb}.
  */
 export class Monlite {
   /** @internal The active SQLite driver. */
   readonly driver: Driver;
+  /**
+   * @internal The async engine (e.g. Postgres) when the database runs on one;
+   * `undefined` for SQLite. Collection methods branch on it: present → the async
+   * (networked) path; absent → the unchanged synchronous SQLite path.
+   */
+  readonly asyncDriver?: AsyncDriver;
   /** @internal */
   readonly autoIndexer: AutoIndexer;
   /** @internal Reactivity hub for `collection.watch()`. */
@@ -130,7 +160,7 @@ export class Monlite {
   }
 
   constructor(filename: string, options: MonliteOptions = {}) {
-    this.driver = createDriver(filename, {
+    const raw = createDriver(filename, {
       driver: options.driver,
       readonly: options.readonly,
       wal: options.wal,
@@ -141,6 +171,14 @@ export class Monlite {
       verbose: options.verbose,
       onQuery: options.onQuery,
     });
+    if (isAsyncDriver(raw)) {
+      // Async engine (e.g. Postgres): collection methods take the async path; the
+      // sync `driver` is a stub so the synchronous SQLite code paths stay typed.
+      this.asyncDriver = raw;
+      this.driver = asyncEngineStub(raw.name);
+    } else {
+      this.driver = raw;
+    }
     this.encrypted = options.encryption !== undefined;
     this.maxDocumentBytes = options.maxDocumentBytes;
     this.maxRows = options.maxRows;
@@ -636,11 +674,11 @@ export class Monlite {
 
   /** Close the underlying SQLite connection. */
   $disconnect(): Promise<void> {
-    if (!this.closed) {
-      this.closed = true;
-      this.heartbeat.stop();
-      this.driver.close();
-    }
+    if (this.closed) return Promise.resolve();
+    this.closed = true;
+    this.heartbeat.stop();
+    if (this.asyncDriver) return this.asyncDriver.close();
+    this.driver.close();
     return Promise.resolve();
   }
 
