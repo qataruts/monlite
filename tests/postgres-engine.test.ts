@@ -219,13 +219,50 @@ try {
       expect((await s.distinct("tags")).sort()).toEqual(["a", "b", "c"]); // array elements
     });
 
-    it("still-unsupported methods throw a clear error on Postgres (never silent)", async () => {
-      const c = db.collection("crud");
-      await expect(c.explain({})).rejects.toThrow(/postgres engine/);
-      await expect(c.bulkWrite([])).rejects.toThrow(/postgres engine/);
-      await expect(
-        c.findOneAndUpdate({ where: { _id: "x" }, data: {} } as any),
-      ).rejects.toThrow(/postgres engine/);
+    it("findOneAndUpdate + bulkWrite on Postgres", async () => {
+      await db.asyncDriver.exec(`DROP TABLE IF EXISTS crud2 CASCADE`);
+      const c = db.collection("crud2");
+      await c.createMany({ data: [{ _id: "a", n: 1 }, { _id: "b", n: 2 }] });
+
+      // findOneAndUpdate: returns "after" by default, "before" on request
+      expect((await c.findOneAndUpdate({ where: { _id: "a" }, data: { $inc: { n: 10 } } }))?.n).toBe(11);
+      const before = await c.findOneAndUpdate({
+        where: { _id: "a" },
+        data: { $set: { n: 0 } },
+        returnDocument: "before",
+      } as any);
+      expect(before?.n).toBe(11);
+      expect((await c.findById("a"))?.n).toBe(0);
+
+      // bulkWrite: mixed ops, all in one transaction (insert is visible to the later update)
+      const res = await c.bulkWrite([
+        { insertOne: { _id: "c", n: 3 } },
+        { updateMany: { where: { n: { gte: 0 } }, data: { $set: { tag: "x" } } } },
+        { deleteOne: { where: { _id: "b" } } },
+      ] as any);
+      expect(res.inserted).toBe(1);
+      expect(res.updated).toBe(3); // a, b, c (c inserted earlier in the same txn)
+      expect(res.deleted).toBe(1);
+      expect(await c.count()).toBe(2); // a, c remain
+      expect((await c.findById("c"))?.tag).toBe("x");
+    });
+
+    it("purgeExpired on Postgres (ttl)", async () => {
+      await db.asyncDriver.exec(`DROP TABLE IF EXISTS ses CASCADE`);
+      const ses = db.collection("ses", { ttl: { field: "createdAt", seconds: 1 } });
+      await ses.createMany({
+        data: [
+          { _id: "old", createdAt: Date.now() - 10_000 }, // 10s ago → expired
+          { _id: "fresh", createdAt: Date.now() },
+        ],
+      });
+      expect((await ses.purgeExpired()).count).toBe(1);
+      expect(await ses.findById("old")).toBeNull();
+      expect(await ses.findById("fresh")).not.toBeNull();
+    });
+
+    it("only explain() remains unsupported on Postgres", async () => {
+      await expect(db.collection("crud").explain({})).rejects.toThrow(/postgres engine/);
     });
   },
 );

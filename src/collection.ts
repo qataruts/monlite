@@ -1488,6 +1488,110 @@ export class Collection<T = Doc> {
     this.pgNotifyReady = true;
   }
 
+  // ── Postgres: findOneAndUpdate / bulkWrite / purgeExpired ──────────────────
+  private async findOneAndUpdatePg(
+    args: FindOneAndUpdateArgs<T>,
+  ): Promise<WithId<T> | null> {
+    this.mon.assertWriteAllowed();
+    if (this.mode !== "document")
+      return this.pgUnsupported("structured collections");
+    await this.ensureTablePg();
+    return this.mon.asyncDriver!.transactionAsync(async () => {
+      const docs = await this.findManyPg({
+        where: args.where,
+        take: 1,
+      } as FindManyArgs<T>);
+      if (!docs.length) return null;
+      const doc = docs[0];
+      const id = (doc as any)._id;
+      const now = Date.now();
+      const updated = stripSystem(applyUpdate(stripSystem(doc), args.data));
+      await this.mon.asyncDriver!.query(
+        `UPDATE "${this.name}" SET data = ?, updated_at = ? WHERE _id = ?`,
+        [JSON.stringify(updated), now, id],
+      );
+      const after = {
+        ...updated,
+        _id: id,
+        created_at: (doc as any).created_at,
+        updated_at: now,
+      } as WithId<T>;
+      return args.returnDocument === "before" ? (doc as WithId<T>) : after;
+    });
+  }
+
+  private async bulkWritePg(
+    operations: BulkWriteOp<T>[],
+  ): Promise<BulkWriteResult> {
+    this.mon.assertWriteAllowed();
+    if (this.mode !== "document")
+      return this.pgUnsupported("structured collections");
+    await this.ensureTablePg();
+    const result: BulkWriteResult = { inserted: 0, updated: 0, deleted: 0 };
+    await this.mon.asyncDriver!.transactionAsync(async () => {
+      for (const op of operations) {
+        if ("insertOne" in op) {
+          const ins = this.buildInsert(op.insertOne);
+          await this.mon.asyncDriver!.query(this.insertSql(), ins.values);
+          result.inserted++;
+        } else if ("updateOne" in op || "updateMany" in op) {
+          const single = "updateOne" in op;
+          const spec = (single ? (op as any).updateOne : (op as any).updateMany) as {
+            where: WhereInput<T>;
+            data: UpdateData<T>;
+          };
+          const docs = await this.findManyPg({
+            where: spec.where,
+            ...(single ? { take: 1 } : {}),
+          } as FindManyArgs<T>);
+          for (const doc of docs) {
+            const now = Date.now();
+            const updated = stripSystem(applyUpdate(stripSystem(doc), spec.data));
+            await this.mon.asyncDriver!.query(
+              `UPDATE "${this.name}" SET data = ?, updated_at = ? WHERE _id = ?`,
+              [JSON.stringify(updated), now, (doc as any)._id],
+            );
+            result.updated++;
+          }
+        } else if ("deleteOne" in op || "deleteMany" in op) {
+          const single = "deleteOne" in op;
+          const spec = (single ? (op as any).deleteOne : (op as any).deleteMany) as {
+            where: WhereInput<T>;
+          };
+          const docs = await this.findManyPg({
+            where: spec.where,
+            select: { _id: true } as any,
+            ...(single ? { take: 1 } : {}),
+          } as FindManyArgs<T>);
+          for (const doc of docs) {
+            await this.mon.asyncDriver!.query(
+              `DELETE FROM "${this.name}" WHERE _id = ?`,
+              [(doc as any)._id],
+            );
+            result.deleted++;
+          }
+        }
+      }
+    });
+    return result;
+  }
+
+  private async purgeExpiredPg(): Promise<{ count: number }> {
+    if (!this.ttl)
+      throw new MonliteError(
+        "purgeExpired() requires the `ttl` collection option.",
+      );
+    this.mon.assertWriteAllowed();
+    await this.ensureTablePg();
+    const cutoff = Date.now() - this.ttl.seconds * 1000;
+    // The ttl field is a numeric timestamp; missing → NULL → not purged (as SQLite).
+    const r = await this.mon.asyncDriver!.query(
+      `DELETE FROM "${this.name}" WHERE ${this.pgAggField(this.ttl.field)} < ?`,
+      [cutoff],
+    );
+    return { count: r.changes };
+  }
+
   /**
    * Return the distinct values of a field. Array fields stored in JSON are
    * unwound (each element counts as a value), matching MongoDB's `distinct`.
@@ -1660,7 +1764,7 @@ export class Collection<T = Doc> {
   async findOneAndUpdate(
     args: FindOneAndUpdateArgs<T>,
   ): Promise<WithId<T> | null> {
-    if (this.mon.asyncDriver) return this.pgUnsupported("findOneAndUpdate()");
+    if (this.mon.asyncDriver) return this.findOneAndUpdatePg(args);
     this.ensureTable();
     this.mon.assertWriteAllowed();
     const params: any[] = [];
@@ -1724,7 +1828,7 @@ export class Collection<T = Doc> {
    * `deleteMany` operations in **one transaction** (all-or-nothing).
    */
   async bulkWrite(operations: BulkWriteOp<T>[]): Promise<BulkWriteResult> {
-    if (this.mon.asyncDriver) return this.pgUnsupported("bulkWrite()");
+    if (this.mon.asyncDriver) return this.bulkWritePg(operations);
     this.ensureTable();
     this.mon.assertWriteAllowed();
     const ids: string[] = [];
@@ -1817,7 +1921,7 @@ export class Collection<T = Doc> {
    * Call periodically (e.g. from a cron tick). Returns the number removed.
    */
   async purgeExpired(): Promise<{ count: number }> {
-    if (this.mon.asyncDriver) return this.pgUnsupported("purgeExpired()");
+    if (this.mon.asyncDriver) return this.purgeExpiredPg();
     if (!this.ttl) {
       throw new MonliteError(
         "purgeExpired() requires the `ttl` collection option.",
