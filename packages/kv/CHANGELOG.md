@@ -1,5 +1,13 @@
 # @monlite/kv
 
+## 0.3.0 — pub/sub
+
+- **`publish(channel, message)` / `subscribe(channel, cb)`** (Redis-style PUBLISH/SUBSCRIBE).
+  Same-process delivery is immediate; cross-process listeners (other connections to the same
+  `.db`) receive messages too, via a short poll (`pubsubPollMs`, default 200) that starts on the
+  first subscribe and **stops when the last unsubscribes** (`unref`'d — no idle cost otherwise).
+  Ephemeral — not replayed to late subscribers; old messages are pruned automatically.
+
 ## 0.2.2 — correctness fix (bug hunt)
 
 - **`set(key, undefined)` stores JSON `null` and round-trips cleanly** instead of throwing a

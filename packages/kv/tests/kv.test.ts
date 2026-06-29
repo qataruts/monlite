@@ -1,10 +1,21 @@
 import { describe, it, expect, afterEach } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createDb, type Monlite, type MonliteOptions } from "@monlite/core";
 import { kv } from "../src/index";
 
 const driver =
   (process.env.MONLITE_DRIVER as MonliteOptions["driver"]) || undefined;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const waitFor = async (fn: () => boolean, ms = 3000): Promise<void> => {
+  const start = Date.now();
+  while (Date.now() - start < ms) {
+    if (fn()) return;
+    await sleep(10);
+  }
+  throw new Error("waitFor timed out");
+};
 
 const dbs: Monlite[] = [];
 function open(): Monlite {
@@ -112,5 +123,59 @@ describe("kv edge cases (swarm-found)", () => {
     expect(c.get("n")).toBe(0);
     expect(c.get("s")).toBe("");
     expect(c.get("b")).toBe(false);
+  });
+});
+
+describe("kv pub/sub (paradigm improvements)", () => {
+  it("delivers to same-channel subscribers, filters others, no replay", async () => {
+    const c = kv(open());
+    const got: any[] = [];
+    const un = c.subscribe("news", (m) => got.push(m));
+    expect(c.publish("news", { hello: "world" })).toBe(1); // 1 local listener
+    c.publish("other", { x: 1 }); // different channel
+    await sleep(20);
+    expect(got).toEqual([{ hello: "world" }]);
+    // unsubscribe → no more delivery
+    un();
+    c.publish("news", { after: "unsub" });
+    await sleep(20);
+    expect(got).toHaveLength(1);
+    // late subscriber does not replay past messages
+    c.publish("news", { past: true });
+    const late: any[] = [];
+    c.subscribe("news", (m) => late.push(m));
+    await sleep(20);
+    expect(late).toHaveLength(0);
+  });
+
+  it("fans out to multiple subscribers on a channel", async () => {
+    const c = kv(open());
+    const a: any[] = [];
+    const b: any[] = [];
+    c.subscribe("room", (m) => a.push(m));
+    c.subscribe("room", (m) => b.push(m));
+    c.publish("room", { hi: 1 });
+    await sleep(20);
+    expect(a).toEqual([{ hi: 1 }]);
+    expect(b).toEqual([{ hi: 1 }]);
+  });
+
+  it("delivers across processes (separate connections, same file)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kvps-"));
+    const file = join(dir, "ps.db");
+    const dbA = createDb(file, driver ? { driver } : {});
+    const dbB = createDb(file, driver ? { driver } : {});
+    dbs.push(dbA, dbB);
+    const A = kv(dbA, { pubsubPollMs: 30 });
+    const B = kv(dbB, { pubsubPollMs: 30 });
+    const recv: any[] = [];
+    A.subscribe("events", (m) => recv.push(m));
+    await sleep(50);
+    B.publish("events", { from: "B" });
+    await waitFor(() => recv.length >= 1);
+    expect(recv).toEqual([{ from: "B" }]);
+    A.stop();
+    B.stop();
+    rmSync(dir, { recursive: true, force: true });
   });
 });

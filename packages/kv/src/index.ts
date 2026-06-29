@@ -5,6 +5,8 @@ export interface KVOptions {
   namespace?: string;
   /** If set, a timer periodically purges expired keys (ms). Default: lazy-only. */
   sweepIntervalMs?: number;
+  /** How often (ms) a `subscribe()` listener polls for cross-process messages. Default `200`. */
+  pubsubPollMs?: number;
 }
 
 /**
@@ -36,7 +38,19 @@ export interface KV {
   flush(): void;
   /** Number of live keys in this namespace. */
   size(): number;
-  /** Stop the sweep timer (if any). */
+  /**
+   * Publish a message to a channel (Redis `PUBLISH`). Delivered to every
+   * `subscribe()` listener on that channel — including in OTHER processes
+   * sharing this database. Ephemeral: not replayed to late subscribers. Returns
+   * the number of listeners on this instance that received it.
+   */
+  publish(channel: string, message: any): number;
+  /**
+   * Subscribe to a channel (Redis `SUBSCRIBE`). The callback fires for each
+   * message published AFTER this call, cross-process. Returns an unsubscribe.
+   */
+  subscribe(channel: string, cb: (message: any) => void): () => void;
+  /** Stop the sweep + pub/sub timers (if any). */
   stop(): void;
 }
 
@@ -60,12 +74,18 @@ export function kv(db: Monlite, options: KVOptions = {}): KV {
       `CREATE TABLE IF NOT EXISTS _kv (
         ns TEXT NOT NULL, k TEXT NOT NULL, v TEXT NOT NULL,
         expires_at INTEGER, PRIMARY KEY (ns, k)
-      )`,
+      );
+      CREATE TABLE IF NOT EXISTS _monlite_kv_pubsub (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        ns TEXT NOT NULL, channel TEXT NOT NULL, payload TEXT, ts INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS _idx_kv_pubsub ON _monlite_kv_pubsub (ns, seq)`,
     );
     ensured.add(db);
   }
 
   const now = () => Date.now();
+  const pubsubPollMs = Math.max(20, options.pubsubPollMs ?? 200);
   const fresh = (row: any): boolean =>
     !!row && !(row.expires_at != null && row.expires_at <= now());
 
@@ -87,6 +107,44 @@ export function kv(db: Monlite, options: KVOptions = {}): KV {
       .run(ns, key, v, expires);
 
   let timer: ReturnType<typeof setInterval> | undefined;
+
+  // ── pub/sub ──────────────────────────────────────────────────────────────
+  type Sub = { channel: string; cb: (m: any) => void; cursor: number };
+  const subs = new Set<Sub>();
+  let psTimer: ReturnType<typeof setInterval> | undefined;
+
+  const psMaxSeq = (): number =>
+    (
+      driver
+        .prepare(`SELECT MAX(seq) AS s FROM _monlite_kv_pubsub WHERE ns = ?`)
+        .get(ns) as { s: number | null }
+    ).s ?? 0;
+
+  /** Deliver new messages to every local subscriber (cross-process via the table). */
+  const drainPubsub = (): void => {
+    if (subs.size === 0) return;
+    let min = Infinity;
+    for (const s of subs) min = Math.min(min, s.cursor);
+    const rows = driver
+      .prepare(
+        `SELECT seq, channel, payload FROM _monlite_kv_pubsub WHERE ns = ? AND seq > ? ORDER BY seq`,
+      )
+      .all(ns, min) as Array<{ seq: number; channel: string; payload: string }>;
+    if (rows.length === 0) return;
+    for (const s of [...subs]) {
+      for (const r of rows) {
+        if (r.seq <= s.cursor) continue;
+        s.cursor = r.seq;
+        if (r.channel === s.channel) {
+          try {
+            s.cb(JSON.parse(r.payload ?? "null"));
+          } catch {
+            /* a subscriber callback must not break delivery to others */
+          }
+        }
+      }
+    }
+  };
 
   const api: KV = {
     get(key) {
@@ -188,9 +246,45 @@ export function kv(db: Monlite, options: KVOptions = {}): KV {
           .get(ns, now()) as { n: number }
       ).n;
     },
+    publish(channel, message) {
+      const ts = now();
+      driver
+        .prepare(
+          `INSERT INTO _monlite_kv_pubsub (ns, channel, payload, ts) VALUES (?, ?, ?, ?)`,
+        )
+        .run(ns, channel, JSON.stringify(message ?? null), ts);
+      // Ephemeral: prune old messages (late subscribers don't replay) so the
+      // table can't grow unbounded.
+      driver
+        .prepare(`DELETE FROM _monlite_kv_pubsub WHERE ts < ?`)
+        .run(ts - 30_000);
+      // Deliver to same-instance subscribers immediately (cross-process listeners
+      // pick it up on their next poll).
+      drainPubsub();
+      let n = 0;
+      for (const s of subs) if (s.channel === channel) n++;
+      return n;
+    },
+    subscribe(channel, cb) {
+      const sub: Sub = { channel, cb, cursor: psMaxSeq() }; // start at "now" — no replay
+      subs.add(sub);
+      if (!psTimer) {
+        psTimer = setInterval(drainPubsub, pubsubPollMs);
+        psTimer.unref?.();
+      }
+      return () => {
+        subs.delete(sub);
+        if (subs.size === 0 && psTimer) {
+          clearInterval(psTimer);
+          psTimer = undefined;
+        }
+      };
+    },
     stop() {
       if (timer) clearInterval(timer);
       timer = undefined;
+      if (psTimer) clearInterval(psTimer);
+      psTimer = undefined;
     },
   };
 
