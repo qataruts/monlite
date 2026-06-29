@@ -5,7 +5,9 @@ title: "@monlite/fts"
 
 # @monlite/fts — full-text search
 
-Keyword search over your documents, backed by SQLite FTS5.
+Keyword search over your documents — SQLite **FTS5** on [`@monlite/core`](./postgres), or a native
+**`tsvector`** column + GIN index on [`@monlite/postgres`](./postgres). Same `collection.search()`
+API on either engine.
 
 ```bash
 npm install @monlite/fts

@@ -27,6 +27,7 @@ const sidebars: SidebarsConfig = {
       label: "Packages",
       items: [
         "packages/monlite",
+        "packages/postgres",
         "packages/sync",
         "packages/realtime",
         "packages/fts",

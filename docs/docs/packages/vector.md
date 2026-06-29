@@ -5,8 +5,9 @@ title: "@monlite/vector"
 
 # @monlite/vector — vector / semantic search
 
-Local vector search backed by `sqlite-vec`. Open the database with
-`{ allowExtensions: true }`.
+Vector / semantic search — `sqlite-vec` on [`@monlite/core`](./postgres) (open with
+`{ allowExtensions: true }`), or a native `vector` column + HNSW index (**pgvector**) on
+[`@monlite/postgres`](./postgres). Same `collection.findSimilar()` API on either engine.
 
 ```bash
 npm install @monlite/vector

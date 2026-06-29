@@ -9,6 +9,10 @@ monlite has a local-first reactivity layer: live queries (`watch()`), single-doc
 listeners (`watchDoc()`), and a durable, ordered **change feed** that also delivers writes
 from other processes sharing the same `.db`.
 
+> On the [`@monlite/postgres`](../packages/postgres) engine, `watch()` works the same way over
+> Postgres `LISTEN/NOTIFY` — a per-table trigger notifies on every write from any connection, so
+> live queries are truly cross-process. The same delta engine computes added/removed/changed/moved.
+
 All of it is **additive and opt-in** — the change feed adds nothing until you turn it on.
 
 ## Live queries — `collection.watch()`
