@@ -93,6 +93,11 @@ Same-process writes still notify immediately; other processes are picked up ever
 `reactorPollMs` (default `200`). With the feed **off**, `watch()` is purely in-process (the
 default, zero overhead).
 
+This cross-process poll — along with `@monlite/kv` pub/sub, the `@monlite/queue` idle poll and
+`@monlite/cron` — runs on the database's **single coalesced timer** (`db.heartbeat`): one
+event-loop wakeup for all of them, armed only for the soonest-due task, and none at all when
+nothing is registered.
+
 > Building a networked, multi-client realtime service (push to browsers/mobile) on top of this
 > feed is the `@monlite/realtime` package's job — the feed is the durable, resumable backbone it
 > streams from.

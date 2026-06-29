@@ -45,3 +45,23 @@ queue.add("digest", { day: "mon" }, { delay: 60_000, priority: 10, jobId: "diges
   is ignored and fires no duplicate `completed`/`failed` event.
 
 `queue.counts(name?)` → `{ pending, active, done, failed }`.
+
+## Rate limiting & idle backoff
+
+```ts
+// Throttle a worker to at most 10 jobs/sec (e.g. an external API's limit)
+queue.process("call-api", handler, { rateLimit: { count: 10, windowMs: 1000 } });
+
+// Let an idle worker back off instead of polling every 500ms forever
+queue.process("rare", handler, { pollInterval: 500, maxPollInterval: 5_000 });
+```
+
+- **`rateLimit: { count, windowMs }`** — a sliding-window throttle: the worker stops claiming when
+  the window is full and resumes the instant a slot frees. **Per-worker** (run a single worker for
+  a global limit). Off by default.
+- **`maxPollInterval`** — opt-in adaptive backoff: an idle worker doubles its poll interval up to
+  this cap and resets on activity, so a quiet queue stops churning the DB. Same-process `add()` and
+  job completion still wake it instantly. Default = `pollInterval` (unchanged behavior).
+
+All workers' idle polls (plus the reactor, kv pub/sub and cron) share the database's **single
+coalesced timer**, so a busy app with many subsystems still runs one event-loop wakeup, not many.

@@ -44,3 +44,41 @@ exactly one acquires the lock — the losers cleanly get `false` rather than err
 
 Use a separate `:memory:` db for a purely ephemeral cache, or `{ namespace }` to
 isolate multiple caches in one file.
+
+## Pub/sub
+
+`publish` / `subscribe` (Redis `PUBLISH` / `SUBSCRIBE`) fan out messages to listeners —
+including **across processes** sharing the same `.db`.
+
+```ts
+const stop = cache.subscribe("jobs", (msg) => console.log("got", msg));
+cache.publish("jobs", { id: 7 }); // delivered to every subscriber on "jobs"
+stop(); // unsubscribe
+```
+
+Same-process delivery is immediate; cross-process listeners are picked up by a short poll
+(`pubsubPollMs`, default `200`) that starts on the first `subscribe()` and **stops when the
+last one unsubscribes**. Messages are ephemeral — not replayed to late subscribers, and old
+messages are pruned automatically.
+
+## Sorted sets (ZSET)
+
+Redis-style sorted sets — leaderboards, rate-limiters, priority indexes.
+
+```ts
+cache.zadd("board", 100, "alice");
+cache.zadd("board", 60, "bob");
+cache.zincrby("board", 5, "bob"); // → 65
+cache.zrange("board", 0, 2, { rev: true }); // top 3 by score
+cache.zrange("board", 0, -1, { withScores: true }); // [{ member, score }, …]
+cache.zrangeByScore("board", 50, 100); // members with 50 ≤ score ≤ 100
+cache.zrank("board", "alice", { rev: true }); // 0 = top
+```
+
+| Method | Description |
+|---|---|
+| `zadd(key, score, member)` / `zincrby(key, delta, member)` | add/update / atomically bump a score |
+| `zscore` / `zrank(key, member, { rev })` | a member's score / 0-based rank (ties lexicographic) |
+| `zrange(key, start, stop, { rev, withScores })` | members by rank range (negative = from the end) |
+| `zrangeByScore(key, min, max, { withScores })` | members within a score range |
+| `zrem` / `zcard` | remove a member / count members |
