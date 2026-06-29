@@ -1,5 +1,20 @@
 # @monlite/vector
 
+## 0.5.6 — correctness fixes (bug hunt)
+
+`createVectorStore` (the dynamic store) fixes:
+
+- **Filtering on a numeric `indexedFields` value now works.** Indexed metadata is stored as
+  text, but the filter bound the raw number — so `where: { year: 2021 }` matched nothing.
+  The filter value is now compared as text, matching how it is stored.
+- **A reopened store recovers its indexed fields + metric** from the table definition
+  (it was caching empty metadata fields, silently downgrading every filter to the slow
+  post-filter path).
+- **An all-zero query vector under cosine throws a clear error** instead of producing
+  `NaN` distances that corrupt the ranking (L2 still works — its distance is well-defined).
+- **`topK` is clamped to sqlite-vec's hard k-limit (4096)**, matching the plugin path, so a
+  very large `topK` (or post-filter over-fetch) can't throw "k value too large".
+
 ## 0.5.5 — repackage (dependency fix)
 
 - Republished because 0.5.4 shipped with an unresolved `@monlite/core: "workspace:^"` dependency

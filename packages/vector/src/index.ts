@@ -535,7 +535,7 @@ function wherePairs(
  */
 export function createVectorStore(db: Monlite): VectorStore {
   loadVec(db);
-  const configs = new Map<string, { metaFields: string[] }>();
+  const configs = new Map<string, { metaFields: string[]; metric: string }>();
 
   const create = (
     name: string,
@@ -550,20 +550,42 @@ export function createVectorStore(db: Monlite): VectorStore {
       `CREATE VIRTUAL TABLE IF NOT EXISTS "${n}" USING vec0(` +
         `doc_id text primary key, embedding float[${Math.floor(dim)}]${metricClause}${metaCols}, +payload text)`,
     );
-    configs.set(name, { metaFields });
+    configs.set(name, { metaFields, metric });
     return configs.get(name)!;
   };
 
   const known = (name: string) => {
     if (configs.has(name)) return configs.get(name)!;
     const row = db.sqlite
-      .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name = ?`)
-      .get(name);
-    if (row) {
-      configs.set(name, { metaFields: [] });
-      return configs.get(name)!;
+      .prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name = ?`)
+      .get(name) as { sql?: string } | undefined;
+    if (!row?.sql) return undefined;
+    // Recover the REAL schema (indexed metadata columns + metric) from the vec0
+    // table definition so a reopened store still pre-filters correctly. Caching
+    // empty metaFields here pushed every filter onto the (over-fetch) slow path.
+    const metric = /distance_metric\s*=\s*cosine/i.test(row.sql)
+      ? "cosine"
+      : "l2";
+    const cols = row.sql.match(/vec0\s*\(([\s\S]*)\)/i);
+    const metaFields: string[] = [];
+    if (cols) {
+      for (const raw of cols[1].split(",")) {
+        const part = raw.trim();
+        const name0 = part.split(/\s+/)[0]?.replace(/^"(.*)"$/, "$1") ?? "";
+        // skip doc_id, the embedding column, and the +payload aux column
+        if (
+          !name0 ||
+          name0 === "doc_id" ||
+          name0 === "embedding" ||
+          name0.startsWith("+") ||
+          /^embedding\b/.test(part)
+        )
+          continue;
+        metaFields.push(name0);
+      }
     }
-    return undefined;
+    configs.set(name, { metaFields, metric });
+    return configs.get(name)!;
   };
 
   return {
@@ -614,11 +636,24 @@ export function createVectorStore(db: Monlite): VectorStore {
     search(name, { vector, topK = 10, where }) {
       const cfg = known(name);
       if (!cfg) return [];
+      // Cosine distance to a zero-magnitude vector is undefined (0/0 → NaN), which
+      // silently corrupts the ranking — reject it with a clear error instead.
+      if (cfg.metric === "cosine" && vector.every((v) => v === 0)) {
+        throw new Error(
+          "@monlite/vector: cosine search needs a non-zero query vector " +
+            "(distance to an all-zero vector is undefined)",
+        );
+      }
       const meta = new Set(cfg.metaFields);
       const pairs = wherePairs(where);
       const sqlF = pairs.filter((p) => meta.has(p.key));
       const postF = pairs.filter((p) => !meta.has(p.key));
-      const k = Math.max(1, postF.length ? Math.max(topK * 8, 64) : topK);
+      // Clamp to sqlite-vec's hard k limit (4096) so a large topK / post-filter
+      // over-fetch can't throw "k value too large" (matches the plugin path).
+      const k = Math.min(
+        4096,
+        Math.max(1, postF.length ? Math.max(topK * 8, 64) : topK),
+      );
       // Re-validate the metadata column name at query time (defense in depth).
       const clause = sqlF.map((p) => ` AND ${vecIdent(p.key)} = ?`).join("");
       const sql =
@@ -628,7 +663,13 @@ export function createVectorStore(db: Monlite): VectorStore {
       try {
         rows = db.sqlite
           .prepare(sql)
-          .all(JSON.stringify(vector), k, ...sqlF.map((p) => p.value)) as never;
+          // Indexed metadata columns are stored as text (String(value) on upsert),
+          // so bind the filter value as text too — else `year = 2021` never matches "2021".
+          .all(
+            JSON.stringify(vector),
+            k,
+            ...sqlF.map((p) => String(p.value)),
+          ) as never;
       } catch {
         return [];
       }

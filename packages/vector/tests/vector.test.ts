@@ -306,3 +306,58 @@ describe("findSimilar clamps k to sqlite-vec's limit", () => {
     ).resolves.toBeDefined();
   });
 });
+
+describe("createVectorStore edge cases (swarm-found)", () => {
+  function storeDb(): Monlite {
+    const d = createDb(":memory:", {
+      allowExtensions: true,
+      ...(driver ? { driver } : {}),
+    });
+    dbs.push(d);
+    return d;
+  }
+  it("filters on a numeric indexed field", () => {
+    const store = createVectorStore(storeDb());
+    store.ensureCollection("docs", { dimensions: 3, indexedFields: ["year"] });
+    store.upsert("docs", [
+      { id: "a", vector: [1, 0, 0], metadata: { year: 2020 } },
+      { id: "b", vector: [0, 1, 0], metadata: { year: 2021 } },
+    ]);
+    const hits = store.search("docs", {
+      vector: [0, 1, 0],
+      topK: 5,
+      where: { year: 2021 },
+    });
+    expect(hits.map((h) => h.id)).toEqual(["b"]);
+  });
+  it("rejects an all-zero query vector under cosine", () => {
+    const store = createVectorStore(storeDb());
+    store.ensureCollection("z", { dimensions: 3 });
+    store.upsert("z", [{ id: "x", vector: [1, 2, 3] }]);
+    expect(() => store.search("z", { vector: [0, 0, 0], topK: 1 })).toThrow(
+      /non-zero/,
+    );
+  });
+  it("recovers indexed fields after reopen", async () => {
+    const file = join(mkdtempSync(join(tmpdir(), "vstore-")), "v.db");
+    const mk = () =>
+      createDb(file, { allowExtensions: true, ...(driver ? { driver } : {}) });
+    let db = mk();
+    let store = createVectorStore(db);
+    store.ensureCollection("d", { dimensions: 3, indexedFields: ["year"] });
+    store.upsert("d", [
+      { id: "a", vector: [1, 0, 0], metadata: { year: 2020 } },
+      { id: "b", vector: [0, 1, 0], metadata: { year: 2021 } },
+    ]);
+    await db.$disconnect();
+    db = mk();
+    dbs.push(db);
+    store = createVectorStore(db);
+    const hits = store.search("d", {
+      vector: [0, 1, 0],
+      topK: 5,
+      where: { year: 2021 },
+    });
+    expect(hits.map((h) => h.id)).toEqual(["b"]);
+  });
+});
