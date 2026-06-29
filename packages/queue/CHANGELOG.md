@@ -1,5 +1,16 @@
 # @monlite/queue
 
+## 0.3.5 — correctness fixes (bug hunt)
+
+- **Dedupe by `jobId` is scoped to the queue.** The same `jobId` on a _different_ queue
+  was silently dropped (it returned the other queue's job) — now each queue dedupes
+  independently.
+- **A non-serializable handler result (BigInt / circular) no longer crashes the worker.**
+  It was throwing while recording completion and leaving the job stuck `active` with no
+  fail/retry/event; results are now serialized defensively (BigInt→string, circular→placeholder).
+- **Concurrent `stop()`/`close()` no longer deadlock.** A shared drain promise replaces the
+  single resolver that a second `stop()` overwrote, which orphaned the first caller forever.
+
 ## 0.3.4 — repackage (dependency fix)
 
 - Republished because 0.3.3 (and 0.3.2) shipped with an unresolved `@monlite/core: "workspace:^"` dependency

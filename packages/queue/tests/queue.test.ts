@@ -235,3 +235,31 @@ describe("fencing: a reclaimed job rejects the original worker's stale write", (
     expect(done?.result).toBe("B");
   });
 });
+
+describe("queue edge cases (swarm-found)", () => {
+  it("dedupe by jobId is per-queue, not global", () => {
+    const q = makeQueue(open());
+    const a = q.add("emails", { x: 1 }, { jobId: "dup" });
+    const b = q.add("reports", { x: 2 }, { jobId: "dup" });
+    expect(a.id).not.toBe(b.id); // different queues -> distinct jobs
+    expect(q.add("emails", { x: 3 }, { jobId: "dup" }).id).toBe(a.id); // same queue -> deduped
+  });
+  it("a non-serializable handler result completes the job (no crash, no stuck job)", async () => {
+    const q = makeQueue(open());
+    const id = q.add("t", {}).id;
+    await new Promise<void>((resolve) => {
+      q.on("completed", () => resolve());
+      q.process("t", async () => ({ big: 10n }));
+    });
+    expect(q.getJob(id)?.status).toBe("done");
+  });
+  it("concurrent stop() calls all resolve (no orphaned drain promise)", async () => {
+    const q = makeQueue(open());
+    const w = q.process("t", async () => {
+      await sleep(80);
+    });
+    q.add("t", {});
+    await sleep(20);
+    await Promise.all([w.stop(), w.stop()]); // must not deadlock
+  }, 5000);
+});

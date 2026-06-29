@@ -84,6 +84,22 @@ interface Row {
 
 const ensured = new WeakSet<object>();
 const now = () => Date.now();
+
+/** Serialize a job result, tolerating BigInt / non-JSON values — a quirky handler
+ *  result must not throw and leave the job stuck `active` with no fail/retry/event. */
+function safeStringify(v: unknown): string {
+  try {
+    return JSON.stringify(v ?? null);
+  } catch {
+    try {
+      return JSON.stringify(v, (_k, val) =>
+        typeof val === "bigint" ? val.toString() : val,
+      );
+    } catch {
+      return JSON.stringify("[unserializable result]");
+    }
+  }
+}
 const defaultBackoff = (attempt: number) =>
   Math.min(30_000, 1000 * 2 ** (attempt - 1));
 
@@ -110,6 +126,7 @@ class WorkerImpl implements Worker {
   private inFlight = 0;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private drainResolve: (() => void) | undefined;
+  private drainPromise: Promise<void> | undefined;
   private readonly concurrency: number;
   private readonly pollInterval: number;
   private readonly visibilityTimeout: number;
@@ -187,6 +204,7 @@ class WorkerImpl implements Worker {
     if (!this.running && this.inFlight === 0 && this.drainResolve) {
       this.drainResolve();
       this.drainResolve = undefined;
+      this.drainPromise = undefined;
     }
   }
 
@@ -195,9 +213,14 @@ class WorkerImpl implements Worker {
     if (this.timer) clearTimeout(this.timer);
     if (this.reaper) clearInterval(this.reaper);
     if (this.inFlight === 0) return;
-    await new Promise<void>((resolve) => {
-      this.drainResolve = resolve;
-    });
+    // Share ONE drain promise across concurrent stop()/close() calls — overwriting
+    // a single resolver would orphan the earlier caller's promise forever.
+    if (!this.drainPromise) {
+      this.drainPromise = new Promise<void>((resolve) => {
+        this.drainResolve = resolve;
+      });
+    }
+    return this.drainPromise;
   }
 }
 
@@ -259,11 +282,13 @@ export class Queue extends EventEmitter {
   add<T = any>(name: string, payload: T, opts: AddOptions = {}): Job<T> {
     const t = now();
     if (opts.jobId) {
+      // Scope dedupe to THIS queue — a jobId is unique per queue, not globally;
+      // without `queue = ?` a same-jobId job on another queue was silently dropped.
       const existing = this.driver
         .prepare(
-          `SELECT * FROM _jobs WHERE job_id = ? AND status IN ('pending','active') LIMIT 1`,
+          `SELECT * FROM _jobs WHERE job_id = ? AND queue = ? AND status IN ('pending','active') LIMIT 1`,
         )
-        .get(opts.jobId) as Row | undefined;
+        .get(opts.jobId, name) as Row | undefined;
       if (existing) return deserialize(existing) as Job<T>;
     }
     const runAt = opts.runAt ?? (opts.delay ? t + opts.delay : t);
@@ -399,8 +424,7 @@ export class Queue extends EventEmitter {
         .prepare(
           `UPDATE _jobs SET status='done', result=?, error=NULL, updated_at=? WHERE id=? AND attempts=?`,
         )
-        .run(JSON.stringify(result ?? null), now(), job.id, job.attempts)
-        .changes > 0
+        .run(safeStringify(result), now(), job.id, job.attempts).changes > 0
     );
   }
 
