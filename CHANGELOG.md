@@ -1,5 +1,13 @@
 # @monlite/core
 
+## 2.6.13 — sync enumeration + watch isolation (bug hunt, cont.)
+
+- **`$collections()` returns only real collections** (tables with an `_id` column), excluding
+  plugin/auxiliary tables — queue `_jobs`, fts `*_fts*`, vector `*_vec*`, dynamic index tables.
+  Previously `sync({ collections: "*" })` swept those internals and treated them as user data.
+- **A throwing `watch()` callback no longer breaks sibling watchers** or wedges the reactor (or
+  crashes the host). The error is reported and the remaining watchers are still notified.
+
 ## 2.6.12 — correctness sweep (repo-wide bug hunt)
 
 A concentrated multi-agent bug hunt + differential fuzzing surfaced a batch of real,

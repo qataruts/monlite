@@ -126,7 +126,15 @@ export class Reactor {
     for (const [collection, ids] of work) {
       const set = this.byCollection.get(collection);
       if (!set) continue;
-      for (const lq of [...set]) lq.notify(ids);
+      for (const lq of [...set]) {
+        try {
+          lq.notify(ids);
+        } catch (err) {
+          // A throwing watch callback must not break sibling watchers or wedge the
+          // reactor (and must not crash the host app). Report it and carry on.
+          console.error("monlite: a watch() callback threw —", err);
+        }
+      }
     }
   }
 }

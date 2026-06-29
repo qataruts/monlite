@@ -333,13 +333,20 @@ export class Monlite {
   /** List all collection (table) names. */
   $collections(): Promise<string[]> {
     this.assertOpen();
+    // Only real monlite collections — every one has an `_id` column. This excludes
+    // plugin/auxiliary tables (queue `_jobs`, fts `*_fts*`, vector `*_vec*`, dynamic
+    // index tables) that would otherwise leak into e.g. `sync({ collections: "*" })`
+    // and be treated as user data.
     const rows = this.driver
       .prepare(
-        `SELECT name FROM sqlite_master
-         WHERE type='table'
-           AND name NOT LIKE 'sqlite_%'
-           AND name NOT LIKE '\\_monlite\\_%' ESCAPE '\\'
-         ORDER BY name`,
+        `SELECT m.name AS name FROM sqlite_master m
+         WHERE m.type='table'
+           AND m.name NOT LIKE 'sqlite_%'
+           AND m.name NOT LIKE '\\_monlite\\_%' ESCAPE '\\'
+           AND EXISTS (
+             SELECT 1 FROM pragma_table_info(m.name) ti WHERE ti.name = '_id'
+           )
+         ORDER BY m.name`,
       )
       .all() as Array<{ name: string }>;
     return Promise.resolve(rows.map((r) => r.name));

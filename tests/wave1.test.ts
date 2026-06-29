@@ -75,6 +75,43 @@ describe("reactivity: collection.watch (row-level)", () => {
     expect(events[1].changed.map((x) => x._id)).toEqual([d._id]);
     expect(events[1].results[0].n).toBe(2);
   });
+
+  it("a throwing watch callback does not break sibling watchers (swarm-found)", async () => {
+    const c = db.collection("c");
+    const errs: unknown[] = [];
+    const spy = console.error;
+    console.error = (...a: unknown[]) => errs.push(a);
+    let bFired = 0;
+    try {
+      c.watch({}, (e) => {
+        if (e.type === "change") throw new Error("boom in A");
+      });
+      c.watch({}, () => {
+        bFired++;
+      });
+      await c.create({ data: { _id: "1", n: 1 } });
+      await tick();
+      const afterFirst = bFired;
+      await c.create({ data: { _id: "2", n: 2 } });
+      await tick();
+      expect(bFired).toBeGreaterThan(afterFirst); // sibling kept firing
+      expect((await c.findById("2"))!.n).toBe(2); // db still writable
+      expect(errs.length).toBeGreaterThan(0); // error surfaced, not swallowed
+    } finally {
+      console.error = spy;
+    }
+  });
+});
+
+describe("$collections excludes plugin/internal tables (swarm-found)", () => {
+  it("returns only real collections (tables with an _id column)", async () => {
+    await db.collection("posts").create({ data: { _id: "a", title: "x" } });
+    await db.collection("users").create({ data: { _id: "u", name: "y" } });
+    // Simulate a plugin's auxiliary table (no _id column) — e.g. queue _jobs / fts shadow.
+    db.sqlite.exec(`CREATE TABLE "posts_aux" (doc_id TEXT, blob TEXT)`);
+    db.sqlite.exec(`CREATE TABLE "_jobs" (id INTEGER, queue TEXT)`);
+    expect(await db.$collections()).toEqual(["posts", "users"]);
+  });
 });
 
 describe("explain()", () => {
