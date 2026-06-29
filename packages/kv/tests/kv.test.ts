@@ -182,3 +182,46 @@ describe("kv pub/sub (paradigm improvements)", () => {
     B.stop();
   });
 });
+
+describe("kv sorted sets (paradigm improvements)", () => {
+  it("zadd/zscore/zincrby/zcard/zrem", () => {
+    const c = kv(open());
+    c.zadd("b", 100, "alice");
+    c.zadd("b", 50, "bob");
+    expect(c.zscore("b", "alice")).toBe(100);
+    expect(c.zscore("b", "nope")).toBeUndefined();
+    expect(c.zcard("b")).toBe(2);
+    expect(c.zincrby("b", 10, "bob")).toBe(60);
+    expect(c.zincrby("b", 5, "dave")).toBe(5); // new member
+    expect(c.zrem("b", "bob")).toBe(true);
+    expect(c.zcard("b")).toBe(2);
+  });
+
+  it("zrange (asc/rev/withScores/negative) and zrank", () => {
+    const c = kv(open());
+    c.zadd("s", 5, "dave");
+    c.zadd("s", 60, "bob");
+    c.zadd("s", 75, "carol");
+    c.zadd("s", 100, "alice");
+    expect(c.zrange("s", 0, -1)).toEqual(["dave", "bob", "carol", "alice"]);
+    expect(c.zrange("s", 0, 1, { rev: true })).toEqual(["alice", "carol"]); // top 2
+    expect(c.zrange("s", -1, -1)).toEqual(["alice"]); // last
+    expect(c.zrange("s", 0, 0, { withScores: true })).toEqual([
+      { member: "dave", score: 5 },
+    ]);
+    expect(c.zrangeByScore("s", 60, 100)).toEqual(["bob", "carol", "alice"]);
+    expect(c.zrank("s", "dave")).toBe(0);
+    expect(c.zrank("s", "alice")).toBe(3);
+    expect(c.zrank("s", "alice", { rev: true })).toBe(0);
+    expect(c.zrank("s", "x")).toBeUndefined();
+  });
+
+  it("breaks ties lexicographically", () => {
+    const c = kv(open());
+    c.zadd("t", 1, "b");
+    c.zadd("t", 1, "a");
+    c.zadd("t", 1, "c");
+    expect(c.zrange("t", 0, -1)).toEqual(["a", "b", "c"]);
+    expect(c.zrange("t", 0, -1, { rev: true })).toEqual(["c", "b", "a"]);
+  });
+});

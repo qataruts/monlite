@@ -38,6 +38,43 @@ export interface KV {
   flush(): void;
   /** Number of live keys in this namespace. */
   size(): number;
+
+  // ── sorted sets (Redis ZSET) — leaderboards, rate-limiters, priority indexes ──
+  /** Add or update `member` with `score` (Redis `ZADD`). */
+  zadd(key: string, score: number, member: string): void;
+  /** Increment `member`'s score by `delta` (`ZINCRBY`); returns the new score. */
+  zincrby(key: string, delta: number, member: string): number;
+  /** A member's score, or `undefined` if absent (`ZSCORE`). */
+  zscore(key: string, member: string): number | undefined;
+  /** Remove `member` (`ZREM`); returns `true` if it existed. */
+  zrem(key: string, member: string): boolean;
+  /** Number of members (`ZCARD`). */
+  zcard(key: string): number;
+  /** 0-based rank by ascending score (ties lexicographic); `rev` for descending. `undefined` if absent. */
+  zrank(
+    key: string,
+    member: string,
+    opts?: { rev?: boolean },
+  ): number | undefined;
+  /**
+   * Members by rank range `[start, stop]` inclusive (negative counts from the end,
+   * Redis-style), ascending by score (`rev` = descending). With `withScores`,
+   * returns `{ member, score }[]` (`ZRANGE` / `ZREVRANGE`).
+   */
+  zrange(
+    key: string,
+    start: number,
+    stop: number,
+    opts?: { rev?: boolean; withScores?: boolean },
+  ): string[] | Array<{ member: string; score: number }>;
+  /** Members with `min <= score <= max`, ascending (`ZRANGEBYSCORE`). */
+  zrangeByScore(
+    key: string,
+    min: number,
+    max: number,
+    opts?: { withScores?: boolean },
+  ): string[] | Array<{ member: string; score: number }>;
+
   /**
    * Publish a message to a channel (Redis `PUBLISH`). Delivered to every
    * `subscribe()` listener on that channel — including in OTHER processes
@@ -79,7 +116,12 @@ export function kv(db: Monlite, options: KVOptions = {}): KV {
         seq INTEGER PRIMARY KEY AUTOINCREMENT,
         ns TEXT NOT NULL, channel TEXT NOT NULL, payload TEXT, ts INTEGER NOT NULL
       );
-      CREATE INDEX IF NOT EXISTS _idx_kv_pubsub ON _monlite_kv_pubsub (ns, seq)`,
+      CREATE INDEX IF NOT EXISTS _idx_kv_pubsub ON _monlite_kv_pubsub (ns, seq);
+      CREATE TABLE IF NOT EXISTS _monlite_kv_zset (
+        ns TEXT NOT NULL, k TEXT NOT NULL, member TEXT NOT NULL, score REAL NOT NULL,
+        PRIMARY KEY (ns, k, member)
+      );
+      CREATE INDEX IF NOT EXISTS _idx_kv_zset ON _monlite_kv_zset (ns, k, score, member)`,
     );
     ensured.add(db);
   }
@@ -246,6 +288,108 @@ export function kv(db: Monlite, options: KVOptions = {}): KV {
           .get(ns, now()) as { n: number }
       ).n;
     },
+
+    // ── sorted sets ──────────────────────────────────────────────────────────
+    zadd(key, score, member) {
+      driver
+        .prepare(
+          `INSERT INTO _monlite_kv_zset (ns, k, member, score) VALUES (?, ?, ?, ?)
+           ON CONFLICT(ns, k, member) DO UPDATE SET score = excluded.score`,
+        )
+        .run(ns, key, member, score);
+    },
+    zincrby(key, delta, member) {
+      // IMMEDIATE: atomic read-modify-write across processes.
+      return driver.transaction(() => {
+        const row = driver
+          .prepare(
+            `SELECT score FROM _monlite_kv_zset WHERE ns = ? AND k = ? AND member = ?`,
+          )
+          .get(ns, key, member) as { score: number } | undefined;
+        const next = (row?.score ?? 0) + delta;
+        driver
+          .prepare(
+            `INSERT INTO _monlite_kv_zset (ns, k, member, score) VALUES (?, ?, ?, ?)
+             ON CONFLICT(ns, k, member) DO UPDATE SET score = excluded.score`,
+          )
+          .run(ns, key, member, next);
+        return next;
+      }, true);
+    },
+    zscore(key, member) {
+      const row = driver
+        .prepare(
+          `SELECT score FROM _monlite_kv_zset WHERE ns = ? AND k = ? AND member = ?`,
+        )
+        .get(ns, key, member) as { score: number } | undefined;
+      return row?.score;
+    },
+    zrem(key, member) {
+      return (
+        driver
+          .prepare(
+            `DELETE FROM _monlite_kv_zset WHERE ns = ? AND k = ? AND member = ?`,
+          )
+          .run(ns, key, member).changes > 0
+      );
+    },
+    zcard(key) {
+      return (
+        driver
+          .prepare(
+            `SELECT COUNT(*) AS n FROM _monlite_kv_zset WHERE ns = ? AND k = ?`,
+          )
+          .get(ns, key) as { n: number }
+      ).n;
+    },
+    zrank(key, member, opts) {
+      const row = driver
+        .prepare(
+          `SELECT score FROM _monlite_kv_zset WHERE ns = ? AND k = ? AND member = ?`,
+        )
+        .get(ns, key, member) as { score: number } | undefined;
+      if (!row) return undefined;
+      // Members ordered before this one (ties broken lexicographically by member).
+      const cmp = opts?.rev
+        ? `score > ? OR (score = ? AND member > ?)`
+        : `score < ? OR (score = ? AND member < ?)`;
+      return (
+        driver
+          .prepare(
+            `SELECT COUNT(*) AS n FROM _monlite_kv_zset WHERE ns = ? AND k = ? AND (${cmp})`,
+          )
+          .get(ns, key, row.score, row.score, member) as { n: number }
+      ).n;
+    },
+    zrange(key, start, stop, opts) {
+      const card = api.zcard(key);
+      let lo = start < 0 ? card + start : start;
+      let hi = stop < 0 ? card + stop : stop;
+      if (lo < 0) lo = 0;
+      if (hi >= card) hi = card - 1;
+      if (card === 0 || lo > hi) return [];
+      const dir = opts?.rev ? "DESC" : "ASC";
+      const rows = driver
+        .prepare(
+          `SELECT member, score FROM _monlite_kv_zset WHERE ns = ? AND k = ?
+           ORDER BY score ${dir}, member ${dir} LIMIT ? OFFSET ?`,
+        )
+        .all(ns, key, hi - lo + 1, lo) as Array<{
+        member: string;
+        score: number;
+      }>;
+      return opts?.withScores ? rows : rows.map((r) => r.member);
+    },
+    zrangeByScore(key, min, max, opts) {
+      const rows = driver
+        .prepare(
+          `SELECT member, score FROM _monlite_kv_zset WHERE ns = ? AND k = ?
+           AND score >= ? AND score <= ? ORDER BY score ASC, member ASC`,
+        )
+        .all(ns, key, min, max) as Array<{ member: string; score: number }>;
+      return opts?.withScores ? rows : rows.map((r) => r.member);
+    },
+
     publish(channel, message) {
       const ts = now();
       driver

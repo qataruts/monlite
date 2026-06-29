@@ -1,5 +1,12 @@
 # @monlite/kv
 
+## 0.4.0 — sorted sets (ZSET)
+
+- **`zadd` / `zscore` / `zincrby` / `zrem` / `zcard` / `zrank` / `zrange` / `zrangeByScore`** —
+  Redis-style sorted sets for leaderboards, rate-limiters and priority indexes. `zrange` supports
+  rank ranges (negative = from the end), `rev` (descending), and `withScores`; ties break
+  lexicographically by member, matching Redis. `zincrby` is atomic across processes.
+
 ## 0.3.1 — pub/sub poll on the shared heartbeat
 
 - The cross-process pub/sub poll now registers on the database's shared `Heartbeat`

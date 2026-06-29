@@ -1,6 +1,6 @@
 {
   "name": "@monlite/kv",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Redis-like local key-value cache for @monlite/core: get/set/incr with TTL, on SQLite.",
   "type": "module",
   "main": "./dist/index.cjs",
