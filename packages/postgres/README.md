@@ -36,16 +36,27 @@ Documents become `jsonb`; the query builder emits the Postgres dialect (`->`/`->
 `db.collection(...)` API is **identical** to SQLite-backed monlite — develop on a `.db` file,
 deploy to Postgres, don't rewrite a line.
 
-**Supported today:** `create`, `createMany`, `findMany`, `findFirst`, `findById`, `count`,
-`exists`, `update`, `updateMany`, `upsert`, `delete`, `deleteMany`.
+**The whole data surface works:**
 
-**Not yet** (these throw a clear error rather than misbehave): `aggregate`, `groupBy`, `distinct`,
-`watch` (the changefeed via `LISTEN/NOTIFY`), full-text (`tsvector`), and vector (pgvector). Those
-are the next increments.
+- **CRUD** — `create`, `createMany`, `findMany`, `findFirst`, `findById`, `count`, `exists`,
+  `update`, `updateMany`, `upsert`, `delete`, `deleteMany`, `findOneAndUpdate`, `bulkWrite`,
+  `purgeExpired`.
+- **Aggregation** — `aggregate`, `groupBy` (with `having` + `orderBy`), `distinct`.
+- **Realtime** — `watch()` via Postgres `LISTEN/NOTIFY` (truly cross-process — a write from any
+  connection reaches every watcher).
+- **Full-text search** — [`@monlite/fts`](https://www.npmjs.com/package/@monlite/fts) on a native
+  generated `tsvector` column + GIN index.
+- **Vector search** — [`@monlite/vector`](https://www.npmjs.com/package/@monlite/vector) on a
+  native generated `vector` column + HNSW index (**pgvector**).
+
+**Not yet:** `explain()` (Postgres' `EXPLAIN` output is engine-specific — throws a clear error),
+and the `@monlite/queue` job queue (`SKIP LOCKED` port pending).
 
 ## Notes
 
-- Requires **PostgreSQL 14+**. The query builder's `?` placeholders are rewritten to `$1,$2,…`.
+- Requires **PostgreSQL 14+** (vector search needs **pgvector**; the
+  [`monlite/postgres`](../../docker/postgres) image bundles it). Placeholders `?` are rewritten to
+  `$1,$2,…`.
 - Top-level transactions are serialized per driver instance; nested transactions use `SAVEPOINT`s.
 - `@monlite/core` stays the minimal, **zero-dependency** local engine — this package is purely
   additive, opt-in.
