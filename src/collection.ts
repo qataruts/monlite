@@ -33,7 +33,7 @@ import type {
   WithId,
 } from "./types.js";
 import { objectId } from "./id.js";
-import { LiveQuery } from "./reactive.js";
+import { LiveQuery, PgLiveQuery } from "./reactive.js";
 import {
   MonliteError,
   MonliteQueryError,
@@ -183,6 +183,7 @@ export class Collection<T = Doc> {
   }
 
   private pgInitialized = false;
+  private pgNotifyReady = false;
 
   /** Create this collection's Postgres (JSONB) table, once. */
   private async ensureTablePg(): Promise<void> {
@@ -921,7 +922,7 @@ export class Collection<T = Doc> {
     args: WatchArgs<T> = {},
     cb: (event: LiveEvent<T>) => void,
   ): WatchHandle<T> {
-    if (this.mon.asyncDriver) return this.pgUnsupported("watch()");
+    if (this.mon.asyncDriver) return this.watchPg(args, cb);
     this.ensureTable();
     const lq = new LiveQuery<T>(this, args, cb);
     const reactor = this.mon.reactor;
@@ -1432,6 +1433,59 @@ export class Collection<T = Doc> {
     }
     const r = await this.mon.asyncDriver!.query(sql, params);
     return r.rows.map((row: any) => row.v);
+  }
+
+  // ── Postgres watch (LISTEN/NOTIFY) ────────────────────────────────────────
+  private watchPg(
+    args: WatchArgs<T>,
+    cb: (event: LiveEvent<T>) => void,
+  ): WatchHandle<T> {
+    if (!this.mon.asyncDriver!.listen)
+      throw new MonliteError(
+        "watch() requires a Postgres engine with LISTEN/NOTIFY support (driver.listen).",
+      );
+    const reactor = this.mon.ensurePgReactor();
+    const lq = new PgLiveQuery<T>((a) => this.findManyPg(a), args, cb);
+    const name = this.name;
+    // LISTEN + the initial read are async; the handle returns synchronously and its
+    // `results` fill in once init completes (when the "init" event fires).
+    const ready = (async () => {
+      await this.ensureTablePg();
+      await this.ensurePgNotifyTrigger();
+      await reactor.register(name, lq);
+    })().catch((err) => {
+      console.error("monlite: failed to start watch() on Postgres —", err);
+    });
+    return {
+      get results() {
+        return lq.results;
+      },
+      stop() {
+        lq.stopped = true;
+        void ready.then(() => reactor.unregister(name, lq));
+      },
+    };
+  }
+
+  /**
+   * Install the per-table NOTIFY trigger (idempotent, once per collection): it fires
+   * `pg_notify('monlite_<table>', <changed _id>)` after every INSERT/UPDATE/DELETE,
+   * from ANY connection — so watch() observes cross-process writes.
+   */
+  private async ensurePgNotifyTrigger(): Promise<void> {
+    if (this.pgNotifyReady) return;
+    const drv = this.mon.asyncDriver!;
+    await drv.exec(
+      `CREATE OR REPLACE FUNCTION monlite_notify() RETURNS trigger AS $$ ` +
+        `BEGIN PERFORM pg_notify('monlite_' || TG_TABLE_NAME, COALESCE(NEW._id, OLD._id)); ` +
+        `RETURN NULL; END; $$ LANGUAGE plpgsql`,
+    );
+    await drv.exec(`DROP TRIGGER IF EXISTS monlite_notify_trg ON "${this.name}"`);
+    await drv.exec(
+      `CREATE TRIGGER monlite_notify_trg AFTER INSERT OR UPDATE OR DELETE ON "${this.name}" ` +
+        `FOR EACH ROW EXECUTE FUNCTION monlite_notify()`,
+    );
+    this.pgNotifyReady = true;
   }
 
   /**

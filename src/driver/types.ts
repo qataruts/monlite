@@ -84,6 +84,15 @@ export interface AsyncDriver {
   transactionAsync<T>(fn: () => Promise<T>): Promise<T>;
   /** Run `cb` after the outermost commit; discarded on rollback (see {@link Driver.afterCommit}). */
   afterCommit?(cb: () => void): void;
+  /**
+   * Optional pub/sub capability: subscribe to a backend channel (Postgres
+   * `LISTEN/NOTIFY`) and invoke `handler` with each payload. Resolves to an
+   * unsubscribe function. When absent, `watch()` on this engine is unsupported.
+   */
+  listen?(
+    channel: string,
+    handler: (payload: string) => void,
+  ): Promise<() => void | Promise<void>>;
   close(): Promise<void>;
 }
 

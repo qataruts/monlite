@@ -221,7 +221,6 @@ try {
 
     it("still-unsupported methods throw a clear error on Postgres (never silent)", async () => {
       const c = db.collection("crud");
-      expect(() => c.watch({}, () => {})).toThrow(/postgres engine/);
       await expect(c.explain({})).rejects.toThrow(/postgres engine/);
       await expect(c.bulkWrite([])).rejects.toThrow(/postgres engine/);
       await expect(

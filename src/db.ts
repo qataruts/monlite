@@ -15,7 +15,7 @@ import { createDriver } from "./driver/index.js";
 import type { Driver, AsyncDriver } from "./driver/types.js";
 import { isAsyncDriver } from "./driver/types.js";
 import { SyncStore } from "./sync/store.js";
-import { Reactor } from "./reactive.js";
+import { Reactor, PgReactor } from "./reactive.js";
 import { Heartbeat, type HeartbeatTask } from "./heartbeat.js";
 import type { MonlitePlugin } from "./plugin.js";
 
@@ -102,6 +102,8 @@ export class Monlite {
   readonly autoIndexer: AutoIndexer;
   /** @internal Reactivity hub for `collection.watch()`. */
   readonly reactor = new Reactor();
+  /** @internal Postgres LISTEN/NOTIFY reactor (lazy; only when watching on PG). */
+  private pgReactor?: PgReactor;
   /** @internal Sync metadata store; present only when `{ sync: true }`. */
   readonly $sync?: SyncStore;
 
@@ -673,11 +675,28 @@ export class Monlite {
   }
 
   /** Close the underlying SQLite connection. */
+  /**
+   * @internal Lazily create the Postgres `LISTEN/NOTIFY` reactor that backs
+   * cross-process `watch()` on the async engine.
+   */
+  ensurePgReactor(): PgReactor {
+    if (!this.asyncDriver)
+      throw new MonliteError("ensurePgReactor() requires a Postgres engine");
+    return (this.pgReactor ??= new PgReactor(this.asyncDriver));
+  }
+
   $disconnect(): Promise<void> {
     if (this.closed) return Promise.resolve();
     this.closed = true;
     this.heartbeat.stop();
-    if (this.asyncDriver) return this.asyncDriver.close();
+    if (this.asyncDriver) {
+      const drv = this.asyncDriver;
+      const pgReactor = this.pgReactor;
+      return (async () => {
+        if (pgReactor) await pgReactor.stop(); // UNLISTEN + close listener conns
+        await drv.close();
+      })();
+    }
     this.driver.close();
     return Promise.resolve();
   }

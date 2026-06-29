@@ -30,12 +30,14 @@ export class PgDriver implements AsyncDriver {
   readonly name = "postgres";
   readonly async = true as const;
   private readonly pool: pg.Pool;
+  private readonly connectionString: string;
   private txClient: pg.PoolClient | null = null;
   private depth = 0;
   private afterCommitHooks: Array<() => void> = [];
   private txTail: Promise<unknown> = Promise.resolve();
 
   constructor(connectionString: string, opts: PgEngineOptions = {}) {
+    this.connectionString = connectionString;
     this.pool = new pg.Pool({ connectionString, ...opts.pool });
   }
 
@@ -116,6 +118,32 @@ export class PgDriver implements AsyncDriver {
         this.txClient = null;
       }
     }
+  }
+
+  /**
+   * Subscribe to a Postgres channel via `LISTEN` on a DEDICATED connection (a
+   * listening connection must stay open and out of the query pool). Returns an
+   * unsubscribe that `UNLISTEN`s and closes the connection.
+   */
+  async listen(
+    channel: string,
+    handler: (payload: string) => void,
+  ): Promise<() => Promise<void>> {
+    const client = new pg.Client({ connectionString: this.connectionString });
+    await client.connect();
+    client.on("notification", (msg) => {
+      if (msg.channel === channel && msg.payload != null) handler(msg.payload);
+    });
+    // Quote the channel so case is preserved (matches the trigger's pg_notify).
+    await client.query(`LISTEN "${channel}"`);
+    return async () => {
+      try {
+        await client.query(`UNLISTEN "${channel}"`);
+      } catch {
+        /* connection may already be gone */
+      }
+      await client.end();
+    };
   }
 
   async close(): Promise<void> {

@@ -62,4 +62,42 @@ try {
     expect(await t.count()).toBe(before);
     expect(await t.findById("tx")).toBeNull();
   });
+
+  it("watch() delivers realtime events via LISTEN/NOTIFY", async () => {
+    await db.asyncDriver.exec(`DROP TABLE IF EXISTS w CASCADE`);
+    const w = db.collection("w");
+    const events: any[] = [];
+    const handle = w.watch({ orderBy: { n: "asc" } }, (e: any) => events.push(e));
+
+    const waitFor = async (pred: () => boolean, ms = 4000) => {
+      const t0 = Date.now();
+      while (!pred()) {
+        if (Date.now() - t0 > ms)
+          throw new Error("timeout; saw " + JSON.stringify(events.map((e) => e.type)));
+        await new Promise((r) => setTimeout(r, 25));
+      }
+    };
+
+    // init fires once LISTEN + the trigger are in place
+    await waitFor(() => events.some((e) => e.type === "init"));
+
+    // insert → "added" (the trigger NOTIFYs, the listener re-queries + diffs)
+    await w.create({ data: { _id: "1", n: 1 } });
+    await waitFor(() => events.some((e) => e.added?.some((d: any) => d._id === "1")));
+
+    // update → "changed"
+    await w.update({ where: { _id: "1" }, data: { $set: { n: 2 } } });
+    await waitFor(() =>
+      events.some((e) => e.changed?.some((d: any) => d._id === "1")),
+    );
+
+    // delete → "removed"
+    await w.delete({ where: { _id: "1" } });
+    await waitFor(() =>
+      events.some((e) => e.removed?.some((d: any) => d._id === "1")),
+    );
+
+    expect(handle.results).toEqual([]); // empty again after the delete
+    handle.stop();
+  });
 });
