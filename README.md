@@ -223,6 +223,28 @@ One file. Two runtimes. Zero translation layer.
 
 ---
 
+## Outgrow local? The same code runs on Postgres
+
+The collection API is engine-agnostic. Build against a local `.db` file; when you need a
+networked, multi-writer backend, swap the engine — **not your code**:
+
+```ts
+// local / edge — SQLite, zero-dependency
+import { createDb } from "@monlite/core";        const db = createDb("app.db");
+
+// server / scale — Postgres, identical API
+import { createDb } from "@monlite/postgres";     const db = createDb("postgres://…");
+```
+
+[`@monlite/postgres`](https://www.npmjs.com/package/@monlite/postgres) runs the whole data surface
+on Postgres (documents as JSONB): CRUD, the full query language, `aggregate`/`groupBy`, realtime
+`watch()` over `LISTEN/NOTIFY` (truly cross-process), full-text search (`tsvector`) and vector
+search (pgvector) — the **same** `@monlite/fts` and `@monlite/vector` plugins, the same
+`search()` / `findSimilar()` calls. A ready-to-use [`monlite/postgres`](docker/postgres) Docker
+image bundles Postgres + pgvector, preconfigured.
+
+---
+
 ## Install
 
 Two ways in. **Batteries-included** — the whole stack in one install (database + cache, queue,
@@ -255,6 +277,7 @@ npm install @monlite/kv        # cache, locks, pub/sub, sorted sets
 npm install @monlite/queue     # durable job queue
 npm install @monlite/cron      # scheduler (time zones, jitter)
 npm install @monlite/sync      # cloud sync (MongoDB / PostgreSQL / MySQL)
+npm install @monlite/postgres  # run the same API on a networked Postgres (JSONB)
 npm install @monlite/realtime  # stream live queries to clients over SSE
 npm install @monlite/wasm      # browser / SQLite-WASM
 npm install @monlite/electron  # Electron: DB in main, shared to renderers over IPC
