@@ -1,5 +1,15 @@
 # @monlite/queue
 
+## 0.4.0 — adaptive idle backoff (opt-in)
+
+- **`maxPollInterval` (per `process()`)** enables adaptive idle backoff: an idle worker doubles
+  its poll interval after each empty check, up to the cap, and resets to `pollInterval` on any
+  activity — so a quiet queue settles into a slow heartbeat instead of polling the DB twice a
+  second forever. Same-process `add()` still wakes the worker instantly.
+- **Default unchanged** — when `maxPollInterval` is omitted (or equal to `pollInterval`), polling
+  is the same fixed interval as before. Note: with backoff on, a job enqueued by *another process*
+  / a delayed job may wait up to the cap to be picked up.
+
 ## 0.3.5 — correctness fixes (bug hunt)
 
 - **Dedupe by `jobId` is scoped to the queue.** The same `jobId` on a _different_ queue

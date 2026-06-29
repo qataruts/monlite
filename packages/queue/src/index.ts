@@ -40,6 +40,16 @@ export interface ProcessOptions {
   /** How often to poll for due jobs when idle (ms). Default 500. */
   pollInterval?: number;
   /**
+   * Cap for **adaptive idle backoff** (ms). When set above `pollInterval`, an idle
+   * worker doubles its poll interval after each empty check (up to this cap) and
+   * resets to `pollInterval` on any activity — so a quiet queue settles into a slow
+   * heartbeat instead of constant churn, with no cost when busy. Same-process
+   * `add()` still wakes the worker instantly. Default: equal to `pollInterval`
+   * (no backoff — unchanged behavior). Note: with backoff on, a job enqueued by
+   * ANOTHER process / a delayed job may wait up to this cap to be picked up.
+   */
+  maxPollInterval?: number;
+  /**
    * Visibility timeout (ms). If set, a crashed worker's job is automatically
    * reclaimed: a job that stays `active` without a heartbeat for this long is
    * returned to `pending`. While a handler runs, its job is heartbeated so a
@@ -129,6 +139,9 @@ class WorkerImpl implements Worker {
   private drainPromise: Promise<void> | undefined;
   private readonly concurrency: number;
   private readonly pollInterval: number;
+  private readonly maxPollInterval: number;
+  /** Current idle poll interval — grows under adaptive backoff, resets on activity. */
+  private idleInterval: number;
   private readonly visibilityTimeout: number;
   private reaper: ReturnType<typeof setInterval> | undefined;
 
@@ -140,6 +153,11 @@ class WorkerImpl implements Worker {
   ) {
     this.concurrency = Math.max(1, opts.concurrency ?? 1);
     this.pollInterval = opts.pollInterval ?? 500;
+    this.maxPollInterval = Math.max(
+      this.pollInterval,
+      opts.maxPollInterval ?? this.pollInterval,
+    );
+    this.idleInterval = this.pollInterval;
     this.visibilityTimeout = Math.max(0, opts.visibilityTimeout ?? 0);
     if (this.visibilityTimeout > 0) {
       this.reaper = setInterval(
@@ -160,9 +178,11 @@ class WorkerImpl implements Worker {
       clearTimeout(this.timer);
       this.timer = undefined;
     }
+    let claimedAny = false;
     while (this.running && this.inFlight < this.concurrency) {
       const job = this.q.claimInternal(this.name);
       if (!job) break;
+      claimedAny = true;
       this.inFlight++;
       // Heartbeat the job while it runs so the reaper's visibility timeout won't
       // reclaim a legitimately long-running job.
@@ -194,8 +214,13 @@ class WorkerImpl implements Worker {
           else this.checkDrained();
         });
     }
+    // Adaptive idle backoff: reset on activity, otherwise grow toward the cap so a
+    // quiet queue stops churning. A no-op when maxPollInterval === pollInterval.
+    this.idleInterval = claimedAny
+      ? this.pollInterval
+      : Math.min(this.idleInterval * 2, this.maxPollInterval);
     if (this.running && this.inFlight < this.concurrency) {
-      this.timer = setTimeout(() => this.kick(), this.pollInterval);
+      this.timer = setTimeout(() => this.kick(), this.idleInterval);
       this.timer.unref?.();
     }
   }

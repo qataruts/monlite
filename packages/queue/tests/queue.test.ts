@@ -1,4 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createDb, type Monlite, type MonliteOptions } from "@monlite/core";
 import { createQueue, type Queue } from "../src/index";
 
@@ -262,4 +265,54 @@ describe("queue edge cases (swarm-found)", () => {
     await sleep(20);
     await Promise.all([w.stop(), w.stop()]); // must not deadlock
   }, 5000);
+});
+
+describe("queue adaptive idle backoff (paradigm improvements)", () => {
+  it("default (no maxPollInterval) processes a same-process job instantly", async () => {
+    const q = makeQueue(open());
+    let done = 0;
+    q.process("t", async () => {
+      done++;
+    });
+    q.add("t", {});
+    await waitFor(() => done === 1);
+    expect(done).toBe(1);
+  });
+
+  it("with backoff: add() still wakes the worker instantly (after going idle)", async () => {
+    const q = makeQueue(open());
+    let done = 0;
+    q.process(
+      "t",
+      async () => {
+        done++;
+      },
+      { pollInterval: 30, maxPollInterval: 2000 },
+    );
+    await sleep(120); // let the worker go idle and back off
+    const t0 = Date.now();
+    q.add("t", {});
+    await waitFor(() => done === 1);
+    expect(Date.now() - t0).toBeLessThan(100); // instant via kick, not the backed-off poll
+  });
+
+  it("with backoff: picks up a cross-process job within the cap", async () => {
+    const file = mkdtempSync(join(tmpdir(), "qbk-")) + "/q.db";
+    const a = createDb(file, driver ? { driver } : {});
+    const b = createDb(file, driver ? { driver } : {});
+    dbs.push(a, b);
+    const qa = makeQueue(a);
+    let done = 0;
+    qa.process(
+      "t",
+      async () => {
+        done++;
+      },
+      { pollInterval: 30, maxPollInterval: 300 },
+    );
+    await sleep(150); // worker idles/backs off
+    makeQueue(b).add("t", {}); // enqueued by the OTHER connection
+    await waitFor(() => done === 1, 2000); // picked up within the cap
+    expect(done).toBe(1);
+  });
 });
