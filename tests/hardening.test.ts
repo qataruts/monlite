@@ -19,13 +19,14 @@ describe("security: SQL injection", () => {
   it("a malicious groupBy field name cannot break out of SQL", async () => {
     const c = db.collection("u");
     await c.createMany({ data: [{ x: 1 }, { x: 2 }] });
-    // Pre-fix this alias-injected a sub-select; now it's a harmless JSON path.
-    const evil = 'x" AS y, (SELECT 1) AS z --';
-    // Generated aliases + path escaping mean this can't inject; SQLite safely
-    // rejects the malformed path as a normalized MonliteError (no breakout).
-    await expect(
-      c.groupBy({ by: [evil], _count: true }),
-    ).rejects.toBeInstanceOf(MonliteError);
+    // Pre-fix this alias-injected a sub-select. Generated aliases + JSON-string
+    // path escaping now make it a harmless JSON-path key: no breakout (no injected
+    // y/z columns), just one group keyed by the literal (non-matching) field name.
+    const res = await c.groupBy({ by: [evil], _count: true });
+    expect(res.length).toBe(1);
+    expect(Object.keys(res[0])).not.toContain("y");
+    expect(Object.keys(res[0])).not.toContain("z");
+    expect((res[0] as any)._count).toBe(2);
     // A normal groupBy still works (alias fix didn't break the happy path).
     const ok = await c.groupBy({
       by: ["x"],
