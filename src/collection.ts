@@ -683,7 +683,7 @@ export class Collection<T = Doc> {
   /** @internal Notify reactivity watchers and plugins that documents changed. */
   private afterWrite(ids: string[]): void {
     if (ids.length === 0) return;
-    this.mon.reactor.emit(this.name, ids);
+    this.mon.notifyReactor(this.name, ids);
     this.mon.firePluginAfterWrite(this.name, ids);
   }
 
@@ -905,6 +905,7 @@ export class Collection<T = Doc> {
     const reactor = this.mon.reactor;
     const name = this.name;
     reactor.register(name, lq);
+    this.mon.ensureReactorPolling(); // cross-process delivery when changefeed is on
     return {
       get results() {
         return lq.results;

@@ -86,6 +86,10 @@ export class Monlite {
   private asyncTxDepth = 0;
   private als: any;
   private alsLoaded = false;
+  /** Cross-process reactivity: feed `seq` already delivered to the reactor. */
+  private reactorCursor = 0;
+  private reactorTimer?: ReturnType<typeof setInterval>;
+  private readonly reactorPollMs: number;
 
   private getAls(): any {
     if (!this.alsLoaded) {
@@ -133,6 +137,7 @@ export class Monlite {
     this.encrypted = options.encryption !== undefined;
     this.maxDocumentBytes = options.maxDocumentBytes;
     this.maxRows = options.maxRows;
+    this.reactorPollMs = Math.max(20, options.reactorPollMs ?? 200);
 
     this.autoIndexer = new AutoIndexer(
       this.driver,
@@ -451,6 +456,49 @@ export class Monlite {
     return this.$sync!.compact(opts);
   }
 
+  /* ----------------------- cross-process reactivity ----------------------- */
+
+  /**
+   * @internal Notify watchers after a local write. With the change feed on, the
+   * feed is the single source (so writes from OTHER processes are picked up too);
+   * otherwise emit the ids directly (in-process only — the unchanged default).
+   */
+  notifyReactor(collection: string, ids: string[]): void {
+    if (this.$sync) this.drainReactor();
+    else this.reactor.emit(collection, ids);
+  }
+
+  /**
+   * @internal Begin polling the change feed (idempotent) so `watch()` sees
+   * writes from other processes. No-op unless the change feed is enabled.
+   */
+  ensureReactorPolling(): void {
+    if (!this.$sync || this.reactorTimer) return;
+    // Only changes recorded AFTER watching starts should fire watchers; the
+    // initial snapshot already reflects everything up to here.
+    this.reactorCursor = this.$sync.currentSeq();
+    this.reactorTimer = setInterval(
+      () => this.drainReactor(),
+      this.reactorPollMs,
+    );
+    this.reactorTimer.unref?.();
+  }
+
+  /** Deliver every feed change since the cursor to the reactor (local + remote). */
+  private drainReactor(): void {
+    if (!this.$sync || !this.reactor.hasAnyWatchers()) return;
+    const batch = this.$sync.feedSince(undefined, this.reactorCursor, 5000);
+    if (batch.length === 0) return;
+    const byColl = new Map<string, string[]>();
+    for (const ev of batch) {
+      if (ev.seq > this.reactorCursor) this.reactorCursor = ev.seq;
+      let arr = byColl.get(ev.collection);
+      if (!arr) byColl.set(ev.collection, (arr = []));
+      arr.push(ev.id);
+    }
+    for (const [coll, idList] of byColl) this.reactor.emit(coll, idList);
+  }
+
   /** Drop a collection and all of its data. */
   $drop(name: string): Promise<void> {
     this.assertOpen();
@@ -567,6 +615,7 @@ export class Monlite {
   $disconnect(): Promise<void> {
     if (!this.closed) {
       this.closed = true;
+      if (this.reactorTimer) clearInterval(this.reactorTimer);
       this.driver.close();
     }
     return Promise.resolve();

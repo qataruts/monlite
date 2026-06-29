@@ -106,3 +106,64 @@ describe("P0 — change feed (db.changes / changesSince / currentSeq)", () => {
     expect(sy.compactChanges({ keepLast: 3 })).toBe(0); // unpushed → protected
   });
 });
+
+describe("P3 — cross-process reactivity (watch backed by the feed)", () => {
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  it("a watcher sees writes from ANOTHER connection to the same file", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "p3-"));
+    dirs.push(dir);
+    const file = join(dir, "p3.db");
+    const A = createDb(file, {
+      changefeed: true,
+      reactorPollMs: 30,
+      ...(driver ? { driver } : {}),
+    });
+    const B = createDb(file, {
+      changefeed: true,
+      reactorPollMs: 30,
+      ...(driver ? { driver } : {}),
+    });
+    dbs.push(A, B);
+    const events: any[] = [];
+    A.collection("orders").watch({ where: { status: "open" } }, (e) =>
+      events.push(e),
+    );
+    await wait(20);
+    const base = events.length;
+    await B.collection("orders").create({
+      data: { _id: "o1", status: "open" },
+    });
+    await wait(120);
+    expect(events.length).toBe(base + 1);
+    expect(events.at(-1).added.map((x: any) => x._id)).toEqual(["o1"]);
+    await B.collection("orders").update({
+      where: { _id: "o1" },
+      data: { $set: { status: "closed" } },
+    });
+    await wait(120);
+    expect(events.at(-1).removed.map((x: any) => x._id)).toEqual(["o1"]);
+  });
+
+  it("changefeed-on same-process watch is still correct", async () => {
+    const db = openDb({ changefeed: true });
+    const c = db.collection("c");
+    const evs: any[] = [];
+    c.watch({ where: { active: true } }, (e) => evs.push(e));
+    await wait(15);
+    const d = await c.create({ data: { active: true, n: 1 } });
+    await wait(15);
+    await c.update({ where: { _id: d._id }, data: { $set: { n: 2 } } });
+    await wait(15);
+    await c.delete({ where: { _id: d._id } });
+    await wait(15);
+    expect(evs.map((e) => e.type)).toEqual([
+      "init",
+      "change",
+      "change",
+      "change",
+    ]);
+    expect(evs[1].added.length).toBe(1);
+    expect(evs[3].removed.length).toBe(1);
+  });
+});

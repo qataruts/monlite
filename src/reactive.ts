@@ -174,6 +174,11 @@ export class Reactor {
     return this.byCollection.has(collection);
   }
 
+  /** True if any collection has at least one live watcher. */
+  hasAnyWatchers(): boolean {
+    return this.byCollection.size > 0;
+  }
+
   register(collection: string, lq: LiveQuery<any>): void {
     let set = this.byCollection.get(collection);
     if (!set) this.byCollection.set(collection, (set = new Set()));

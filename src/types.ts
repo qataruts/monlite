@@ -484,6 +484,12 @@ export interface MonliteOptions {
    */
   changefeed?: boolean;
   /**
+   * How often (ms) to poll the change feed so `watch()` picks up writes from
+   * OTHER processes sharing this `.db`. Only used when the change feed is on.
+   * Default `200`. Same-process writes notify watchers immediately regardless.
+   */
+  reactorPollMs?: number;
+  /**
    * Stable node identity used for last-write-wins tie-breaking. Auto-generated
    * and persisted in the database on first sync-enabled open if omitted.
    */
