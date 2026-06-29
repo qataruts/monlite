@@ -101,6 +101,16 @@ export interface LiveEvent<T = Doc> {
   removed: WithId<T>[];
   /** Documents still in the set whose contents changed. */
   changed: WithId<T>[];
+  /**
+   * Documents still in the set whose POSITION changed (only for an ordered
+   * query — `orderBy`). Empty/absent otherwise.
+   */
+  moved?: WithId<T>[];
+  /**
+   * For each `changed` document (keyed by `_id`), the field names that actually
+   * changed value (system fields `created_at`/`updated_at` excluded).
+   */
+  changedFields?: Record<string, string[]>;
 }
 
 /** Handle returned by `collection.watch()`. */
@@ -109,6 +119,16 @@ export interface WatchHandle<T = Doc> {
   readonly results: WithId<T>[];
   /** Stop receiving updates. */
   stop(): void;
+}
+
+/** Args for `collection.watch()` — a `findMany` query plus reactive options. */
+export interface WatchArgs<T = Doc> extends FindManyArgs<T> {
+  /**
+   * Only emit a `"change"` event when one of these fields actually changes.
+   * Documents entering (`added`) or leaving (`removed`) the set, and position
+   * changes (`moved`), still always fire. Omit to fire on any change.
+   */
+  fields?: (keyof T | (string & {}))[];
 }
 
 /**

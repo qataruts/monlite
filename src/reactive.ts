@@ -2,9 +2,32 @@ import type {
   Doc,
   FindManyArgs,
   LiveEvent,
+  WatchArgs,
   WhereInput,
   WithId,
 } from "./types.js";
+
+/** Structural equality for document field values (scalars fast-path, else JSON). */
+function valueEquals(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a == null || b == null) return a === b;
+  if (typeof a !== "object" && typeof b !== "object") return false;
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/** Field names whose value differs between two docs (system timestamps ignored). */
+function diffFields(
+  prev: Record<string, any>,
+  next: Record<string, any>,
+): string[] {
+  const keys = new Set([...Object.keys(prev), ...Object.keys(next)]);
+  const out: string[] = [];
+  for (const k of keys) {
+    if (k === "_id" || k === "created_at" || k === "updated_at") continue;
+    if (!valueEquals(prev[k], next[k])) out.push(k);
+  }
+  return out;
+}
 
 /** Minimal query surface a {@link LiveQuery} needs (satisfied by Collection). */
 export interface Queryable<T> {
@@ -27,12 +50,16 @@ export class LiveQuery<T = Doc> {
   stopped = false;
 
   private ids = new Set<string>();
+  /** When set, only emit a "change" if one of these fields changed. */
+  private readonly fieldSet?: Set<string>;
 
   constructor(
     private readonly source: Queryable<T>,
-    private readonly args: FindManyArgs<T>,
+    private readonly args: WatchArgs<T>,
     private readonly cb: (event: LiveEvent<T>) => void,
   ) {
+    if (args.fields?.length)
+      this.fieldSet = new Set(args.fields.map((f) => String(f)));
     this.recompute("init");
   }
 
@@ -62,21 +89,75 @@ export class LiveQuery<T = Doc> {
     type: LiveEvent<T>["type"],
     changedIds?: Set<string>,
   ): void {
+    const prev = this.results;
+    const prevById = new Map(prev.map((d) => [d._id, d] as const));
     const next = this.source.findManyCore(this.args);
     const nextById = new Map(next.map((d) => [d._id, d] as const));
 
     const added = next.filter((d) => !this.ids.has(d._id));
-    const removed = this.results.filter((d) => !nextById.has(d._id));
+    const removed = prev.filter((d) => !nextById.has(d._id));
     // A doc is "changed" when it was present before and after AND was touched
     // this tick (using the change set, not updated_at, to catch same-ms edits).
     const changed = changedIds
       ? next.filter((d) => this.ids.has(d._id) && changedIds.has(d._id))
       : [];
 
+    // Per-doc changed field names (diff old vs new) for the `changed` set.
+    let changedFields: Record<string, string[]> | undefined;
+    if (changed.length) {
+      changedFields = {};
+      for (const d of changed) {
+        const old = prevById.get(d._id);
+        changedFields[d._id] = old
+          ? diffFields(old as any, d as any)
+          : Object.keys(d);
+      }
+    }
+
+    // `moved`: only meaningful for an ordered query — a surviving doc whose RANK
+    // among the survivors changed (ignores shifts caused by add/remove).
+    let moved: WithId<T>[] | undefined;
+    if (this.args.orderBy && prev.length) {
+      const oldRank = new Map<string, number>();
+      prev
+        .filter((d) => nextById.has(d._id))
+        .forEach((d, i) => oldRank.set(d._id, i));
+      const m: WithId<T>[] = [];
+      next
+        .filter((d) => prevById.has(d._id))
+        .forEach((d, i) => {
+          if (oldRank.get(d._id) !== i) m.push(d);
+        });
+      if (m.length) moved = m;
+    }
+
     this.results = next;
     this.ids = new Set(nextById.keys());
 
-    this.cb({ type, results: next, added, removed, changed });
+    // Field-scoped: suppress a pure "change" that touched no watched field (but
+    // always deliver init, structural add/remove, and position moves).
+    if (
+      type === "change" &&
+      this.fieldSet &&
+      added.length === 0 &&
+      removed.length === 0 &&
+      !moved
+    ) {
+      const touched = changed.some((d) =>
+        (changedFields?.[d._id] ?? []).some((f) => this.fieldSet!.has(f)),
+      );
+      if (!touched) return;
+    }
+
+    this.cb({
+      type,
+      results: next,
+      added,
+      removed,
+      changed,
+      moved,
+      changedFields,
+    });
   }
 }
 

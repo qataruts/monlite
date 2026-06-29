@@ -28,6 +28,7 @@ export type {
   ColumnInfo,
   LiveEvent,
   WatchHandle,
+  WatchArgs,
   ChangeEvent,
   ChangesOptions,
   ExplainResult,

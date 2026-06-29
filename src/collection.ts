@@ -27,6 +27,7 @@ import type {
   UpdateArgs,
   UpdateData,
   UpsertArgs,
+  WatchArgs,
   WatchHandle,
   WhereInput,
   WithId,
@@ -896,7 +897,7 @@ export class Collection<T = Doc> {
    * applied by `@monlite/sync`.
    */
   watch(
-    args: FindManyArgs<T> = {},
+    args: WatchArgs<T> = {},
     cb: (event: LiveEvent<T>) => void,
   ): WatchHandle<T> {
     this.ensureTable();
@@ -913,6 +914,21 @@ export class Collection<T = Doc> {
         reactor.unregister(name, lq);
       },
     };
+  }
+
+  /**
+   * Watch a single document by id (Firebase-style `onSnapshot(doc)`). The
+   * callback fires immediately with the current document (or `null` if it does
+   * not exist) and again on every change to it — including a delete (`null`).
+   */
+  watchDoc(
+    id: string,
+    cb: (doc: WithId<T> | null, event: LiveEvent<T>) => void,
+  ): WatchHandle<T> {
+    return this.watch(
+      { where: { _id: id } as WhereInput<T>, take: 1 },
+      (event) => cb(event.results[0] ?? null, event),
+    );
   }
 
   /** Show SQLite's query plan for a `findMany`, and whether it uses an index. */

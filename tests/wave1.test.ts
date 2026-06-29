@@ -170,3 +170,62 @@ describe("auto-additive migration", () => {
     await b.$disconnect();
   });
 });
+
+describe("reactivity: P1 — watchDoc, field-scoped, deltas, moved (realtime)", () => {
+  it("watchDoc fires with the doc, then null on delete", async () => {
+    const c = db.collection("c");
+    await c.create({ data: { _id: "a", n: 1 } });
+    const seen: (number | null)[] = [];
+    const h = c.watchDoc("a", (doc) => seen.push(doc ? (doc as any).n : null));
+    await tick();
+    await c.update({ where: { _id: "a" }, data: { $set: { n: 2 } } });
+    await tick();
+    await c.delete({ where: { _id: "a" } });
+    await tick();
+    expect(seen).toEqual([1, 2, null]);
+    h.stop();
+  });
+
+  it("field-scoped watch only fires when a listed field changes", async () => {
+    const c = db.collection("c");
+    const d = await c.create({ data: { status: "open", note: "x" } });
+    let fires = 0;
+    let lastFields: Record<string, string[]> | undefined;
+    c.watch({ fields: ["status"] }, (e) => {
+      fires++;
+      if (e.type === "change") lastFields = e.changedFields;
+    });
+    await tick();
+    const afterInit = fires;
+    await c.update({ where: { _id: d._id }, data: { $set: { note: "y" } } });
+    await tick();
+    expect(fires).toBe(afterInit); // non-watched field → suppressed
+    await c.update({
+      where: { _id: d._id },
+      data: { $set: { status: "closed" } },
+    });
+    await tick();
+    expect(fires).toBe(afterInit + 1); // watched field → fires
+    expect(lastFields?.[d._id]).toContain("status");
+  });
+
+  it("emits `moved` for an ordered query when a doc's rank changes", async () => {
+    const c = db.collection("c");
+    await c.createMany({
+      data: [
+        { _id: "x", rank: 1 },
+        { _id: "y", rank: 2 },
+        { _id: "z", rank: 3 },
+      ],
+    });
+    let movedIds: string[] | undefined;
+    c.watch({ orderBy: { rank: "asc" } }, (e) => {
+      if (e.type === "change" && e.moved?.length)
+        movedIds = e.moved.map((m) => m._id);
+    });
+    await tick();
+    await c.update({ where: { _id: "z" }, data: { $set: { rank: 0 } } });
+    await tick();
+    expect(movedIds).toContain("z");
+  });
+});
