@@ -54,4 +54,4 @@ per-document queries stay exact even over a large corpus. Add
 
 Because everything is one SQLite file, a **Python worker and a Node agent can
 share it** — Python ingests and embeds, Node serves; both hit the same cache and
-queue. See [Python / interop](/reference/python).
+queue. See [Python](/reference/python).

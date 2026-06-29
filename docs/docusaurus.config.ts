@@ -83,7 +83,7 @@ const config: Config = {
           title: "More",
           items: [
             { label: "File format", to: "/reference/file-format" },
-            { label: "Python / interop", to: "/reference/python" },
+            { label: "Python", to: "/reference/python" },
             { label: "GitHub", href: "https://github.com/qataruts/monlite" },
           ],
         },

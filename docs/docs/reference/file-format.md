@@ -45,4 +45,4 @@ Each companion package is its own conventioned table(s) in the same file:
 | `@monlite/sync` | a change-feed table with per-doc LWW versions + tombstones |
 
 Because these are ordinary SQLite tables, you can inspect, back up (copy the
-file), and **interoperate across languages** — see [Python / interop](/reference/python).
+file), and **interoperate across languages** — see [Python](/reference/python).

@@ -1,67 +1,87 @@
 ---
 id: python
-title: Python / interop
+title: Python
 ---
 
-# Python & cross-language interop
+# Python
 
-monlite is a TypeScript library, but a monlite database is **plain SQLite**. So a
-Python program can read and write the **same `.db` file** with the standard
-library — no port required. This makes the classic AI split first-class: **Python
-ingests and embeds, Node serves**, over one file.
+monlite has a **native Python port** — `pip install monlite` — that reads and writes the **same
+`.db` file** as the TypeScript `@monlite/*` packages. It's byte-compatible across every shared
+table (documents, the change feed, `_kv` / sorted sets / pub-sub, the `_jobs` queue, `_schedules`,
+and the FTS5 index), so the classic AI split is first-class: **Python ingests and embeds, Node
+serves** — over one file, no extra infrastructure.
 
-## Documents
+Pure standard library (`sqlite3`), no dependencies. Python 3.9+.
 
-```python
-import sqlite3, json
-
-db = sqlite3.connect("app.db")
-for (_id, data) in db.execute("SELECT _id, data FROM users"):
-    doc = json.loads(data)
-    print(doc["name"])
-
-# write a document Node will read
-import time, uuid
-now = int(time.time() * 1000)
-db.execute(
-    "INSERT INTO users(_id, data, created_at, updated_at) VALUES (?, ?, ?, ?)",
-    (str(uuid.uuid4()), json.dumps({"name": "Ada"}), now, now),
-)
-db.commit()
+```bash
+pip install monlite
 ```
 
-## Full-text search
+```python
+from monlite import create_db, kv, create_queue, create_cron, fts
 
-FTS5 ships with Python's `sqlite3`, so you query the same index Node wrote:
+db = create_db("app.db", changefeed=True)
+users = db.collection("users")
+
+users.create({"name": "Ada", "age": 30, "tags": ["admin"]})
+adults = users.find_many(where={"age": {"gte": 18}}, order_by={"age": "asc"})
+users.update({"_id": ada_id}, {"$inc": {"age": 1}, "$push": {"tags": "vip"}})
+
+# see what a Node process wrote (and vice-versa)
+for change in db.changes():
+    print(change["coll"], change["op"], change["doc_id"])
+```
+
+## What's in the package
+
+| Module | API |
+|---|---|
+| **core** | documents; `find_many`/`find_first`/`count`; operators incl. `gte`/`in`/`contains`/`startsWith`/`endsWith`/`regex`/`has`/`elemMatch`/`not`/`notIn`; `aggregate(_count=…, _sum=[…])` + `group_by(...)`; nestable `with db.transaction(): …`; the **change feed** (`db.changes()`, `db.current_seq()`) |
+| **kv** | `set`/`get`/`incr`/`ttl`; atomic locks (`set_nx`, `with_lock`); pub/sub (`publish`/`subscribe`/`poll`); sorted sets (`zadd`/`zincrby`/`zrank`/`zrange`/`zrange_by_score`/…) |
+| **queue** | durable `_jobs`: `add`/`claim`/`complete`/`fail`/`process`, retries + backoff, delay, priority, dedupe |
+| **cron** | `parse_cron`, `next_cron_run` (tz via `zoneinfo`, jitter), `schedule`/`tick` with an atomic multi-process claim |
+| **fts** | FTS5 — `fts(db, "posts", fields=["title", "body"])` then `idx.search("query")` |
+
+The change feed, sorted sets, and the queue are exercised by a **cross-runtime interop test
+suite** that round-trips a `.db` between Node and Python.
 
 ```python
-rows = db.execute("SELECT doc_id FROM posts_fts WHERE posts_fts MATCH ?", ("hello",)).fetchall()
+# durable queue shared with a Node worker
+from monlite import create_queue
+q = create_queue(db)
+q.add("email", {"to": "a@b.c"}, priority=5, max_attempts=3)
+q.process("email", lambda payload: send(payload))
+
+# full-text search over the same FTS5 index Node builds
+from monlite import fts
+idx = fts(db, "posts", fields=["title", "body"])
+idx.search("sqlite", limit=10)
 ```
 
 ## Vectors
 
-`sqlite-vec` has official Python bindings:
+The `[vector]` extra (semantic search via `sqlite-vec`) is next. Today, `sqlite-vec` has official
+Python bindings you can use directly against a monlite vector collection:
 
 ```python
 import sqlite_vec
-db.enable_load_extension(True)
-sqlite_vec.load(db)
-hits = db.execute(
-    "SELECT doc_id, distance FROM docs WHERE embedding MATCH ? AND k = 5 ORDER BY distance",
-    (json.dumps(query_vector),),
-).fetchall()
+db.sqlite.enable_load_extension(True)
+sqlite_vec.load(db.sqlite)
 ```
 
-## Cache & queue handoff
+## Lower-level: just SQLite
 
-The `kv` and `queue` tables are plain SQLite, so a Python worker and a Node API
-can hand work back and forth: Python enqueues a job (INSERT into the `_jobs`
-table) and Node's `queue.process(...)` picks it up, or vice-versa — sharing one
-cache and one queue with no extra infrastructure.
+A monlite database is plain SQLite with [documented conventions](/reference/file-format), so any
+language with an SQLite driver can read it without the package — handy for quick scripts or other
+runtimes:
 
-## A native Python package
+```python
+import sqlite3, json
+db = sqlite3.connect("app.db")
+for (_id, data) in db.execute("SELECT _id, data FROM users"):
+    print(json.loads(data)["name"])
+# FTS5 ships with Python's sqlite3:
+db.execute("SELECT doc_id FROM posts_fts WHERE posts_fts MATCH ?", ("hello",)).fetchall()
+```
 
-Because the whole family is "conventions over one SQLite file," a single
-`pip install monlite` can mirror the entire family — documents, kv, queue, cron,
-fts, vector — over `sqlite3`. That's on the roadmap; until then, the
-[file format](/reference/file-format) is the interop contract.
+See the [file format spec](/reference/file-format) for the table layouts both sides share.

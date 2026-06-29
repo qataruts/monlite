@@ -310,8 +310,11 @@ The [live demo](https://qataruts.github.io/monlite/demo) showcases every package
 full-text (FTS5), **vector/semantic search**, cache, queue, and cron — running 100% in the
 browser on SQLite-WASM, with semantic embeddings computed on-device via Transformers.js.
 
-The Python port (`pip install monlite`) currently ships documents + kv, with the rest of the
-package family in progress.
+The **Python port** — [`pip install monlite`](https://pypi.org/project/monlite/) — is at feature
+parity: documents (with transactions, aggregation, and the change feed), kv (cache, locks, pub/sub,
+sorted sets), the durable queue, cron, and FTS5 — all reading and writing the **same `.db`** as the
+Node packages. A cross-runtime interop suite round-trips a file between the two. Pure standard
+library, Python 3.9+. So **Python ingests/embeds while Node serves**, over one file.
 
 ## License
 
