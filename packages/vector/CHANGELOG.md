@@ -1,5 +1,11 @@
 # @monlite/vector
 
+## 0.6.1 — review fixes
+
+Safe chained JSONB path for dotted field names; the KNN query binds the vector with a `?`
+placeholder (composes with the driver rewrite) instead of a literal `$1`; a transient DDL failure
+is no longer cached permanently.
+
 ## 0.6.0 — Postgres engine support (native pgvector)
 
 `collection.findSimilar()` now runs on the [`@monlite/postgres`](https://www.npmjs.com/package/@monlite/postgres)

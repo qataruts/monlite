@@ -1,5 +1,10 @@
 # @monlite/cron
 
+## 0.3.1 — review fixes
+
+A DB error inside the async `tick()` now surfaces on the `"error"` event instead of becoming an
+unhandled rejection (a process-crash risk); a transient DDL failure is no longer cached forever.
+
 ## 0.3.0 — Postgres engine support (PgCron)
 
 The scheduler now runs on the [`@monlite/postgres`](https://www.npmjs.com/package/@monlite/postgres)

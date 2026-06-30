@@ -1,5 +1,13 @@
 # @monlite/postgres
 
+## 0.1.1 — driver hardening (review fixes)
+
+- `listen()` registers an `error` handler (a dropped LISTEN connection no longer crashes the
+  process) and auto-reconnects; closes the client if LISTEN setup fails.
+- `runTxn` decrements its savepoint depth exactly once — a throwing COMMIT/RELEASE can no longer
+  corrupt the driver — and discards a poisoned client instead of returning it to the pool.
+- The `?`→`$N` rewrite is string-literal aware (a `?` inside a JSONB key isn't renumbered).
+
 ## 0.1.0 — the Postgres engine for monlite
 
 The same monlite API on a networked **Postgres** (documents as JSONB) instead of a local SQLite

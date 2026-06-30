@@ -1,6 +1,6 @@
 {
   "name": "@monlite/queue",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Durable job queue for monlite: retries, backoff, delayed jobs, concurrency — on SQLite (@monlite/core) or Postgres SKIP LOCKED (@monlite/postgres).",
   "type": "module",
   "main": "./dist/index.cjs",

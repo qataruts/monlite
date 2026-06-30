@@ -1,5 +1,10 @@
 # monlite
 
+## 0.3.1 — dependency bump
+
+Pulls the Postgres-engine review fixes from @monlite/core, @monlite/kv, @monlite/queue,
+@monlite/cron, @monlite/fts and @monlite/vector.
+
 ## 0.3.0 — Postgres engine helpers in the barrel
 
 Re-exports the Postgres-engine helpers from the operational packages so they're available from the

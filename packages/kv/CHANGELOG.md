@@ -1,5 +1,12 @@
 # @monlite/kv
 
+## 0.5.1 — review fixes (Postgres)
+
+`setNX`/`incr`/`zincrby` are atomic single-statement upserts (no read-modify-write race under
+contention — exactly one caller wins the lock); the `subscribe()` snapshot window no longer binds
+`Infinity`; a transient DDL failure is no longer cached and the db is marked ready only after the
+DDL succeeds.
+
 ## 0.5.0 — Postgres engine support (pgKv)
 
 The cache now runs on the [`@monlite/postgres`](https://www.npmjs.com/package/@monlite/postgres)

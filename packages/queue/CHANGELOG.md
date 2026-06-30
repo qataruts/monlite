@@ -1,5 +1,10 @@
 # @monlite/queue
 
+## 0.6.1 — review fixes
+
+A transient init/DDL failure is no longer cached permanently — a later `PgQueue` retries the setup
+instead of failing forever.
+
 ## 0.6.0 — Postgres engine support (FOR UPDATE SKIP LOCKED)
 
 The queue now runs on the [`@monlite/postgres`](https://www.npmjs.com/package/@monlite/postgres)

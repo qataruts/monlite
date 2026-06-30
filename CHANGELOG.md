@@ -1,5 +1,20 @@
 # @monlite/core
 
+## 2.9.2 — Postgres engine hardening (review fixes)
+
+Fixes from a multi-agent review of the swappable engine. SQLite is byte-for-byte unchanged
+(full suite green on both drivers).
+- Crashes/corruption avoided: `db.transactionAsync` now runs on the async engine (it was always
+  throwing a wrong error); `createDb({ sync | changefeed })` throws a clear error on Postgres
+  instead of crashing; the watch reactor no longer leaves a stale subscription (which silently
+  dead-ended future watchers) and serializes recomputes so init + notifies can't interleave.
+- Cross-engine result parity: empty `OR`, `not:null`, `in:[null]`, `exists`, `contains` on an
+  array, `orderBy` NULL placement, and `distinct` over a missing field now return the same
+  results on Postgres as on SQLite.
+- Safety/correctness: a safe chained JSONB path (`->`/`->>'key'`) so a comma/brace/backslash in a
+  field name can't corrupt the SQL; `elemMatch` gains `not`/`in`/`notIn` on Postgres; `maxRows`
+  no longer breaks `updateMany`/`deleteMany`; `groupBy`/`distinct` coerce bigint timestamps.
+
 ## 2.9.1 — explain() on the Postgres engine
 
 `explain()` now works on the Postgres engine (it builds the same `findMany` query and runs

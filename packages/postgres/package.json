@@ -1,6 +1,6 @@
 {
   "name": "@monlite/postgres",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Postgres engine for @monlite/core — the same monlite API, on a networked Postgres (JSONB) instead of a local SQLite file. Swap the engine, not your code.",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -8,11 +8,19 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
-      "require": { "types": "./dist/index.d.cts", "default": "./dist/index.cjs" }
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "sideEffects": false,
   "scripts": {
     "build": "tsup",
@@ -37,9 +45,15 @@
     "directory": "packages/postgres"
   },
   "homepage": "https://github.com/qataruts/monlite/tree/main/packages/postgres#readme",
-  "bugs": { "url": "https://github.com/qataruts/monlite/issues" },
-  "publishConfig": { "access": "public" },
-  "engines": { "node": ">=18" },
+  "bugs": {
+    "url": "https://github.com/qataruts/monlite/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "@monlite/core": "workspace:^",
     "pg": "^8.13.0"

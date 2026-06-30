@@ -1,5 +1,10 @@
 # @monlite/fts
 
+## 0.6.1 — review fixes
+
+Safe chained JSONB path for dotted field names (comma/brace/backslash can't corrupt it); a
+transient DDL failure on the first `search()` is no longer cached permanently.
+
 ## 0.6.0 — Postgres engine support (native tsvector)
 
 `collection.search()` now runs on the [`@monlite/postgres`](https://www.npmjs.com/package/@monlite/postgres)
