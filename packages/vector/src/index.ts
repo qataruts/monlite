@@ -297,10 +297,9 @@ const pgReadyByDb = new WeakMap<Monlite, Map<string, Promise<void>>>();
 
 /** jsonb text projection of a (possibly dotted) field path. */
 function pgFieldText(field: string): string {
-  const segs = field.split(".").map((s) => s.replace(/'/g, "''"));
-  return segs.length === 1
-    ? `data->>'${segs[0]}'`
-    : `data#>>'{${segs.join(",")}}'`;
+  const keys = field.split(".").map((s) => `'${s.replace(/'/g, "''")}'`);
+  const last = keys.length - 1;
+  return "data" + keys.map((k, i) => (i === last ? "->>" : "->") + k).join("");
 }
 
 /** Lazily add the generated vector column + HNSW index for a collection (idempotent). */
@@ -333,7 +332,11 @@ function pgEnsureVector(
     } catch {
       // HNSW caps dimensions (~2000); without the index, KNN still works (exact scan).
     }
-  })();
+  })().catch((e) => {
+    // Don't cache a transient DDL failure forever — let the next findSimilar() retry.
+    m!.delete(coll);
+    throw e;
+  });
   m.set(coll, p);
   return p;
 }
@@ -362,8 +365,10 @@ async function pgFindSimilar<T = Doc>(
   const vec = `[${opts.vector.join(",")}]`;
   const rows = (
     await db.asyncDriver!.query(
+      // Use a `?` placeholder (not a literal `$1`) so this composes with the driver's
+      // ?→$N rewrite if a bound clause is ever added — the query vector binds once.
       `SELECT _id, data, created_at, updated_at, ` +
-        `(_vec ${op} $1::vector(${def.dimensions})) AS _distance ` +
+        `(_vec ${op} ?::vector(${def.dimensions})) AS _distance ` +
         `FROM "${coll.name}" WHERE _vec IS NOT NULL ` +
         `ORDER BY _distance LIMIT ${Math.max(0, Math.floor(fetch))}`,
       [vec],

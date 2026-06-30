@@ -368,12 +368,18 @@ export class PgCron extends EventEmitter {
     if (!pgEnsured.has(db)) {
       pgEnsured.set(
         db,
-        this.driver.exec(
-          `CREATE TABLE IF NOT EXISTS _schedules (
+        this.driver
+          .exec(
+            `CREATE TABLE IF NOT EXISTS _schedules (
             name TEXT PRIMARY KEY, cron TEXT NOT NULL,
             next_run BIGINT NOT NULL, last_run BIGINT
           )`,
-        ),
+          )
+          .catch((e) => {
+            // Don't cache a transient DDL failure forever.
+            pgEnsured.delete(db);
+            throw e;
+          }),
       );
     }
     this.ready = pgEnsured.get(db)!;
@@ -418,9 +424,11 @@ export class PgCron extends EventEmitter {
     );
     this.handlers.set(name, { c, fn: handler, tz, jitter });
     if (!this.task) {
-      this.task = this.heartbeat.every(this.checkInterval, () =>
-        void this.tick(),
-      );
+      // A DB error inside the async tick() must not become an unhandled rejection
+      // (which can crash the process) — surface it on the "error" event instead.
+      this.task = this.heartbeat.every(this.checkInterval, () => {
+        this.tick().catch((err) => this.emit("error", err, ""));
+      });
     }
   }
 

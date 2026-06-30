@@ -261,12 +261,12 @@ function search<T = Doc>(
 // table, no afterWrite hook and no catch-up: just a column that's always current.
 const pgReadyByDb = new WeakMap<Monlite, Map<string, Promise<void>>>();
 
-/** jsonb text projection of a (possibly dotted) field path. */
+/** jsonb text projection of a (possibly dotted) field path — chained `->`/`->>` over
+ *  quoted keys, so a comma/brace/backslash in a key can't corrupt the path. */
 function pgFieldText(field: string): string {
-  const segs = field.split(".").map((s) => s.replace(/'/g, "''"));
-  return segs.length === 1
-    ? `data->>'${segs[0]}'`
-    : `data#>>'{${segs.join(",")}}'`;
+  const keys = field.split(".").map((s) => `'${s.replace(/'/g, "''")}'`);
+  const last = keys.length - 1;
+  return "data" + keys.map((k, i) => (i === last ? "->>" : "->") + k).join("");
 }
 
 /** Lazily add the generated tsvector column + GIN index for a collection (idempotent). */
@@ -295,7 +295,12 @@ function pgEnsureFts(
     await drv.exec(
       `CREATE INDEX IF NOT EXISTS "${coll}_fts_idx" ON "${coll}" USING GIN (_fts)`,
     );
-  })();
+  })().catch((e) => {
+    // A transient DDL failure must not be cached forever — drop it so the next
+    // search() retries the setup instead of rejecting permanently.
+    m!.delete(coll);
+    throw e;
+  });
   m.set(coll, p);
   return p;
 }

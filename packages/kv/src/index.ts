@@ -549,8 +549,11 @@ export function pgKv(db: Monlite, options: KVOptions = {}): PgKV {
         await driver.exec(
           `CREATE INDEX IF NOT EXISTS _idx_kv_zset ON _monlite_kv_zset (ns, k, score, member)`,
         );
+        // Mark ready only AFTER the DDL succeeds — otherwise a concurrent second
+        // pgKv(db) would see `has(db)`, skip the DDL, and query missing tables. A
+        // failure leaves the db unmarked so a later pgKv retries the setup.
+        pgEnsured.add(db);
       })();
-  if (!pgEnsured.has(db)) pgEnsured.add(db);
 
   const q = async (sql: string, params: any[] = []) => {
     await ready;
@@ -586,6 +589,9 @@ export function pgKv(db: Monlite, options: KVOptions = {}): PgKV {
     if (subs.size === 0) return;
     let min = Infinity;
     for (const s of subs) min = Math.min(min, s.cursor);
+    // Every subscriber is still snapshotting its high-water seq (cursor=Infinity) —
+    // there's nothing to deliver yet, and binding Infinity as a BIGINT would error.
+    if (!Number.isFinite(min)) return;
     const rows = (
       await q(
         `SELECT seq, channel, payload FROM _monlite_kv_pubsub WHERE ns = ? AND seq > ? ORDER BY seq`,
@@ -623,13 +629,18 @@ export function pgKv(db: Monlite, options: KVOptions = {}): PgKV {
       await setRaw(key, JSON.stringify(value ?? null), expires);
     },
     async setNX(key, value, opts) {
-      return driver.transactionAsync(async () => {
-        const row = await getRow(key);
-        if (fresh(row)) return false;
-        const expires = opts?.ttl != null ? now() + opts.ttl : null;
-        await setRaw(key, JSON.stringify(value ?? null), expires);
-        return true;
-      });
+      const expires = opts?.ttl != null ? now() + opts.ttl : null;
+      // Atomic: insert if absent, OR overwrite only when the existing key is EXPIRED.
+      // RETURNING yields a row iff we set it (insert / expired-replace) — no read-then-
+      // write race, so exactly one of N racing callers wins the lock.
+      const r = await q(
+        `INSERT INTO _kv (ns, k, v, expires_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT (ns, k) DO UPDATE SET v = excluded.v, expires_at = excluded.expires_at
+           WHERE _kv.expires_at IS NOT NULL AND _kv.expires_at <= ?
+         RETURNING 1`,
+        [ns, key, JSON.stringify(value ?? null), expires, now()],
+      );
+      return r.rows.length > 0;
     },
     async has(key) {
       return (await api.get(key)) !== undefined;
@@ -638,21 +649,26 @@ export function pgKv(db: Monlite, options: KVOptions = {}): PgKV {
       return del(key);
     },
     async incr(key, by = 1) {
-      return driver.transactionAsync(async () => {
-        const row = await getRow(key);
-        let n = 0;
-        let expires: number | null = null;
-        if (fresh(row)) {
-          const cur = JSON.parse(row!.v);
-          if (typeof cur !== "number")
-            throw new Error(`kv.incr: value at "${key}" is not a number`);
-          n = cur;
-          expires = row!.expires_at != null ? Number(row!.expires_at) : null;
-        }
-        const next = n + by;
-        await setRaw(key, JSON.stringify(next), expires);
-        return next;
-      });
+      // Atomic upsert: create with `by`; add `by` to a live key; reset an EXPIRED key to
+      // `by` (clearing its expiry). Done in one statement, so concurrent incrs don't lose
+      // updates the way a read-modify-write under READ COMMITTED would.
+      try {
+        const r = await q(
+          `INSERT INTO _kv (ns, k, v, expires_at) VALUES (?, ?, ?, NULL)
+           ON CONFLICT (ns, k) DO UPDATE SET
+             v = (CASE WHEN _kv.expires_at IS NOT NULL AND _kv.expires_at <= ?
+                       THEN ?::numeric ELSE ((_kv.v)::numeric + ?::numeric) END)::text,
+             expires_at = CASE WHEN _kv.expires_at IS NOT NULL AND _kv.expires_at <= ?
+                               THEN NULL ELSE _kv.expires_at END
+           RETURNING (v)::numeric AS n`,
+          [ns, key, JSON.stringify(by), now(), by, by, now()],
+        );
+        return Number(r.rows[0].n);
+      } catch (e: any) {
+        if (/invalid input syntax|numeric/i.test(String(e?.message)))
+          throw new Error(`kv.incr: value at "${key}" is not a number`);
+        throw e;
+      }
     },
     async decr(key, by = 1) {
       return api.incr(key, -by);
@@ -717,21 +733,16 @@ export function pgKv(db: Monlite, options: KVOptions = {}): PgKV {
     async zincrby(key, delta, member) {
       if (typeof delta !== "number" || Number.isNaN(delta))
         throw new Error(`kv.zincrby: delta must be a number, got ${delta}`);
-      return driver.transactionAsync(async () => {
-        const row = (
-          await q(
-            `SELECT score FROM _monlite_kv_zset WHERE ns = ? AND k = ? AND member = ?`,
-            [ns, key, member],
-          )
-        ).rows[0] as { score: number } | undefined;
-        const next = (row?.score ?? 0) + delta;
-        await q(
-          `INSERT INTO _monlite_kv_zset (ns, k, member, score) VALUES (?, ?, ?, ?)
-           ON CONFLICT(ns, k, member) DO UPDATE SET score = excluded.score`,
-          [ns, key, member, next],
-        );
-        return next;
-      });
+      // Atomic increment via the UPSERT itself (existing.score + delta) — no
+      // read-then-write race under concurrent updates to the same member.
+      const r = await q(
+        `INSERT INTO _monlite_kv_zset (ns, k, member, score) VALUES (?, ?, ?, ?)
+         ON CONFLICT(ns, k, member) DO UPDATE
+           SET score = _monlite_kv_zset.score + ?
+         RETURNING score`,
+        [ns, key, member, delta, delta],
+      );
+      return Number(r.rows[0].score);
     },
     async zscore(key, member) {
       const row = (

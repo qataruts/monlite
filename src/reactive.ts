@@ -376,6 +376,8 @@ export class PgReactor {
   private readonly unlisten = new Map<string, () => void | Promise<void>>();
   private pending = new Map<string, Set<string>>();
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The in-flight flush, so stop() can wait for it before the pool closes. */
+  private flushing: Promise<void> = Promise.resolve();
 
   constructor(private readonly driver: AsyncDriver) {}
 
@@ -428,11 +430,13 @@ export class PgReactor {
     let ids = this.pending.get(collection);
     if (!ids) this.pending.set(collection, (ids = new Set()));
     ids.add(id);
-    if (!this.flushTimer)
-      this.flushTimer = setTimeout(
-        () => void this.flush(),
-        PG_NOTIFY_DEBOUNCE_MS,
-      );
+    if (!this.flushTimer) {
+      const t = setTimeout(() => {
+        this.flushing = this.flush();
+      }, PG_NOTIFY_DEBOUNCE_MS);
+      t.unref?.(); // don't keep the process alive for a debounce tick
+      this.flushTimer = t;
+    }
   }
 
   private async flush(): Promise<void> {
@@ -460,6 +464,15 @@ export class PgReactor {
   async stop(): Promise<void> {
     if (this.flushTimer) clearTimeout(this.flushTimer);
     this.flushTimer = null;
+    // Mark every live query stopped so a settling flush delivers nothing, then wait
+    // for an in-flight flush so we don't query the pool that close() is about to end.
+    for (const set of this.queries.values())
+      for (const lq of set) lq.stopped = true;
+    try {
+      await this.flushing;
+    } catch {
+      /* a flush failure during shutdown is irrelevant */
+    }
     const uns = [...this.unlisten.values()];
     this.unlisten.clear();
     this.queries.clear();

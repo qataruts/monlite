@@ -448,6 +448,24 @@ function pgElemMatch(arrayJsn: string, sub: any, ctx: WhereContext): string {
       const v = rec[op];
       if (v === undefined || op === "mode") continue;
       if (op === "equals") clauses.push(`${jsn} = to_jsonb(${P(v)}::${pgType(v)})`);
+      else if (op === "not")
+        clauses.push(
+          v === null
+            ? `(${jsn} IS NOT NULL AND ${jsn} <> 'null'::jsonb)`
+            : `(${jsn} IS NULL OR ${jsn} <> to_jsonb(${P(v)}::${pgType(v)}))`,
+        );
+      else if (op === "in")
+        clauses.push(
+          Array.isArray(v) && v.length
+            ? `${jsn} IN (${v.map((x: any) => `to_jsonb(${P(x)}::${pgType(x)})`).join(", ")})`
+            : "false",
+        );
+      else if (op === "notIn")
+        clauses.push(
+          Array.isArray(v) && v.length
+            ? `(${jsn} IS NULL OR ${jsn} NOT IN (${v.map((x: any) => `to_jsonb(${P(x)}::${pgType(x)})`).join(", ")}))`
+            : "true",
+        );
       else if (PG_CMP[op])
         clauses.push(
           typeof v === "number"

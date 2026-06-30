@@ -748,7 +748,12 @@ export class PgQueue extends EventEmitter {
           await drv.exec(
             `CREATE INDEX IF NOT EXISTS _jobs_jobid ON _jobs (job_id)`,
           );
-        })(),
+        })().catch((e) => {
+          // Don't cache a transient init failure forever — clear it so a later
+          // PgQueue / operation re-runs the DDL instead of failing permanently.
+          pgEnsured.delete(db);
+          throw e;
+        }),
       );
     }
     this.ready = pgEnsured.get(db)!;
