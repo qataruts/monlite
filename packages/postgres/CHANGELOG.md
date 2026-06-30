@@ -1,5 +1,13 @@
 # @monlite/postgres
 
+## 0.1.2 — connection + transaction resilience
+
+- A pool `error` handler so an idle client the server drops can't crash the process.
+- Automatic retry of a top-level transaction on serialization failure (40001) / deadlock (40P01),
+  configurable via `maxTxRetries` (default 5).
+- Proven by a harness against the monlite/postgres image: watch() self-heals after the server
+  drops every connection; 100 concurrent incr / 50 setNX / 40 CAS / 8x200 queue jobs stay correct.
+
 ## 0.1.1 — driver hardening (review fixes)
 
 - `listen()` registers an `error` handler (a dropped LISTEN connection no longer crashes the

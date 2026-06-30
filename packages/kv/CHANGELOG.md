@@ -1,5 +1,11 @@
 # @monlite/kv
 
+## 0.5.2 — review fixes (cold-start race)
+
+Cross-session catalog-race tolerance: `CREATE ... IF NOT EXISTS` setup DDL no longer fails
+when multiple processes cold-start on a fresh database at once (it tolerates duplicate
+pg_type/table/column and rethrows everything else).
+
 ## 0.5.1 — review fixes (Postgres)
 
 `setNX`/`incr`/`zincrby` are atomic single-statement upserts (no read-modify-write race under

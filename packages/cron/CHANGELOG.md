@@ -1,5 +1,11 @@
 # @monlite/cron
 
+## 0.3.2 — review fixes (cold-start race)
+
+Cross-session catalog-race tolerance: `CREATE ... IF NOT EXISTS` setup DDL no longer fails
+when multiple processes cold-start on a fresh database at once (it tolerates duplicate
+pg_type/table/column and rethrows everything else).
+
 ## 0.3.1 — review fixes
 
 A DB error inside the async `tick()` now surfaces on the `"error"` event instead of becoming an

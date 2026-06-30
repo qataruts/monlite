@@ -1,5 +1,11 @@
 # @monlite/vector
 
+## 0.6.2 — review fixes (cold-start race)
+
+Cross-session catalog-race tolerance: `CREATE ... IF NOT EXISTS` setup DDL no longer fails
+when multiple processes cold-start on a fresh database at once (it tolerates duplicate
+pg_type/table/column and rethrows everything else).
+
 ## 0.6.1 — review fixes
 
 Safe chained JSONB path for dotted field names; the KNN query binds the vector with a `?`

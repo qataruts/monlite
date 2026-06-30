@@ -1,6 +1,6 @@
 {
   "name": "@monlite/postgres",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Postgres engine for @monlite/core — the same monlite API, on a networked Postgres (JSONB) instead of a local SQLite file. Swap the engine, not your code.",
   "type": "module",
   "main": "./dist/index.cjs",

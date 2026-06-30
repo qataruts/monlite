@@ -1,6 +1,6 @@
 {
   "name": "@monlite/kv",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Redis-like key-value cache for monlite: get/set/incr with TTL, sorted sets, pub/sub — on SQLite (@monlite/core) or Postgres (@monlite/postgres).",
   "type": "module",
   "main": "./dist/index.cjs",

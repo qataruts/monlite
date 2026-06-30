@@ -1,5 +1,12 @@
 # @monlite/core
 
+## 2.9.3 — Postgres concurrency hardening
+
+Validated against the monlite/postgres Docker image with a resilience/soak harness.
+- `ensureTablePg`: `CREATE TABLE IF NOT EXISTS` is not atomic — many ops racing to first-create a
+  new collection collided (duplicate pg_type). It now shares ONE create per collection and
+  tolerates the cross-session catalog race (23505/42P07). Found by a 3000-op soak.
+
 ## 2.9.2 — Postgres engine hardening (review fixes)
 
 Fixes from a multi-agent review of the swappable engine. SQLite is byte-for-byte unchanged

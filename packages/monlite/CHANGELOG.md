@@ -1,5 +1,9 @@
 # monlite
 
+## 0.3.2 — dependency bump
+
+Pulls the Postgres concurrency-hardening fixes from @monlite/core and the operational packages.
+
 ## 0.3.1 — dependency bump
 
 Pulls the Postgres-engine review fixes from @monlite/core, @monlite/kv, @monlite/queue,
