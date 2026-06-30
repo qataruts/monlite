@@ -467,6 +467,20 @@ export function kv(db: Monlite, options: KVOptions = {}): KV {
 // pub/sub), with an async API. `await cache.get(...)`.
 const pgEnsured = new WeakSet<object>();
 
+/** Run idempotent DDL, tolerating the cross-session catalog race that `CREATE … IF NOT
+ *  EXISTS` can lose (duplicate pg_type/table) when processes cold-start together. */
+async function ddlTolerant(
+  drv: NonNullable<Monlite["asyncDriver"]>,
+  sql: string,
+): Promise<void> {
+  try {
+    await drv.exec(sql);
+  } catch (e) {
+    const code = (e as { code?: string })?.code;
+    if (code !== "23505" && code !== "42P07" && code !== "42701") throw e;
+  }
+}
+
 /** The Postgres counterpart of {@link KV} — identical surface, every method async. */
 export interface PgKV {
   get<T = any>(key: string): Promise<T | undefined>;
@@ -531,22 +545,27 @@ export function pgKv(db: Monlite, options: KVOptions = {}): PgKV {
   const ready = pgEnsured.has(db)
     ? Promise.resolve()
     : (async () => {
-        await driver.exec(
+        await ddlTolerant(
+          driver,
           `CREATE TABLE IF NOT EXISTS _kv (ns TEXT NOT NULL, k TEXT NOT NULL, v TEXT NOT NULL,
             expires_at BIGINT, PRIMARY KEY (ns, k))`,
         );
-        await driver.exec(
+        await ddlTolerant(
+          driver,
           `CREATE TABLE IF NOT EXISTS _monlite_kv_pubsub (seq BIGSERIAL PRIMARY KEY,
             ns TEXT NOT NULL, channel TEXT NOT NULL, payload TEXT, ts BIGINT NOT NULL)`,
         );
-        await driver.exec(
+        await ddlTolerant(
+          driver,
           `CREATE INDEX IF NOT EXISTS _idx_kv_pubsub ON _monlite_kv_pubsub (ns, seq)`,
         );
-        await driver.exec(
+        await ddlTolerant(
+          driver,
           `CREATE TABLE IF NOT EXISTS _monlite_kv_zset (ns TEXT NOT NULL, k TEXT NOT NULL,
             member TEXT NOT NULL, score double precision NOT NULL, PRIMARY KEY (ns, k, member))`,
         );
-        await driver.exec(
+        await ddlTolerant(
+          driver,
           `CREATE INDEX IF NOT EXISTS _idx_kv_zset ON _monlite_kv_zset (ns, k, score, member)`,
         );
         // Mark ready only AFTER the DDL succeeds — otherwise a concurrent second

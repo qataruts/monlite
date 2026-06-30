@@ -27,11 +27,14 @@ if (process.env.MONLITE_PG_HARDEN) {
   }
 }
 
-const waitFor = async (pred: () => boolean, ms = 8000) => {
+const waitFor = async (
+  pred: () => boolean | Promise<boolean>,
+  ms = 8000,
+) => {
   const t0 = Date.now();
-  while (!pred()) {
+  while (!(await pred())) {
     if (Date.now() - t0 > ms) throw new Error("timeout");
-    await new Promise((r) => setTimeout(r, 20));
+    await new Promise((r) => setTimeout(r, 50));
   }
 };
 
@@ -119,15 +122,41 @@ const waitFor = async (pred: () => boolean, ms = 8000) => {
          WHERE datname = 'monlite' AND pid <> pg_backend_pid()`,
       );
 
-      // after the driver reconnects (LISTEN re-established, pool re-checks-out), a new
-      // write must be delivered again — proving the watcher self-heals.
+      // after the driver reconnects (LISTEN re-established, pool re-checks-out), a fresh
+      // write must be delivered again — proving the watcher self-heals. The pred is
+      // genuinely awaited: it re-attempts the (fixed-id) write each poll until one both
+      // lands AND is delivered to the now-recovered watcher.
       await new Promise((r) => setTimeout(r, 1500)); // > the 1s reconnect backoff
       await waitFor(async () => {
-        await w.create({ data: { _id: "after-" + Date.now() } }).catch(() => {});
-        return seen.some((s) => s.startsWith("after-"));
-      }, 12_000);
+        await w.create({ data: { _id: "recovered" } }).catch(() => {}); // 1st lands, retries conflict (ok)
+        return seen.includes("recovered");
+      }, 15_000);
+      expect(seen).toContain("recovered");
 
       handle.stop();
+    });
+
+    it("multi-process cold start: 6 independent engines race the operational DDL", async () => {
+      const { createPgQueue } = await import("@monlite/queue");
+      const { pgKv } = await import("@monlite/kv");
+      for (const t of ["_jobs", "_kv", "_monlite_kv_pubsub", "_monlite_kv_zset", "x2"])
+        await db.asyncDriver.exec(`DROP TABLE IF EXISTS ${t} CASCADE`);
+      // 6 separate engines (separate pools = separate sessions, like 6 processes booting
+      // at once) all first-create _jobs / _kv / x2 — exercising the cross-session catalog
+      // race that CREATE … IF NOT EXISTS can lose.
+      const dbs = Array.from({ length: 6 }, () => createDb(URL));
+      try {
+        await Promise.all(
+          dbs.map(async (d: any) => {
+            await createPgQueue(d).add("q", { a: 1 });
+            await pgKv(d, { namespace: "x" }).set("k", 1);
+            await d.collection("x2").create({ data: { v: 1 } });
+          }),
+        );
+        expect(await db.collection("x2").count()).toBe(6); // all succeeded, no race crash
+      } finally {
+        await Promise.all(dbs.map((d: any) => d.$disconnect()));
+      }
     });
 
     it("soak: 3000 mixed operations stay correct and stable", async () => {

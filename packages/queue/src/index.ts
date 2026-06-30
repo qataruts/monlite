@@ -536,6 +536,20 @@ export class Queue extends EventEmitter {
 // with zero contention. The database methods are async — `await` them.
 const pgEnsured = new WeakMap<object, Promise<void>>();
 
+/** Run idempotent DDL, tolerating the cross-session catalog race that `CREATE … IF NOT
+ *  EXISTS` can lose (duplicate pg_type/table/column) when processes cold-start together. */
+async function ddlTolerant(
+  drv: NonNullable<Monlite["asyncDriver"]>,
+  sql: string,
+): Promise<void> {
+  try {
+    await drv.exec(sql);
+  } catch (e) {
+    const code = (e as { code?: string })?.code;
+    if (code !== "23505" && code !== "42P07" && code !== "42701") throw e;
+  }
+}
+
 /** Postgres returns BIGINT/BIGSERIAL columns as strings — coerce the numerics. */
 function deserializePg(row: any): Job {
   return {
@@ -734,7 +748,8 @@ export class PgQueue extends EventEmitter {
       pgEnsured.set(
         db,
         (async () => {
-          await drv.exec(
+          await ddlTolerant(
+            drv,
             `CREATE TABLE IF NOT EXISTS _jobs (
               id BIGSERIAL PRIMARY KEY,
               queue TEXT NOT NULL, status TEXT NOT NULL, priority INTEGER NOT NULL,
@@ -742,10 +757,12 @@ export class PgQueue extends EventEmitter {
               payload TEXT NOT NULL, result TEXT, error TEXT, locked_by TEXT, job_id TEXT,
               created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL)`,
           );
-          await drv.exec(
+          await ddlTolerant(
+            drv,
             `CREATE INDEX IF NOT EXISTS _jobs_claim ON _jobs (queue, status, priority, run_at)`,
           );
-          await drv.exec(
+          await ddlTolerant(
+            drv,
             `CREATE INDEX IF NOT EXISTS _jobs_jobid ON _jobs (job_id)`,
           );
         })().catch((e) => {

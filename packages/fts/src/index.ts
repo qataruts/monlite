@@ -261,6 +261,20 @@ function search<T = Doc>(
 // table, no afterWrite hook and no catch-up: just a column that's always current.
 const pgReadyByDb = new WeakMap<Monlite, Map<string, Promise<void>>>();
 
+/** Run idempotent DDL, tolerating the cross-session catalog race that `CREATE … IF NOT
+ *  EXISTS` / `ADD COLUMN IF NOT EXISTS` can lose (duplicate pg_type/table/column). */
+async function ddlTolerant(
+  drv: NonNullable<Monlite["asyncDriver"]>,
+  sql: string,
+): Promise<void> {
+  try {
+    await drv.exec(sql);
+  } catch (e) {
+    const code = (e as { code?: string })?.code;
+    if (code !== "23505" && code !== "42P07" && code !== "42701") throw e;
+  }
+}
+
 /** jsonb text projection of a (possibly dotted) field path — chained `->`/`->>` over
  *  quoted keys, so a comma/brace/backslash in a key can't corrupt the path. */
 function pgFieldText(field: string): string {
@@ -284,15 +298,18 @@ function pgEnsureFts(
     .map((f) => `coalesce(${pgFieldText(f)}, '')`)
     .join(" || ' ' || ");
   const p = (async () => {
-    await drv.exec(
+    await ddlTolerant(
+      drv,
       `CREATE TABLE IF NOT EXISTS "${coll}" (_id text PRIMARY KEY, data jsonb NOT NULL, ` +
         `created_at bigint NOT NULL, updated_at bigint NOT NULL)`,
     );
-    await drv.exec(
+    await ddlTolerant(
+      drv,
       `ALTER TABLE "${coll}" ADD COLUMN IF NOT EXISTS _fts tsvector ` +
         `GENERATED ALWAYS AS (to_tsvector('english', ${expr})) STORED`,
     );
-    await drv.exec(
+    await ddlTolerant(
+      drv,
       `CREATE INDEX IF NOT EXISTS "${coll}_fts_idx" ON "${coll}" USING GIN (_fts)`,
     );
   })().catch((e) => {

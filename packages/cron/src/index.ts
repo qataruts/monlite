@@ -339,6 +339,20 @@ export class Cron extends EventEmitter {
 // ── Postgres engine: async scheduler ──────────────────────────────────────────
 const pgEnsured = new WeakMap<object, Promise<void>>();
 
+/** Run idempotent DDL, tolerating the cross-session catalog race that `CREATE … IF NOT
+ *  EXISTS` can lose (duplicate pg_type/table) when processes cold-start together. */
+async function ddlTolerant(
+  drv: NonNullable<Monlite["asyncDriver"]>,
+  sql: string,
+): Promise<void> {
+  try {
+    await drv.exec(sql);
+  } catch (e) {
+    const code = (e as { code?: string })?.code;
+    if (code !== "23505" && code !== "42P07" && code !== "42701") throw e;
+  }
+}
+
 /**
  * The Postgres counterpart of {@link Cron} — same model (a persisted `_schedules` table, an
  * atomic cross-process claim so exactly one process fires each tick), with an async API.
@@ -368,13 +382,13 @@ export class PgCron extends EventEmitter {
     if (!pgEnsured.has(db)) {
       pgEnsured.set(
         db,
-        this.driver
-          .exec(
-            `CREATE TABLE IF NOT EXISTS _schedules (
+        ddlTolerant(
+          this.driver,
+          `CREATE TABLE IF NOT EXISTS _schedules (
             name TEXT PRIMARY KEY, cron TEXT NOT NULL,
             next_run BIGINT NOT NULL, last_run BIGINT
           )`,
-          )
+        )
           .catch((e) => {
             // Don't cache a transient DDL failure forever.
             pgEnsured.delete(db);
