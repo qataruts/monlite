@@ -74,7 +74,7 @@ mis-delivered as a snapshot or a `null` document.
 - The server runs `collection.watch()` / `watchDoc()` on the authorized database and pushes each
   `LiveEvent` (init snapshot, then `added`/`removed`/`changed`/`moved` deltas) down the stream.
 - The client auto-reconnects with backoff; on reconnect it receives a fresh snapshot (no missed
-  state). Because writes flow through the [change feed](https://qataruts.github.io/monlite/docs/core/realtime),
+  state). Because writes flow through the [change feed](https://qataruts.github.io/monlite/core/realtime),
   changes from other processes and from `@monlite/sync` are delivered too.
 
 ## Notes

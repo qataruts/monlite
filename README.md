@@ -265,10 +265,10 @@ kv(db).set("session:42", {"user": "ali"}, ttl=60_000)
 
 Full guide at **[qataruts.github.io/monlite](https://qataruts.github.io/monlite)**:
 
-- **Getting started** · **Core** — [documents](https://qataruts.github.io/monlite/docs/core/documents) · [queries](https://qataruts.github.io/monlite/docs/core/queries) · [aggregation](https://qataruts.github.io/monlite/docs/core/aggregation) · [realtime](https://qataruts.github.io/monlite/docs/core/realtime) · [transactions](https://qataruts.github.io/monlite/docs/core/transactions)
-- **Packages** — [postgres](https://qataruts.github.io/monlite/docs/packages/postgres) · [fts](https://qataruts.github.io/monlite/docs/packages/fts) · [vector](https://qataruts.github.io/monlite/docs/packages/vector) · [kv](https://qataruts.github.io/monlite/docs/packages/kv) · [queue](https://qataruts.github.io/monlite/docs/packages/queue) · [cron](https://qataruts.github.io/monlite/docs/packages/cron) · [sync](https://qataruts.github.io/monlite/docs/packages/sync)
-- **Guides** — [AI-agent backend](https://qataruts.github.io/monlite/docs/guides/ai-agent-backend) · [production](https://qataruts.github.io/monlite/docs/guides/production) · [migrations](https://qataruts.github.io/monlite/docs/guides/migrations)
-- **Reference** — [file format](https://qataruts.github.io/monlite/docs/reference/file-format) · [Python](https://qataruts.github.io/monlite/docs/reference/python) · [benchmarks](https://qataruts.github.io/monlite/docs/reference/benchmarks)
+- **Getting started** · **Core** — [documents](https://qataruts.github.io/monlite/core/documents) · [queries](https://qataruts.github.io/monlite/core/queries) · [aggregation](https://qataruts.github.io/monlite/core/aggregation) · [realtime](https://qataruts.github.io/monlite/core/realtime) · [transactions](https://qataruts.github.io/monlite/core/transactions)
+- **Packages** — [postgres](https://qataruts.github.io/monlite/packages/postgres) · [fts](https://qataruts.github.io/monlite/packages/fts) · [vector](https://qataruts.github.io/monlite/packages/vector) · [kv](https://qataruts.github.io/monlite/packages/kv) · [queue](https://qataruts.github.io/monlite/packages/queue) · [cron](https://qataruts.github.io/monlite/packages/cron) · [sync](https://qataruts.github.io/monlite/packages/sync)
+- **Guides** — [AI-agent backend](https://qataruts.github.io/monlite/guides/ai-agent-backend) · [production](https://qataruts.github.io/monlite/guides/production) · [migrations](https://qataruts.github.io/monlite/guides/migrations)
+- **Reference** — [file format](https://qataruts.github.io/monlite/reference/file-format) · [Python](https://qataruts.github.io/monlite/reference/python) · [benchmarks](https://qataruts.github.io/monlite/reference/benchmarks)
 
 Runnable demos in [`examples/`](examples/). The [live demo](https://qataruts.github.io/monlite/demo)
 runs every package — documents, FTS5, vector search, cache, queue, cron — 100% in the browser on
