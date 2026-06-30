@@ -1,5 +1,14 @@
 # @monlite/cron
 
+## 0.3.0 — Postgres engine support (PgCron)
+
+The scheduler now runs on the [`@monlite/postgres`](https://www.npmjs.com/package/@monlite/postgres)
+engine via an async `PgCron` (`createPgCron(db)` / `new PgCron(db)`) — same model as the sync
+`Cron`: a persisted `_schedules` table with an atomic cross-process claim, so exactly one process
+fires each tick. Methods are async (`await cron.schedule(...)`). The sync SQLite `Cron` is
+unchanged; `new Cron(pgDb)` throws a clear redirect. Requires `@monlite/core` ≥ 2.9.0 for the
+Postgres path.
+
 ## 0.2.1 — fast `nextCronRun` (no event-loop freeze)
 
 Bug fix from an internal audit. **No API or behavior change** — the computed next-run is identical;

@@ -1,8 +1,12 @@
 # @monlite/kv
 
-A Redis-like key-value cache for [`@monlite/core`](https://www.npmjs.com/package/@monlite/core),
-backed by SQLite. Synchronous `get`/`set`/`incr` with TTLs — part of the local AI-agent harness
-(cache + queue + cron, replacing Redis locally).
+A Redis-like key-value cache for monlite — `get`/`set`/`incr` with TTLs, atomic locks, sorted
+sets, and pub/sub. Part of the local AI-agent harness (cache + queue + cron, replacing Redis).
+
+- **SQLite** ([`@monlite/core`](https://www.npmjs.com/package/@monlite/core)) — `kv(db)`, a
+  synchronous API.
+- **Postgres** ([`@monlite/postgres`](https://www.npmjs.com/package/@monlite/postgres)) —
+  `pgKv(db)`, the same surface with an **async** API (`await cache.get(...)`).
 
 ```bash
 npm install @monlite/core @monlite/kv

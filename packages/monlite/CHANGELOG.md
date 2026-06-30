@@ -1,5 +1,12 @@
 # monlite
 
+## 0.3.0 — Postgres engine helpers in the barrel
+
+Re-exports the Postgres-engine helpers from the operational packages so they're available from the
+all-in-one bundle: `createPgQueue` / `PgQueue` (`@monlite/queue`), `createPgCron` / `PgCron`
+(`@monlite/cron`), and `pgKv` / `PgKV` (`@monlite/kv`) — alongside their synchronous SQLite
+counterparts. Bundles the updated `@monlite/cron` (0.3.0) and `@monlite/kv` (0.5.0).
+
 ## 0.2.0 — Postgres engine awareness
 
 - Re-exports `createPgQueue` and `PgQueue` from [`@monlite/queue`](https://www.npmjs.com/package/@monlite/queue)

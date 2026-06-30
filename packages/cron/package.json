@@ -1,6 +1,6 @@
 {
   "name": "@monlite/cron",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Cron-style job scheduling for monlite: persisted schedules, 5-field cron, multi-process safe — on SQLite (@monlite/core) or Postgres (@monlite/postgres).",
   "type": "module",
   "main": "./dist/index.cjs",

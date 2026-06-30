@@ -1,6 +1,6 @@
 {
   "name": "monlite",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "The whole monlite stack in one install: embedded SQLite document database + cache, queue, cron, full-text + vector search, sync, and realtime. One .db file replaces MongoDB, Redis, Qdrant, BullMQ and more.",
   "type": "module",
   "main": "./dist/index.cjs",

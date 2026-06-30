@@ -1,8 +1,12 @@
 # @monlite/cron
 
-Cron-style scheduling for [`@monlite/core`](https://www.npmjs.com/package/@monlite/core),
-backed by SQLite. Persisted schedules survive restarts, a zero-dependency 5-field cron parser,
-and atomic firing so multiple processes won't double-run the same occurrence.
+Cron-style scheduling for monlite. Persisted schedules survive restarts, a zero-dependency 5-field
+cron parser, and atomic firing so multiple processes won't double-run the same occurrence.
+
+- **SQLite** ([`@monlite/core`](https://www.npmjs.com/package/@monlite/core)) — `createCron(db)`, a
+  synchronous API.
+- **Postgres** ([`@monlite/postgres`](https://www.npmjs.com/package/@monlite/postgres)) —
+  `createPgCron(db)`, same model with an **async** API (`await cron.schedule(...)`).
 
 ```bash
 npm install @monlite/core @monlite/cron

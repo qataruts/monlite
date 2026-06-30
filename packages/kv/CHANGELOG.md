@@ -1,5 +1,15 @@
 # @monlite/kv
 
+## 0.5.0 — Postgres engine support (pgKv)
+
+The cache now runs on the [`@monlite/postgres`](https://www.npmjs.com/package/@monlite/postgres)
+engine via an async `pgKv(db)` — the full surface mirrored: get/set/setNX, incr/decr, mget, keys,
+expire/ttl, flush/size, sorted sets (zadd/zincrby/zscore/zrem/zcard/zrank/zrange/zrangeByScore),
+and table-backed cross-process pub/sub. Read-modify-write ops run in a transaction; a new
+subscriber never replays. Methods are async (`await cache.get(...)`). The sync SQLite `kv()` is
+unchanged; `kv(pgDb)` throws a clear redirect. Requires `@monlite/core` ≥ 2.9.0 for the Postgres
+path.
+
 ## 0.4.1 — pub/sub + ZSET hardening (audit fixes)
 
 Bug fixes from an internal audit. **No API changes.**

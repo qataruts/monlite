@@ -1,5 +1,12 @@
 # @monlite/core
 
+## 2.9.1 — explain() on the Postgres engine
+
+`explain()` now works on the Postgres engine (it builds the same `findMany` query and runs
+`EXPLAIN (FORMAT JSON)`, flattening the plan into the existing `{ id, parent, detail }` rows and
+detecting index scans). With this, **every** core `Collection` method runs on Postgres. The SQLite
+`EXPLAIN QUERY PLAN` path is unchanged.
+
 ## 2.9.0 — the Postgres engine (swap the backend, not your code)
 
 A new **async driver seam** lets the same `@monlite/core` collection API run on a networked engine.
