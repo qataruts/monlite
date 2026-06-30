@@ -261,18 +261,30 @@ importers:
         specifier: ^8.13.0
         version: 8.22.0
     devDependencies:
+      '@monlite/cron':
+        specifier: workspace:^
+        version: link:../cron
+      '@monlite/fts':
+        specifier: workspace:^
+        version: link:../fts
       '@monlite/kv':
         specifier: workspace:^
         version: link:../kv
       '@monlite/queue':
         specifier: workspace:^
         version: link:../queue
+      '@monlite/vector':
+        specifier: workspace:^
+        version: link:../vector
       '@types/node':
         specifier: ^22.10.0
         version: 22.20.0
       '@types/pg':
         specifier: ^8.11.10
         version: 8.20.0
+      better-sqlite3:
+        specifier: ^11.8.0
+        version: 11.10.0
       tsup:
         specifier: ^8.3.5
         version: 8.5.1(postcss@8.5.15)(typescript@5.9.3)

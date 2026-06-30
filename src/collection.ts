@@ -1492,16 +1492,17 @@ export class Collection<T = Doc> {
       sql = `SELECT DISTINCT "${field}" AS v FROM "${this.name}" WHERE ${clause} ORDER BY v`;
     } else {
       const jsn = pgJsonbPath(field, false);
-      // Distinct ELEMENTS for array fields, the value otherwise (matches SQLite json_each).
-      // `${jsn} IS NOT NULL` drops documents MISSING the key (data->'f' is SQL NULL only
-      // when absent), so a missing field isn't reported as a spurious `null` — matching
-      // SQLite, where json_each over an absent path yields no rows. A present json-null
-      // is kept (it reads as 'null'::jsonb, not SQL NULL).
+      // Match SQLite's `json_each`: ARRAY fields contribute their elements (an EMPTY array
+      // contributes nothing — no spurious null); a SCALAR contributes its value INCLUDING a
+      // present json-null; a MISSING key contributes nothing. The clause is evaluated once
+      // in `base`, then unnest-vs-scalar are split so each rule is exact.
       sql =
-        `SELECT DISTINCT CASE WHEN jsonb_typeof(${jsn})='array' THEN ae.elem ELSE ${jsn} END AS v ` +
-        `FROM "${this.name}" LEFT JOIN LATERAL jsonb_array_elements(` +
-        `CASE WHEN jsonb_typeof(${jsn})='array' THEN ${jsn} ELSE '[]'::jsonb END` +
-        `) AS ae(elem) ON true WHERE (${clause}) AND ${jsn} IS NOT NULL ORDER BY v`;
+        `WITH base AS (SELECT (${jsn}) AS j FROM "${this.name}" WHERE ${clause}) ` +
+        `SELECT DISTINCT v FROM (` +
+        `SELECT jsonb_array_elements(j) AS v FROM base WHERE jsonb_typeof(j) = 'array' ` +
+        `UNION ` +
+        `SELECT j AS v FROM base WHERE j IS NOT NULL AND jsonb_typeof(j) <> 'array'` +
+        `) s ORDER BY v`;
     }
     const r = await this.mon.asyncDriver!.query(sql, params);
     // created_at/updated_at are BIGINT (returned as strings) — coerce to numbers.

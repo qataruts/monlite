@@ -65,6 +65,10 @@
     "typescript": "^5.7.2",
     "vitest": "^2.1.8",
     "@monlite/kv": "workspace:^",
-    "@monlite/queue": "workspace:^"
+    "@monlite/queue": "workspace:^",
+    "@monlite/fts": "workspace:^",
+    "@monlite/vector": "workspace:^",
+    "@monlite/cron": "workspace:^",
+    "better-sqlite3": "^11.8.0"
   }
 }
