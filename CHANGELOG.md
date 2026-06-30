@@ -1,5 +1,12 @@
 # @monlite/core
 
+## 2.9.4 — distinct() empty-array parity
+
+A cross-engine parity suite (same ops on SQLite + Postgres, assert identical results) caught the
+last divergence: distinct() on an array field returned a spurious null on Postgres for documents
+with an EMPTY array. distinctPg now matches SQLites json_each exactly (empty array contributes
+nothing; a present json-null scalar still counts; a missing key contributes nothing). 18/18 parity.
+
 ## 2.9.3 — Postgres concurrency hardening
 
 Validated against the monlite/postgres Docker image with a resilience/soak harness.
