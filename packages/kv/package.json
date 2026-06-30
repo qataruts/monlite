@@ -1,7 +1,7 @@
 {
   "name": "@monlite/kv",
   "version": "0.4.1",
-  "description": "Redis-like local key-value cache for @monlite/core: get/set/incr with TTL, on SQLite.",
+  "description": "Redis-like key-value cache for monlite: get/set/incr with TTL, sorted sets, pub/sub — on SQLite (@monlite/core) or Postgres (@monlite/postgres).",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -58,8 +58,11 @@
     "@monlite/core": "workspace:^"
   },
   "devDependencies": {
+    "@monlite/postgres": "workspace:^",
     "@types/node": "^22.10.0",
+    "@types/pg": "^8.11.10",
     "better-sqlite3": "^11.8.0",
+    "pg": "^8.13.0",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"

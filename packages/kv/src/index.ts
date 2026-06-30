@@ -103,6 +103,11 @@ const ensured = new WeakSet<object>();
  * ```
  */
 export function kv(db: Monlite, options: KVOptions = {}): KV {
+  if (db.asyncDriver)
+    throw new Error(
+      "@monlite/kv: the Postgres engine is asynchronous — use `pgKv(db)` (its methods " +
+        "return Promises). `kv()` is the synchronous SQLite engine.",
+    );
   const ns = options.namespace ?? "default";
   const driver = db.driver;
 
@@ -452,6 +457,402 @@ export function kv(db: Monlite, options: KVOptions = {}): KV {
     }, options.sweepIntervalMs);
     timer.unref?.();
   }
+
+  return api;
+}
+
+// ── Postgres engine: async Redis-like cache ───────────────────────────────────
+//
+// The same model as {@link kv} (namespaced _kv, sorted sets, table-backed cross-process
+// pub/sub), with an async API. `await cache.get(...)`.
+const pgEnsured = new WeakSet<object>();
+
+/** The Postgres counterpart of {@link KV} — identical surface, every method async. */
+export interface PgKV {
+  get<T = any>(key: string): Promise<T | undefined>;
+  set(key: string, value: any, opts?: { ttl?: number }): Promise<void>;
+  setNX(key: string, value: any, opts?: { ttl?: number }): Promise<boolean>;
+  has(key: string): Promise<boolean>;
+  delete(key: string): Promise<boolean>;
+  incr(key: string, by?: number): Promise<number>;
+  decr(key: string, by?: number): Promise<number>;
+  mget<T = any>(keys: string[]): Promise<(T | undefined)[]>;
+  keys(prefix?: string): Promise<string[]>;
+  expire(key: string, ttl: number): Promise<boolean>;
+  ttl(key: string): Promise<number>;
+  flush(): Promise<void>;
+  size(): Promise<number>;
+  zadd(key: string, score: number, member: string): Promise<void>;
+  zincrby(key: string, delta: number, member: string): Promise<number>;
+  zscore(key: string, member: string): Promise<number | undefined>;
+  zrem(key: string, member: string): Promise<boolean>;
+  zcard(key: string): Promise<number>;
+  zrank(
+    key: string,
+    member: string,
+    opts?: { rev?: boolean },
+  ): Promise<number | undefined>;
+  zrange(
+    key: string,
+    start: number,
+    stop: number,
+    opts?: { rev?: boolean; withScores?: boolean },
+  ): Promise<string[] | Array<{ member: string; score: number }>>;
+  zrangeByScore(
+    key: string,
+    min: number,
+    max: number,
+    opts?: { withScores?: boolean },
+  ): Promise<string[] | Array<{ member: string; score: number }>>;
+  publish(channel: string, message: any): Promise<number>;
+  subscribe(channel: string, cb: (message: any) => void): () => void;
+  stop(): void;
+}
+
+/**
+ * Create a Redis-like cache over a monlite database on the **Postgres** engine.
+ *
+ * ```ts
+ * const cache = pgKv(db);
+ * await cache.set("session:42", { user: "ali" }, { ttl: 60_000 });
+ * await cache.get("session:42"); // { user: "ali" }
+ * ```
+ */
+export function pgKv(db: Monlite, options: KVOptions = {}): PgKV {
+  if (!db.asyncDriver)
+    throw new Error(
+      "@monlite/kv: pgKv requires the Postgres engine — use `kv(db)` on the SQLite engine.",
+    );
+  const ns = options.namespace ?? "default";
+  const driver = db.asyncDriver;
+  const now = () => Date.now();
+  const pubsubPollMs = Math.max(20, options.pubsubPollMs ?? 200);
+
+  const ready = pgEnsured.has(db)
+    ? Promise.resolve()
+    : (async () => {
+        await driver.exec(
+          `CREATE TABLE IF NOT EXISTS _kv (ns TEXT NOT NULL, k TEXT NOT NULL, v TEXT NOT NULL,
+            expires_at BIGINT, PRIMARY KEY (ns, k))`,
+        );
+        await driver.exec(
+          `CREATE TABLE IF NOT EXISTS _monlite_kv_pubsub (seq BIGSERIAL PRIMARY KEY,
+            ns TEXT NOT NULL, channel TEXT NOT NULL, payload TEXT, ts BIGINT NOT NULL)`,
+        );
+        await driver.exec(
+          `CREATE INDEX IF NOT EXISTS _idx_kv_pubsub ON _monlite_kv_pubsub (ns, seq)`,
+        );
+        await driver.exec(
+          `CREATE TABLE IF NOT EXISTS _monlite_kv_zset (ns TEXT NOT NULL, k TEXT NOT NULL,
+            member TEXT NOT NULL, score double precision NOT NULL, PRIMARY KEY (ns, k, member))`,
+        );
+        await driver.exec(
+          `CREATE INDEX IF NOT EXISTS _idx_kv_zset ON _monlite_kv_zset (ns, k, score, member)`,
+        );
+      })();
+  if (!pgEnsured.has(db)) pgEnsured.add(db);
+
+  const q = async (sql: string, params: any[] = []) => {
+    await ready;
+    return driver.query(sql, params);
+  };
+  const fresh = (row: any): boolean =>
+    !!row && !(row.expires_at != null && Number(row.expires_at) <= now());
+  const getRow = async (key: string) =>
+    (await q(`SELECT v, expires_at FROM _kv WHERE ns = ? AND k = ?`, [ns, key]))
+      .rows[0] as { v: string; expires_at: any } | undefined;
+  const del = async (key: string): Promise<boolean> =>
+    (await q(`DELETE FROM _kv WHERE ns = ? AND k = ?`, [ns, key])).changes > 0;
+  const setRaw = (key: string, v: string, expires: number | null) =>
+    q(
+      `INSERT INTO _kv (ns, k, v, expires_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT(ns, k) DO UPDATE SET v = excluded.v, expires_at = excluded.expires_at`,
+      [ns, key, v, expires],
+    );
+
+  // ── pub/sub (table-backed, cross-process; polled on the shared heartbeat) ──
+  type Sub = { channel: string; cb: (m: any) => void; cursor: number };
+  const subs = new Set<Sub>();
+  let psTask: HeartbeatTask | undefined;
+  const psMaxSeq = async (): Promise<number> =>
+    Number(
+      (
+        await q(`SELECT MAX(seq) AS s FROM _monlite_kv_pubsub WHERE ns = ?`, [
+          ns,
+        ])
+      ).rows[0]?.s ?? 0,
+    );
+  const drainPubsub = async (): Promise<void> => {
+    if (subs.size === 0) return;
+    let min = Infinity;
+    for (const s of subs) min = Math.min(min, s.cursor);
+    const rows = (
+      await q(
+        `SELECT seq, channel, payload FROM _monlite_kv_pubsub WHERE ns = ? AND seq > ? ORDER BY seq`,
+        [ns, min],
+      )
+    ).rows as Array<{ seq: any; channel: string; payload: string }>;
+    if (rows.length === 0) return;
+    for (const s of [...subs]) {
+      for (const r of rows) {
+        const seq = Number(r.seq);
+        if (seq <= s.cursor) continue;
+        s.cursor = seq;
+        if (r.channel === s.channel) {
+          try {
+            s.cb(JSON.parse(r.payload ?? "null"));
+          } catch {
+            /* a subscriber callback must not break delivery to others */
+          }
+        }
+      }
+    }
+  };
+
+  const api: PgKV = {
+    async get(key) {
+      const row = await getRow(key);
+      if (!fresh(row)) {
+        if (row) await del(key);
+        return undefined;
+      }
+      return JSON.parse(row!.v);
+    },
+    async set(key, value, opts) {
+      const expires = opts?.ttl != null ? now() + opts.ttl : null;
+      await setRaw(key, JSON.stringify(value ?? null), expires);
+    },
+    async setNX(key, value, opts) {
+      return driver.transactionAsync(async () => {
+        const row = await getRow(key);
+        if (fresh(row)) return false;
+        const expires = opts?.ttl != null ? now() + opts.ttl : null;
+        await setRaw(key, JSON.stringify(value ?? null), expires);
+        return true;
+      });
+    },
+    async has(key) {
+      return (await api.get(key)) !== undefined;
+    },
+    async delete(key) {
+      return del(key);
+    },
+    async incr(key, by = 1) {
+      return driver.transactionAsync(async () => {
+        const row = await getRow(key);
+        let n = 0;
+        let expires: number | null = null;
+        if (fresh(row)) {
+          const cur = JSON.parse(row!.v);
+          if (typeof cur !== "number")
+            throw new Error(`kv.incr: value at "${key}" is not a number`);
+          n = cur;
+          expires = row!.expires_at != null ? Number(row!.expires_at) : null;
+        }
+        const next = n + by;
+        await setRaw(key, JSON.stringify(next), expires);
+        return next;
+      });
+    },
+    async decr(key, by = 1) {
+      return api.incr(key, -by);
+    },
+    async mget(keys) {
+      return Promise.all(keys.map((k) => api.get(k)));
+    },
+    async keys(prefix) {
+      const t = now();
+      const rows = (
+        prefix !== undefined
+          ? await q(
+              `SELECT k, expires_at FROM _kv WHERE ns = ? AND k LIKE ? ESCAPE '\\'`,
+              [ns, prefix.replace(/[%_\\]/g, "\\$&") + "%"],
+            )
+          : await q(`SELECT k, expires_at FROM _kv WHERE ns = ?`, [ns])
+      ).rows as Array<{ k: string; expires_at: any }>;
+      return rows
+        .filter((r) => r.expires_at == null || Number(r.expires_at) > t)
+        .map((r) => r.k);
+    },
+    async expire(key, ttl) {
+      const row = await getRow(key);
+      if (!fresh(row)) return false;
+      await q(`UPDATE _kv SET expires_at = ? WHERE ns = ? AND k = ?`, [
+        now() + ttl,
+        ns,
+        key,
+      ]);
+      return true;
+    },
+    async ttl(key) {
+      const row = await getRow(key);
+      if (!fresh(row)) return -2;
+      if (row!.expires_at == null) return -1;
+      return Number(row!.expires_at) - now();
+    },
+    async flush() {
+      await q(`DELETE FROM _kv WHERE ns = ?`, [ns]);
+    },
+    async size() {
+      return Number(
+        (
+          await q(
+            `SELECT COUNT(*) AS n FROM _kv WHERE ns = ? AND (expires_at IS NULL OR expires_at > ?)`,
+            [ns, now()],
+          )
+        ).rows[0].n,
+      );
+    },
+
+    // ── sorted sets ──────────────────────────────────────────────────────────
+    async zadd(key, score, member) {
+      if (typeof score !== "number" || Number.isNaN(score))
+        throw new Error(`kv.zadd: score must be a number, got ${score}`);
+      await q(
+        `INSERT INTO _monlite_kv_zset (ns, k, member, score) VALUES (?, ?, ?, ?)
+         ON CONFLICT(ns, k, member) DO UPDATE SET score = excluded.score`,
+        [ns, key, member, score],
+      );
+    },
+    async zincrby(key, delta, member) {
+      if (typeof delta !== "number" || Number.isNaN(delta))
+        throw new Error(`kv.zincrby: delta must be a number, got ${delta}`);
+      return driver.transactionAsync(async () => {
+        const row = (
+          await q(
+            `SELECT score FROM _monlite_kv_zset WHERE ns = ? AND k = ? AND member = ?`,
+            [ns, key, member],
+          )
+        ).rows[0] as { score: number } | undefined;
+        const next = (row?.score ?? 0) + delta;
+        await q(
+          `INSERT INTO _monlite_kv_zset (ns, k, member, score) VALUES (?, ?, ?, ?)
+           ON CONFLICT(ns, k, member) DO UPDATE SET score = excluded.score`,
+          [ns, key, member, next],
+        );
+        return next;
+      });
+    },
+    async zscore(key, member) {
+      const row = (
+        await q(
+          `SELECT score FROM _monlite_kv_zset WHERE ns = ? AND k = ? AND member = ?`,
+          [ns, key, member],
+        )
+      ).rows[0] as { score: number } | undefined;
+      return row?.score;
+    },
+    async zrem(key, member) {
+      return (
+        (
+          await q(
+            `DELETE FROM _monlite_kv_zset WHERE ns = ? AND k = ? AND member = ?`,
+            [ns, key, member],
+          )
+        ).changes > 0
+      );
+    },
+    async zcard(key) {
+      return Number(
+        (
+          await q(
+            `SELECT COUNT(*) AS n FROM _monlite_kv_zset WHERE ns = ? AND k = ?`,
+            [ns, key],
+          )
+        ).rows[0].n,
+      );
+    },
+    async zrank(key, member, opts) {
+      const row = (
+        await q(
+          `SELECT score FROM _monlite_kv_zset WHERE ns = ? AND k = ? AND member = ?`,
+          [ns, key, member],
+        )
+      ).rows[0] as { score: number } | undefined;
+      if (!row) return undefined;
+      const cmp = opts?.rev
+        ? `score > ? OR (score = ? AND member > ?)`
+        : `score < ? OR (score = ? AND member < ?)`;
+      return Number(
+        (
+          await q(
+            `SELECT COUNT(*) AS n FROM _monlite_kv_zset WHERE ns = ? AND k = ? AND (${cmp})`,
+            [ns, key, row.score, row.score, member],
+          )
+        ).rows[0].n,
+      );
+    },
+    async zrange(key, start, stop, opts) {
+      start = Math.trunc(start);
+      stop = Math.trunc(stop);
+      const card = await api.zcard(key);
+      let lo = start < 0 ? card + start : start;
+      let hi = stop < 0 ? card + stop : stop;
+      if (lo < 0) lo = 0;
+      if (hi >= card) hi = card - 1;
+      if (card === 0 || lo > hi) return [];
+      const dir = opts?.rev ? "DESC" : "ASC";
+      const rows = (
+        await q(
+          `SELECT member, score FROM _monlite_kv_zset WHERE ns = ? AND k = ?
+           ORDER BY score ${dir}, member ${dir} LIMIT ? OFFSET ?`,
+          [ns, key, hi - lo + 1, lo],
+        )
+      ).rows as Array<{ member: string; score: number }>;
+      return opts?.withScores ? rows : rows.map((r) => r.member);
+    },
+    async zrangeByScore(key, min, max, opts) {
+      const rows = (
+        await q(
+          `SELECT member, score FROM _monlite_kv_zset WHERE ns = ? AND k = ?
+           AND score >= ? AND score <= ? ORDER BY score ASC, member ASC`,
+          [ns, key, min, max],
+        )
+      ).rows as Array<{ member: string; score: number }>;
+      return opts?.withScores ? rows : rows.map((r) => r.member);
+    },
+
+    async publish(channel, message) {
+      const ts = now();
+      await q(
+        `INSERT INTO _monlite_kv_pubsub (ns, channel, payload, ts) VALUES (?, ?, ?, ?)`,
+        [ns, channel, JSON.stringify(message ?? null), ts],
+      );
+      await q(`DELETE FROM _monlite_kv_pubsub WHERE ns = ? AND ts < ?`, [
+        ns,
+        ts - 30_000,
+      ]);
+      await drainPubsub();
+      let n = 0;
+      for (const s of subs) if (s.channel === channel) n++;
+      return n;
+    },
+    subscribe(channel, cb) {
+      // cursor = Infinity blocks delivery until the high-water seq is snapshotted —
+      // so a new subscriber never replays messages published before it (no replay),
+      // and it can't race delivery while the async snapshot is in flight.
+      const sub: Sub = { channel, cb, cursor: Infinity };
+      subs.add(sub);
+      void psMaxSeq().then((s) => {
+        sub.cursor = s;
+      });
+      if (!psTask)
+        psTask = db.heartbeat.every(pubsubPollMs, () => void drainPubsub());
+      return () => {
+        subs.delete(sub);
+        if (subs.size === 0 && psTask) {
+          psTask.cancel();
+          psTask = undefined;
+        }
+      };
+    },
+    stop() {
+      if (psTask) {
+        psTask.cancel();
+        psTask = undefined;
+      }
+    },
+  };
 
   return api;
 }
