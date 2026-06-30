@@ -33,6 +33,17 @@ const db = createDb("app.db");    // file on disk
 const mem = createDb(":memory:"); // ephemeral, gone when the process exits
 ```
 
+### …or open Postgres — same API
+
+Need a networked, multi-writer backend? Install [`@monlite/postgres`](/packages/postgres) and
+change the import. Everything below — collections, queries, aggregation, `watch()`, search — works
+identically; documents are stored as JSONB.
+
+```ts
+import { createDb } from "@monlite/postgres";
+const db = createDb("postgres://user@host/db");
+```
+
 ## Collections and documents
 
 A collection is created on first use. Type it for end-to-end inference, or leave it untyped
@@ -96,11 +107,12 @@ schema-free.
 The core handles documents. Install packages for the rest:
 
 ```bash
-npm install @monlite/vector    # vector / semantic search
 npm install @monlite/fts       # full-text search
+npm install @monlite/vector    # vector / semantic search
 npm install @monlite/kv        # cache, locks, pub/sub, sorted sets
 npm install @monlite/queue     # durable job queue
 npm install @monlite/cron      # scheduled jobs (time zones, jitter)
+npm install @monlite/postgres  # the same API on a networked Postgres
 npm install @monlite/sync      # local-first cloud sync
 npm install @monlite/realtime  # stream live queries to clients over SSE
 npm install @monlite/wasm      # browser / SQLite-WASM
