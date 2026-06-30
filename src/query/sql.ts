@@ -70,6 +70,21 @@ export function quoteIdent(name: string): string {
 }
 
 /**
+ * Build a safe Postgres JSONB accessor for a (possibly dotted) document field —
+ * chained `->`/`->>` over single-quoted keys (the last hop is `->>` when `text`).
+ * Each key is a quoted string literal, so a comma, brace or backslash in a key is
+ * harmless — unlike the `data#>>'{a,b}'` array-literal form, which those characters
+ * would structurally corrupt.
+ */
+export function pgJsonbPath(field: string, text: boolean): string {
+  const keys = field.split(".").map((s) => `'${s.replace(/'/g, "''")}'`);
+  const last = keys.length - 1;
+  return (
+    "data" + keys.map((k, i) => (text && i === last ? "->>" : "->") + k).join("")
+  );
+}
+
+/**
  * Normalize a JS value into something better-sqlite3 can bind.
  * better-sqlite3 only accepts numbers, bigints, strings, Buffers and null —
  * so booleans, Dates, undefined and objects are converted here.

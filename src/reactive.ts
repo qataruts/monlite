@@ -296,6 +296,8 @@ export class PgLiveQuery<T = Doc> {
   private full: WithId<T>[] = [];
   private ids = new Set<string>();
   private readonly fieldSet?: Set<string>;
+  /** Serializes recomputes so init + concurrent notifies can't interleave/clobber state. */
+  private tail: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly query: AsyncQuery<T>,
@@ -317,10 +319,24 @@ export class PgLiveQuery<T = Doc> {
     await this.recompute("change", changedIds);
   }
 
-  private async recompute(
+  /** Enqueue a recompute on the per-query tail so reads + diffs never interleave. */
+  private recompute(
     type: LiveEvent<T>["type"],
     changedIds?: Set<string>,
   ): Promise<void> {
+    const run = this.tail.then(() => this.doRecompute(type, changedIds));
+    this.tail = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  private async doRecompute(
+    type: LiveEvent<T>["type"],
+    changedIds?: Set<string>,
+  ): Promise<void> {
+    if (this.stopped) return;
     const next = await this.query({ ...this.args, select: undefined });
     if (this.stopped) return;
     const r = computeLiveEvent(
@@ -371,15 +387,29 @@ export class PgReactor {
     let set = this.queries.get(collection);
     if (!set) {
       this.queries.set(collection, (set = new Set()));
-      const un = await this.driver.listen!(this.channel(collection), (payload) =>
-        this.onNotify(collection, payload),
-      );
-      // A watcher may have been torn down while we awaited LISTEN.
-      if (this.queries.get(collection) === set) this.unlisten.set(collection, un);
-      else await un();
+      try {
+        const un = await this.driver.listen!(
+          this.channel(collection),
+          (payload) => this.onNotify(collection, payload),
+        );
+        // A watcher may have been torn down while we awaited LISTEN.
+        if (this.queries.get(collection) === set)
+          this.unlisten.set(collection, un);
+        else await un();
+      } catch (err) {
+        // LISTEN failed — drop the empty set we optimistically inserted, otherwise a
+        // later watch() sees a truthy set, skips LISTEN, and silently gets no NOTIFYs.
+        if (this.queries.get(collection) === set && set.size === 0)
+          this.queries.delete(collection);
+        throw err;
+      }
     }
+    // Start the init read FIRST (it enqueues on lq's serialized tail), THEN make the
+    // query visible to flush() — so a NOTIFY arriving now can't deliver a "change"
+    // ahead of the "init".
+    const ready = lq.init();
     set.add(lq);
-    await lq.init();
+    await ready;
   }
 
   async unregister(collection: string, lq: PgLiveQuery<any>): Promise<void> {

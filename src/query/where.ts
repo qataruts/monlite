@@ -7,6 +7,7 @@ import {
   isColumn,
   isBuffer,
   quoteIdent,
+  pgJsonbPath,
 } from "./sql.js";
 import { REGEXP_FN } from "../driver/regexp.js";
 
@@ -56,7 +57,8 @@ function translateObject(where: WhereInput, ctx: WhereContext): string {
       } else if (key === "OR" && arr.length === 0) {
         // An empty OR is an unsatisfiable disjunction — it matches NOTHING (an
         // empty AND, by contrast, is vacuously true and imposes no constraint).
-        parts.push("0");
+        // SQLite has no boolean type (0); Postgres rejects `WHERE 0` (needs FALSE).
+        parts.push(ctx.dialect === "postgres" ? "FALSE" : "0");
       }
     } else if (key === "NOT") {
       const subs = asArray(value)
@@ -228,9 +230,7 @@ function pgField(
   text: boolean,
 ): string {
   if (isColumn(field, columns)) return quoteIdent(field);
-  const segs = field.split(".").map((s) => s.replace(/'/g, "''"));
-  if (segs.length === 1) return `data${text ? "->>" : "->"}'${segs[0]}'`;
-  return text ? `data#>>'{${segs.join(",")}}'` : `data#>'{${segs.join(",")}}'`;
+  return pgJsonbPath(field, text);
 }
 
 function pgRegexSource(v: any): string {
@@ -331,9 +331,11 @@ function pgTranslateField(
         );
         break;
       case "not":
+        // not:null is the symmetric negation of equals:null (absent OR json-null) —
+        // it matches a present, non-null value, the same as SQLite.
         out.push(
           v === null
-            ? `${jsn} IS NOT NULL`
+            ? `(${jsn} IS NOT NULL AND ${jsn} <> 'null'::jsonb)`
             : `(${jsn} IS NULL OR ${jsn} <> to_jsonb(${P(v)}::${pgType(v)}))`,
         );
         break;
@@ -347,13 +349,20 @@ function pgTranslateField(
             : `${txt} ${PG_CMP[op]} ${P(v)}`,
         );
         break;
-      case "in":
-        out.push(
-          v.length
-            ? `${jsn} IN (${v.map((x: any) => `to_jsonb(${P(x)}::${pgType(x)})`).join(", ")})`
-            : "false",
-        );
+      case "in": {
+        // Match SQLite: a null in the list matches absent / json-null documents
+        // (a bare `to_jsonb(null)` would be SQL NULL and never match via IN).
+        const nn = (v as any[]).filter((x) => x !== null);
+        const alts: string[] = [];
+        if (nn.length)
+          alts.push(
+            `${jsn} IN (${nn.map((x) => `to_jsonb(${P(x)}::${pgType(x)})`).join(", ")})`,
+          );
+        if ((v as any[]).some((x) => x === null))
+          alts.push(`${jsn} IS NULL`, `${jsn} = 'null'::jsonb`);
+        out.push(alts.length ? `(${alts.join(" OR ")})` : "false");
         break;
+      }
       case "notIn":
         out.push(
           v.length
@@ -362,10 +371,13 @@ function pgTranslateField(
         );
         break;
       case "contains":
+        // Match SQLite: element membership for a JSONB array, substring for a scalar.
         out.push(
-          ci
-            ? `${txt} ILIKE '%'||${P(v)}||'%'`
-            : `position(${P(v)} in ${txt}) > 0`,
+          `(CASE WHEN jsonb_typeof(${jsn}) = 'array' THEN (${jsn} @> to_jsonb(${P(v)}::${pgType(v)})) ELSE (${
+            ci
+              ? `${txt} ILIKE '%'||${P(v)}||'%'`
+              : `position(${P(v)} in ${txt}) > 0`
+          }) END)`,
         );
         break;
       case "startsWith":
@@ -394,11 +406,9 @@ function pgTranslateField(
         out.push(pgElemMatch(jsn, v, ctx));
         break;
       case "exists":
-        out.push(
-          v
-            ? `(${jsn} IS NOT NULL AND ${jsn} <> 'null'::jsonb)`
-            : `(${jsn} IS NULL OR ${jsn} = 'null'::jsonb)`,
-        );
+        // Match SQLite: "exists" means the key is present — a present json-null
+        // counts as existing (data->'f' is SQL NULL only when the key is absent).
+        out.push(v ? `${jsn} IS NOT NULL` : `${jsn} IS NULL`);
         break;
       default:
         throw new MonliteQueryError(

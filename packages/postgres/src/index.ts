@@ -41,10 +41,37 @@ export class PgDriver implements AsyncDriver {
     this.pool = new pg.Pool({ connectionString, ...opts.pool });
   }
 
-  /** The core query builders emit `?`; Postgres wants `$1,$2,…`. */
+  /**
+   * The core query builders emit `?`; Postgres wants `$1,$2,…`. Rewrite is
+   * string-literal aware: a `?` inside a `'…'` literal (e.g. a JSONB key like
+   * `data->>'a?b'`) is NOT a placeholder and must not be renumbered.
+   */
   private rewrite(sql: string): string {
-    let i = 0;
-    return sql.replace(/\?/g, () => `$${++i}`);
+    let out = "";
+    let n = 0;
+    let inStr = false;
+    for (let k = 0; k < sql.length; k++) {
+      const c = sql[k];
+      if (inStr) {
+        out += c;
+        if (c === "'") {
+          if (sql[k + 1] === "'") {
+            out += "'";
+            k++; // a doubled '' is an escaped quote, still inside the literal
+          } else {
+            inStr = false;
+          }
+        }
+      } else if (c === "'") {
+        inStr = true;
+        out += c;
+      } else if (c === "?") {
+        out += "$" + ++n;
+      } else {
+        out += c;
+      }
+    }
+    return out;
   }
 
   /** Route to the in-flight transaction's client when one is open, else the pool. */
@@ -95,27 +122,40 @@ export class PgDriver implements AsyncDriver {
     if (top) this.txClient = await this.pool.connect();
     const client = this.txClient!;
     const sp = `monlite_sp_${this.depth}`;
-    await client.query(top ? "BEGIN" : `SAVEPOINT ${sp}`);
-    this.depth++;
+    let entered = false; // BEGIN/SAVEPOINT succeeded → depth was incremented
+    let poisoned = false; // client may be in a bad state → discard on release
     try {
-      const result = await fn();
-      this.depth--;
-      await client.query(top ? "COMMIT" : `RELEASE SAVEPOINT ${sp}`);
-      if (top) this.runAfterCommit();
-      return result;
-    } catch (err) {
-      this.depth--;
+      await client.query(top ? "BEGIN" : `SAVEPOINT ${sp}`);
+      entered = true;
+      this.depth++;
       try {
-        await client.query(top ? "ROLLBACK" : `ROLLBACK TO SAVEPOINT ${sp}`);
-      } catch {
-        /* already rolled back */
+        const result = await fn();
+        // depth is decremented exactly once, in the outer finally — NOT here, so a
+        // throwing COMMIT/RELEASE below can't double-decrement and corrupt the driver.
+        await client.query(top ? "COMMIT" : `RELEASE SAVEPOINT ${sp}`);
+        if (top) this.runAfterCommit();
+        return result;
+      } catch (err) {
+        poisoned = true;
+        try {
+          await client.query(top ? "ROLLBACK" : `ROLLBACK TO SAVEPOINT ${sp}`);
+          poisoned = false; // rolled back cleanly → the client is safe to reuse
+        } catch {
+          /* connection likely dead → keep poisoned so it's discarded, not pooled */
+        }
+        if (top) this.afterCommitHooks = [];
+        throw err;
       }
-      if (top) this.afterCommitHooks = [];
-      throw err;
+    } catch (e) {
+      if (!entered) poisoned = true; // BEGIN/connect itself failed
+      throw e;
     } finally {
+      if (entered) this.depth--;
       if (top) {
-        client.release();
         this.txClient = null;
+        // Pass a truthy arg to release() to DESTROY a poisoned client (a half-rolled-
+        // back / dead connection) instead of returning it to the pool.
+        client.release(poisoned || undefined);
       }
     }
   }
@@ -129,20 +169,53 @@ export class PgDriver implements AsyncDriver {
     channel: string,
     handler: (payload: string) => void,
   ): Promise<() => Promise<void>> {
-    const client = new pg.Client({ connectionString: this.connectionString });
-    await client.connect();
-    client.on("notification", (msg) => {
-      if (msg.channel === channel && msg.payload != null) handler(msg.payload);
-    });
-    // Quote the channel so case is preserved (matches the trigger's pg_notify).
-    await client.query(`LISTEN "${channel}"`);
-    return async () => {
+    let stopped = false;
+    let current: pg.Client | null = null;
+
+    const open = async (): Promise<void> => {
+      const c = new pg.Client({ connectionString: this.connectionString });
+      // A dedicated LISTEN connection lives for the process lifetime. Without an
+      // 'error' handler, a server restart / network reset emits an unhandled
+      // 'error' that crashes the host process. Handle it AND reconnect, so watch()
+      // survives a blip instead of silently dying.
+      c.on("error", () => {
+        if (stopped || current !== c) return;
+        current = null;
+        c.removeAllListeners();
+        void c.end().catch(() => {});
+        const t = setTimeout(() => {
+          if (!stopped) void open().catch(() => {});
+        }, 1000);
+        t.unref?.();
+      });
+      c.on("notification", (msg) => {
+        if (!stopped && msg.channel === channel && msg.payload != null)
+          handler(msg.payload);
+      });
       try {
-        await client.query(`UNLISTEN "${channel}"`);
+        await c.connect();
+        // Quote the channel so case is preserved (matches the trigger's pg_notify).
+        await c.query(`LISTEN "${channel}"`);
+      } catch (err) {
+        c.removeAllListeners(); // don't let a failed setup trigger a reconnect
+        await c.end().catch(() => {}); // and don't leak the half-open connection
+        throw err;
+      }
+      current = c;
+    };
+
+    await open();
+    return async () => {
+      stopped = true;
+      const c = current;
+      current = null;
+      if (!c) return;
+      try {
+        await c.query(`UNLISTEN "${channel}"`);
       } catch {
         /* connection may already be gone */
       }
-      await client.end();
+      await c.end().catch(() => {});
     };
   }
 

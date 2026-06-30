@@ -49,6 +49,7 @@ import {
   isBuffer,
   isColumn,
   pathLiteral,
+  pgJsonbPath,
   RESERVED_FIELDS,
 } from "./query/sql.js";
 import { aggregate, groupBy } from "./aggregation/aggregate.js";
@@ -1036,28 +1037,26 @@ export class Collection<T = Doc> {
           field === "created_at" ||
           field === "updated_at" ||
           this.columns.has(field);
-        let col: string;
-        if (sys) col = `"${field}"`;
-        else {
-          const segs = field.split(".").map((s) => s.replace(/'/g, "''"));
-          col =
-            segs.length === 1
-              ? `data->'${segs[0]}'`
-              : `data#>'{${segs.join(",")}}'`;
-        }
-        terms.push(`${col} ${d}`);
+        const col = sys ? `"${field}"` : pgJsonbPath(field, false);
+        // SQLite sorts NULLs first (ASC) / last (DESC); Postgres defaults to the
+        // opposite. Pin NULL placement so ordering matches across engines.
+        const nulls = d === "ASC" ? "NULLS FIRST" : "NULLS LAST";
+        terms.push(`${col} ${d} ${nulls}`);
       }
     }
     return terms.length ? "ORDER BY " + terms.join(", ") : "";
   }
 
   /** Build the Postgres SELECT for {@link findMany} (shared with {@link explain}). */
-  private buildFindSqlPg(a: FindManyArgs<T>): { sql: string; params: any[] } {
+  private buildFindSqlPg(
+    a: FindManyArgs<T>,
+    uncapped = false,
+  ): { sql: string; params: any[] } {
     if (a.lookup)
       throw new MonliteQueryError(
         "lookup / joins are not yet supported on the postgres engine",
       );
-    const cap = this.mon.maxRows;
+    const cap = uncapped ? undefined : this.mon.maxRows;
     const take = cap && a.take == null ? cap + 1 : a.take;
     const params: any[] = [];
     const where = buildWhere(a.where, {
@@ -1079,11 +1078,18 @@ export class Collection<T = Doc> {
     return { sql, params };
   }
 
-  /** Postgres path for {@link findMany}: shares buildWhere; jsonb rows; no joins yet. */
-  private async findManyPg(a: FindManyArgs<T>): Promise<WithId<T>[]> {
+  /**
+   * Postgres path for {@link findMany}: shares buildWhere; jsonb rows; no joins yet.
+   * `uncapped` skips the maxRows guard for internal read-for-write reads (updateMany /
+   * deleteMany / bulkWrite), which must see every matching row, not a user-facing page.
+   */
+  private async findManyPg(
+    a: FindManyArgs<T>,
+    uncapped = false,
+  ): Promise<WithId<T>[]> {
     await this.ensureTablePg();
-    const cap = this.mon.maxRows;
-    const { sql, params } = this.buildFindSqlPg(a);
+    const cap = uncapped ? undefined : this.mon.maxRows;
+    const { sql, params } = this.buildFindSqlPg(a, uncapped);
     const r = await this.mon.asyncDriver!.query(sql, params);
     if (cap && a.take == null && r.rows.length > cap) {
       throw new MonliteQueryError(
@@ -1191,10 +1197,10 @@ export class Collection<T = Doc> {
     if (this.mode !== "document") return this.pgUnsupported("structured collections");
     await this.ensureTablePg();
     return this.mon.asyncDriver!.transactionAsync(async () => {
-      const docs = await this.findManyPg({
-        where,
-        ...(single ? { take: 1 } : {}),
-      } as FindManyArgs<T>);
+      const docs = await this.findManyPg(
+        { where, ...(single ? { take: 1 } : {}) } as FindManyArgs<T>,
+        true, // internal read-for-write: must see all matches, not a maxRows page
+      );
       const out: WithId<T>[] = [];
       for (const doc of docs) {
         const now = Date.now();
@@ -1223,10 +1229,10 @@ export class Collection<T = Doc> {
     this.mon.assertWriteAllowed();
     await this.ensureTablePg();
     return this.mon.asyncDriver!.transactionAsync(async () => {
-      const docs = await this.findManyPg({
-        where,
-        ...(single ? { take: 1 } : {}),
-      } as FindManyArgs<T>);
+      const docs = await this.findManyPg(
+        { where, ...(single ? { take: 1 } : {}) } as FindManyArgs<T>,
+        true, // internal read-for-write: must see all matches, not a maxRows page
+      );
       if (!docs.length) return [];
       const ids = docs.map((d) => (d as any)._id);
       await this.mon.asyncDriver!.query(
@@ -1290,17 +1296,13 @@ export class Collection<T = Doc> {
   /** Numeric projection of a field for SUM/AVG/MIN/MAX. */
   private pgAggField(field: string): string {
     if (this.isSysOrColumn(field)) return `("${field}")::numeric`;
-    const segs = field.split(".").map((s) => s.replace(/'/g, "''"));
-    const txt =
-      segs.length === 1 ? `data->>'${segs[0]}'` : `data#>>'{${segs.join(",")}}'`;
-    return `(${txt})::numeric`;
+    return `(${pgJsonbPath(field, true)})::numeric`;
   }
 
   /** jsonb projection of a field for GROUP BY / DISTINCT (returns the parsed value). */
   private pgGroupField(field: string): string {
     if (this.isSysOrColumn(field)) return `"${field}"`;
-    const segs = field.split(".").map((s) => s.replace(/'/g, "''"));
-    return segs.length === 1 ? `data->'${segs[0]}'` : `data#>'{${segs.join(",")}}'`;
+    return pgJsonbPath(field, false);
   }
 
   private static readonly PG_AGG_FN: Record<string, string> = {
@@ -1441,7 +1443,13 @@ export class Collection<T = Doc> {
     const r = await this.mon.asyncDriver!.query(sql, params);
     return r.rows.map((row: any) => {
       const out: GroupByResult = {};
-      for (const { alias, field } of groupCols) (out as any)[field] = row[alias];
+      for (const { alias, field } of groupCols)
+        // Postgres returns the BIGINT timestamp columns as strings — coerce them so a
+        // group key on created_at/updated_at is a number, like every other engine value.
+        (out as any)[field] =
+          field === "created_at" || field === "updated_at"
+            ? Number(row[alias])
+            : row[alias];
       if (args._count) (out as any)._count = Number(row.agg_count);
       for (const col of cols) {
         const v = row[col.alias];
@@ -1466,18 +1474,22 @@ export class Collection<T = Doc> {
     if (this.isSysOrColumn(field)) {
       sql = `SELECT DISTINCT "${field}" AS v FROM "${this.name}" WHERE ${clause} ORDER BY v`;
     } else {
-      const segs = field.split(".").map((s) => s.replace(/'/g, "''"));
-      const jsn =
-        segs.length === 1 ? `data->'${segs[0]}'` : `data#>'{${segs.join(",")}}'`;
+      const jsn = pgJsonbPath(field, false);
       // Distinct ELEMENTS for array fields, the value otherwise (matches SQLite json_each).
+      // `${jsn} IS NOT NULL` drops documents MISSING the key (data->'f' is SQL NULL only
+      // when absent), so a missing field isn't reported as a spurious `null` — matching
+      // SQLite, where json_each over an absent path yields no rows. A present json-null
+      // is kept (it reads as 'null'::jsonb, not SQL NULL).
       sql =
         `SELECT DISTINCT CASE WHEN jsonb_typeof(${jsn})='array' THEN ae.elem ELSE ${jsn} END AS v ` +
         `FROM "${this.name}" LEFT JOIN LATERAL jsonb_array_elements(` +
         `CASE WHEN jsonb_typeof(${jsn})='array' THEN ${jsn} ELSE '[]'::jsonb END` +
-        `) AS ae(elem) ON true WHERE ${clause} ORDER BY v`;
+        `) AS ae(elem) ON true WHERE (${clause}) AND ${jsn} IS NOT NULL ORDER BY v`;
     }
     const r = await this.mon.asyncDriver!.query(sql, params);
-    return r.rows.map((row: any) => row.v);
+    // created_at/updated_at are BIGINT (returned as strings) — coerce to numbers.
+    const num = field === "created_at" || field === "updated_at";
+    return r.rows.map((row: any) => (num ? Number(row.v) : row.v));
   }
 
   // ── Postgres watch (LISTEN/NOTIFY) ────────────────────────────────────────
@@ -1490,7 +1502,8 @@ export class Collection<T = Doc> {
         "watch() requires a Postgres engine with LISTEN/NOTIFY support (driver.listen).",
       );
     const reactor = this.mon.ensurePgReactor();
-    const lq = new PgLiveQuery<T>((a) => this.findManyPg(a), args, cb);
+    // Live re-query is uncapped — a watch on a large set must not throw on maxRows.
+    const lq = new PgLiveQuery<T>((a) => this.findManyPg(a, true), args, cb);
     const name = this.name;
     // LISTEN + the initial read are async; the handle returns synchronously and its
     // `results` fill in once init completes (when the "init" event fires).
@@ -1585,10 +1598,10 @@ export class Collection<T = Doc> {
             where: WhereInput<T>;
             data: UpdateData<T>;
           };
-          const docs = await this.findManyPg({
-            where: spec.where,
-            ...(single ? { take: 1 } : {}),
-          } as FindManyArgs<T>);
+          const docs = await this.findManyPg(
+            { where: spec.where, ...(single ? { take: 1 } : {}) } as FindManyArgs<T>,
+            true,
+          );
           for (const doc of docs) {
             const now = Date.now();
             const updated = stripSystem(applyUpdate(stripSystem(doc), spec.data));
@@ -1603,11 +1616,14 @@ export class Collection<T = Doc> {
           const spec = (single ? (op as any).deleteOne : (op as any).deleteMany) as {
             where: WhereInput<T>;
           };
-          const docs = await this.findManyPg({
-            where: spec.where,
-            select: { _id: true } as any,
-            ...(single ? { take: 1 } : {}),
-          } as FindManyArgs<T>);
+          const docs = await this.findManyPg(
+            {
+              where: spec.where,
+              select: { _id: true } as any,
+              ...(single ? { take: 1 } : {}),
+            } as FindManyArgs<T>,
+            true,
+          );
           for (const doc of docs) {
             await this.mon.asyncDriver!.query(
               `DELETE FROM "${this.name}" WHERE _id = ?`,

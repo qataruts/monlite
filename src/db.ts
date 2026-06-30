@@ -195,6 +195,12 @@ export class Monlite {
     // The change feed underpins sync AND realtime/cross-process reactivity, so
     // initialise it for either. `sync` implies `changefeed`.
     if (options.sync || options.changefeed) {
+      if (this.asyncDriver)
+        throw new MonliteError(
+          "{ sync } / { changefeed } are not supported on the Postgres engine — its " +
+            "change feed is SQLite-specific. Realtime watch() works on Postgres via " +
+            "LISTEN/NOTIFY with no change feed; for replication, use SQLite + @monlite/sync.",
+        );
       this.$sync = new SyncStore(
         this.driver,
         options.nodeId,
@@ -368,6 +374,11 @@ export class Monlite {
    */
   async transactionAsync<R>(fn: (db: this) => Promise<R> | R): Promise<R> {
     this.assertOpen();
+    // Postgres engine: run on the async driver (BEGIN…COMMIT, nested SAVEPOINTs,
+    // serialized) — `this.driver` is the throwing stub here, so check asyncDriver first.
+    if (this.asyncDriver) {
+      return this.asyncDriver.transactionAsync(async () => fn(this));
+    }
     if (!this.driver.transactionAsync) {
       throw new MonliteError(
         "The active driver does not support transactionAsync. Use a built-in " +

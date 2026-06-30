@@ -10,10 +10,24 @@ class PgDriver {
   readonly name = "postgres";
   readonly async = true as const;
   constructor(private client: any) {}
-  // The builder emits "?" placeholders; Postgres wants $1,$2,…
+  // The builder emits "?" placeholders; Postgres wants $1,$2,… — string-literal aware
+  // (a "?" inside a '…' literal, e.g. a JSONB key, is not a placeholder).
   private conv(sql: string): string {
-    let i = 0;
-    return sql.replace(/\?/g, () => `$${++i}`);
+    let out = "";
+    let n = 0;
+    let inStr = false;
+    for (let k = 0; k < sql.length; k++) {
+      const c = sql[k];
+      if (inStr) {
+        out += c;
+        if (c === "'") {
+          if (sql[k + 1] === "'") { out += "'"; k++; } else inStr = false;
+        }
+      } else if (c === "'") { inStr = true; out += c; }
+      else if (c === "?") { out += "$" + ++n; }
+      else out += c;
+    }
+    return out;
   }
   async exec(sql: string): Promise<void> {
     await this.client.query(this.conv(sql));
@@ -270,6 +284,95 @@ try {
       expect(ex.plan.length).toBeGreaterThan(0);
       expect(ex.plan.some((p: any) => /Scan/.test(p.detail))).toBe(true);
       expect(typeof ex.usesIndex).toBe("boolean");
+    });
+
+    // ── review-fix regressions ───────────────────────────────────────────────
+    it("FIX: empty OR doesn't crash Postgres and matches nothing", async () => {
+      expect(await db.collection("users").count({ where: { OR: [] } as any })).toBe(0);
+      expect(await db.collection("users").findMany({ where: { OR: [] } as any })).toEqual([]);
+    });
+
+    it("FIX: null / array operators match SQLite semantics", async () => {
+      await db.asyncDriver.exec(`DROP TABLE IF EXISTS reg CASCADE`);
+      const c = db.collection("reg");
+      await c.createMany({
+        data: [
+          { _id: "1", v: 5, tags: ["a", "b"] }, // present, non-null
+          { _id: "2", v: null, tags: [] }, // present, null
+          { _id: "3", tags: ["b"] }, // v missing
+        ],
+      });
+      const ids = (r: any[]) => r.map((d: any) => d._id).sort();
+      // exists: present (incl. present-null) → true; absent → false
+      expect(ids(await c.findMany({ where: { v: { exists: true } } }))).toEqual(["1", "2"]);
+      expect(ids(await c.findMany({ where: { v: { exists: false } } }))).toEqual(["3"]);
+      // not:null → present non-null only
+      expect(ids(await c.findMany({ where: { v: { not: null } } }))).toEqual(["1"]);
+      // in:[null] → present-null + absent
+      expect(ids(await c.findMany({ where: { v: { in: [null] } as any } }))).toEqual(["2", "3"]);
+      // contains on an array field → element membership (not substring)
+      expect(ids(await c.findMany({ where: { tags: { contains: "b" } as any } }))).toEqual(["1", "3"]);
+    });
+
+    it("FIX: orderBy NULLs first (asc) / last (desc), like SQLite", async () => {
+      await db.asyncDriver.exec(`DROP TABLE IF EXISTS ord CASCADE`);
+      const c = db.collection("ord");
+      await c.createMany({ data: [{ _id: "a", n: 10 }, { _id: "b", n: 5 }, { _id: "c" }] });
+      expect((await c.findMany({ orderBy: { n: "asc" } })).map((d: any) => d._id)).toEqual(["c", "b", "a"]);
+      expect((await c.findMany({ orderBy: { n: "desc" } })).map((d: any) => d._id)).toEqual(["a", "b", "c"]);
+    });
+
+    it("FIX: distinct excludes documents missing the field", async () => {
+      await db.asyncDriver.exec(`DROP TABLE IF EXISTS dst CASCADE`);
+      const c = db.collection("dst");
+      await c.createMany({ data: [{ _id: "1", k: "a" }, { _id: "2", k: "b" }, { _id: "3" }] });
+      expect((await c.distinct("k")).sort()).toEqual(["a", "b"]); // no spurious null
+    });
+
+    it("FIX: db.transactionAsync works on Postgres (commit + rollback)", async () => {
+      await db.asyncDriver.exec(`DROP TABLE IF EXISTS tx CASCADE`);
+      const c = db.collection("tx");
+      await db.transactionAsync(async (tx: any) => {
+        await tx.collection("tx").create({ data: { _id: "1", n: 1 } });
+        await tx.collection("tx").create({ data: { _id: "2", n: 2 } });
+      });
+      expect(await c.count()).toBe(2);
+      await expect(
+        db.transactionAsync(async (tx: any) => {
+          await tx.collection("tx").create({ data: { _id: "3", n: 3 } });
+          throw new Error("boom");
+        }),
+      ).rejects.toThrow("boom");
+      expect(await c.count()).toBe(2); // rolled back
+    });
+
+    it("FIX: identifier safety — field names with ? , } don't break the SQL", async () => {
+      await db.asyncDriver.exec(`DROP TABLE IF EXISTS idsafe CASCADE`);
+      const c = db.collection("idsafe");
+      await c.create({ data: { _id: "1", ["weird?,}key"]: 7 } as any });
+      expect((await c.findMany({ where: { ["weird?,}key"]: 7 } as any })).map((d: any) => d._id)).toEqual(["1"]);
+    });
+
+    it("FIX: updateMany/deleteMany over more than maxRows still work on Postgres", async () => {
+      const client2 = new pgMod.Client({ connectionString: URL });
+      await client2.connect();
+      await client2.query(`DROP TABLE IF EXISTS capped CASCADE`);
+      const db2 = createDb(":memory:", { driver: new PgDriver(client2) as any, maxRows: 2 });
+      const c = db2.collection("capped");
+      await c.createMany({ data: [1, 2, 3, 4].map((i) => ({ _id: String(i), g: 1 })) });
+      await expect(c.findMany({})).rejects.toThrow(/maxRows/); // user-facing cap still fires
+      expect((await c.updateMany({ where: { g: 1 }, data: { $set: { done: true } } })).count).toBe(4);
+      expect((await c.deleteMany({ where: { g: 1 } })).count).toBe(4);
+      await db2.$disconnect();
+    });
+
+    it("FIX: { sync } / { changefeed } throw a clear error on the Postgres engine", async () => {
+      const client3 = new pgMod.Client({ connectionString: URL });
+      await client3.connect();
+      const mk = (o: any) => () => createDb(":memory:", { driver: new PgDriver(client3) as any, ...o });
+      expect(mk({ sync: true })).toThrow(/not supported on the Postgres engine/);
+      expect(mk({ changefeed: true })).toThrow(/not supported on the Postgres engine/);
+      await client3.end();
     });
   },
 );
