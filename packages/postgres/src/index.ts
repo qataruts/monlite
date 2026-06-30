@@ -18,6 +18,13 @@ import {
 export interface PgEngineOptions {
   /** node-postgres pool config (max connections, ssl, statement_timeout, …). */
   pool?: pg.PoolConfig;
+  /**
+   * How many times a top-level transaction is retried when Postgres aborts it with a
+   * transient **serialization failure** (`40001`) or **deadlock** (`40P01`) — the
+   * standard, safe retry for those codes (the transaction never committed). Default 5;
+   * set 0 to disable. The transaction body re-runs, so keep its non-DB side effects idempotent.
+   */
+  maxTxRetries?: number;
 }
 
 /**
@@ -31,6 +38,7 @@ export class PgDriver implements AsyncDriver {
   readonly async = true as const;
   private readonly pool: pg.Pool;
   private readonly connectionString: string;
+  private readonly maxTxRetries: number;
   private txClient: pg.PoolClient | null = null;
   private depth = 0;
   private afterCommitHooks: Array<() => void> = [];
@@ -38,7 +46,12 @@ export class PgDriver implements AsyncDriver {
 
   constructor(connectionString: string, opts: PgEngineOptions = {}) {
     this.connectionString = connectionString;
+    this.maxTxRetries = opts.maxTxRetries ?? 5;
     this.pool = new pg.Pool({ connectionString, ...opts.pool });
+    // An IDLE pooled client can emit 'error' (the server dropped/reset it). With no
+    // listener that's an unhandled 'error' → process crash; swallow it (the pool
+    // discards the dead client and makes a fresh one on the next checkout).
+    this.pool.on("error", () => {});
   }
 
   /**
@@ -108,13 +121,36 @@ export class PgDriver implements AsyncDriver {
   async transactionAsync<T>(fn: () => Promise<T>): Promise<T> {
     // Nested: SAVEPOINT on the in-flight client (re-queuing here would deadlock).
     if (this.depth > 0) return this.runTxn(fn);
-    // Top-level: serialize so two concurrent transactions don't share `txClient`.
-    const run = this.txTail.then(() => this.runTxn(fn));
+    // Top-level: serialize so two concurrent transactions don't share `txClient`,
+    // and retry transient serialization/deadlock aborts.
+    const run = this.txTail.then(() => this.runTxnWithRetry(fn));
     this.txTail = run.then(
       () => undefined,
       () => undefined,
     );
     return run;
+  }
+
+  /** A top-level transaction with retry on serialization_failure (40001) / deadlock (40P01). */
+  private async runTxnWithRetry<T>(fn: () => Promise<T>): Promise<T> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.runTxn(fn);
+      } catch (err) {
+        const code = (err as { code?: string })?.code;
+        if (
+          (code === "40001" || code === "40P01") &&
+          attempt < this.maxTxRetries
+        ) {
+          // Transient: PG aborted the transaction (it never committed) — back off a
+          // little (exponential + jitter) and re-run the body. Safe by definition.
+          const backoff = Math.min(200, 5 * 2 ** attempt) + Math.random() * 10;
+          await new Promise((r) => setTimeout(r, backoff));
+          continue;
+        }
+        throw err;
+      }
+    }
   }
 
   private async runTxn<T>(fn: () => Promise<T>): Promise<T> {

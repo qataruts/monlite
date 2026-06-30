@@ -261,6 +261,12 @@ importers:
         specifier: ^8.13.0
         version: 8.22.0
     devDependencies:
+      '@monlite/kv':
+        specifier: workspace:^
+        version: link:../kv
+      '@monlite/queue':
+        specifier: workspace:^
+        version: link:../queue
       '@types/node':
         specifier: ^22.10.0
         version: 22.20.0

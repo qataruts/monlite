@@ -184,17 +184,34 @@ export class Collection<T = Doc> {
   }
 
   private pgInitialized = false;
+  private pgInitPromise?: Promise<void>;
   private pgNotifyReady = false;
 
   /** Create this collection's Postgres (JSONB) table, once. */
-  private async ensureTablePg(): Promise<void> {
-    if (this.pgInitialized) return;
-    await this.mon.asyncDriver!.exec(
-      `CREATE TABLE IF NOT EXISTS "${this.name}" (` +
-        `_id text PRIMARY KEY, data jsonb NOT NULL, ` +
-        `created_at bigint NOT NULL, updated_at bigint NOT NULL)`,
-    );
-    this.pgInitialized = true;
+  private ensureTablePg(): Promise<void> {
+    if (this.pgInitialized) return Promise.resolve();
+    // Share ONE create across concurrent first-access ops on this collection, and
+    // tolerate the cross-session catalog race: `CREATE TABLE IF NOT EXISTS` is NOT
+    // atomic — two creators can both pass the existence check and collide (duplicate
+    // pg_type 23505 / duplicate_table 42P07). The table exists either way → succeed.
+    if (this.pgInitPromise) return this.pgInitPromise;
+    this.pgInitPromise = (async () => {
+      try {
+        await this.mon.asyncDriver!.exec(
+          `CREATE TABLE IF NOT EXISTS "${this.name}" (` +
+            `_id text PRIMARY KEY, data jsonb NOT NULL, ` +
+            `created_at bigint NOT NULL, updated_at bigint NOT NULL)`,
+        );
+      } catch (e) {
+        const code = (e as { code?: string })?.code;
+        if (code !== "23505" && code !== "42P07") {
+          this.pgInitPromise = undefined; // a real failure — allow a later retry
+          throw e;
+        }
+      }
+      this.pgInitialized = true;
+    })();
+    return this.pgInitPromise;
   }
 
   private ensureTable(): void {
