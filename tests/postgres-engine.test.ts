@@ -374,5 +374,20 @@ try {
       expect(mk({ changefeed: true })).toThrow(/not supported on the Postgres engine/);
       await client3.end();
     });
+
+    it("FIX: elemMatch supports not / in / notIn on Postgres", async () => {
+      await db.asyncDriver.exec(`DROP TABLE IF EXISTS em CASCADE`);
+      const c = db.collection("em");
+      await c.createMany({
+        data: [
+          { _id: "1", items: [{ sku: "A", qty: 2 }, { sku: "B", qty: 9 }] },
+          { _id: "2", items: [{ sku: "C", qty: 1 }] },
+        ],
+      });
+      const ids = (r: any[]) => r.map((d: any) => d._id);
+      expect(ids(await c.findMany({ where: { items: { elemMatch: { sku: { in: ["A", "Z"] } } } as any } }))).toEqual(["1"]);
+      expect(ids(await c.findMany({ where: { items: { elemMatch: { sku: { notIn: ["A", "B"] } } } as any } }))).toEqual(["2"]);
+      expect(ids(await c.findMany({ where: { items: { elemMatch: { qty: { not: 1 } } } as any } }))).toEqual(["1"]);
+    });
   },
 );
