@@ -1,20 +1,40 @@
 # monlite
 
-> **The local-first backend in a file.** Documents, full-text + vector search, cache, queue, and
-> cron — one SQLite file, a zero-dependency TypeScript core, and the *same* API on Postgres when
-> you scale.
+> ### The complete backend for AI agents — in one file.
+> Document **memory**, semantic (**vector**) recall, full-text search, a durable **task queue**,
+> atomic **locks**, cache, and **cron** — over a single SQLite file, with a zero-dependency
+> TypeScript core. **No Docker. No connection strings. Nothing to run.**
+> And the *same code* scales to Postgres the day you need it.
+
+A coding agent, RAG pipeline, or autonomous worker needs memory, semantic search, a job queue, and
+locks. That's normally MongoDB + Qdrant + Redis + BullMQ — four services and a Docker compose file.
+**monlite is all of it, in a file you can `cp` to back up:**
 
 ```ts
 import { createDb } from "@monlite/core";
+import { vector } from "@monlite/vector";
+import { createQueue } from "@monlite/queue";
+import { kv } from "@monlite/kv";
 
-const db = createDb("./app.db");
-const users = db.collection("users");
-await users.create({ data: { name: "Ada", age: 30, tags: ["admin"] } });
-await users.findMany({ where: { age: { gte: 18 }, tags: { has: "admin" } } });
+// one file = the agent's entire backend
+const db = createDb("./agent.db", {
+  allowExtensions: true,
+  plugins: [vector({ memory: { field: "embedding", dimensions: 384 } })],
+});
+
+// 🧠 memory — typed document collections
+await db.collection("memory").create({ data: { note: "user prefers dark mode", embedding } });
+
+// 🔎 semantic recall — vector search over embeddings
+const recall = await db.collection("memory").findSimilar({ vector: query, topK: 5 });
+
+// 🔒 an atomic lock (run-once)  +  📋 a durable task queue (retries, backoff, dedupe, concurrency)
+if (kv(db).setNX("lock:ingest", 1, { ttl: 30_000 })) startIngest();
+createQueue(db).process("embed", (job) => embed(job.payload.text), { concurrency: 4 });
 ```
 
-No server. No migrations. No configuration. No native build (Node 22.5+ uses the built-in
-`node:sqlite`). Backup is `cp app.db backup.db`.
+Exactly-once job claims, locks, scheduling, and full-text + semantic search — with **no server, no
+migrations, and no native build** (Node 22.5+ uses the built-in `node:sqlite`).
 
 📖 [Docs](https://qataruts.github.io/monlite) · 🎮 [Live demo](https://qataruts.github.io/monlite/demo) (runs in your browser) · 📦 [npm](https://www.npmjs.com/package/monlite) · 💻 [GitHub](https://github.com/qataruts/monlite)
 
@@ -200,8 +220,8 @@ const cron = createCron(db);
 cron.schedule("nightly", "0 3 * * *", () => queue.add("cleanup", {}));
 ```
 
-This is the **AI-agent backend** in one file — document memory, semantic recall, exactly-once job
-claims, locks, a task queue, and scheduling, with no Docker and no connection strings.
+The full [AI-agent-backend walkthrough](https://qataruts.github.io/monlite/guides/ai-agent-backend)
+puts these together with memory + semantic recall into one runtime.
 
 ---
 
